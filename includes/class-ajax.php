@@ -223,7 +223,6 @@ final class Ajax
         $passed = ($percentage >= $pass_pct);
 
         $attempt->update_manual_review($new_score, $max_score, $passed);
-        Leaderboard::invalidate($attempt->quiz_id);
 
         wp_send_json_success([
             'message'    => __('Оценка и комментарии сохранены.', 'wp-olympiad'),

@@ -61,13 +61,6 @@ final class RestApi
             'callback'            => [self::class, 'handle_submit'],
             'permission_callback' => '__return_true',
         ]);
-
-        // Public Leaderboard
-        register_rest_route(self::NAMESPACE, '/leaderboard/(?P<id>\d+)', [
-            'methods'             => 'GET',
-            'callback'            => [self::class, 'handle_leaderboard'],
-            'permission_callback' => '__return_true',
-        ]);
     }
 
     public static function handle_start(WP_REST_Request $request): WP_REST_Response|WP_Error
@@ -242,9 +235,6 @@ final class RestApi
             return new WP_Error('submission_failed', __('Ошибка сохранения результатов в базу данных.', 'wp-olympiad'), ['status' => 500]);
         }
 
-        // Invalidate leaderboard cache
-        Leaderboard::invalidate($quiz->id);
-
         // Dispatch external webhook if configured
         $webhook_url = (string)$quiz->get_setting('webhook_url', '');
         if (!empty($webhook_url)) {
@@ -336,19 +326,6 @@ final class RestApi
         }
 
         return new WP_REST_Response($response_data, 200);
-    }
-
-    public static function handle_leaderboard(WP_REST_Request $request): WP_REST_Response
-    {
-        $quiz_id = (int)$request->get_param('id');
-        $limit = max(1, min(100, (int)($request->get_param('limit') ?? 50)));
-
-        $data = Leaderboard::get_leaderboard($quiz_id, $limit);
-
-        return new WP_REST_Response([
-            'success' => true,
-            'data'    => $data,
-        ], 200);
     }
 
     /**

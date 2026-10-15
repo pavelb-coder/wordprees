@@ -346,9 +346,6 @@ final class Attempt
         // 2. Delete the attempt record itself
         $deleted = $wpdb->delete($table_attempts, ['id' => $id], ['%d']);
 
-        // 3. Invalidate leaderboard cache
-        Leaderboard::invalidate($attempt->quiz_id);
-
         return $deleted !== false;
     }
 
@@ -358,24 +355,15 @@ final class Attempt
     public static function bulk_delete(array $ids): int
     {
         $deleted_count = 0;
-        $quiz_ids_to_clear = [];
 
         foreach ($ids as $raw_id) {
             $id = (int)$raw_id;
             if ($id <= 0) {
                 continue;
             }
-            $att = self::get($id);
-            if ($att) {
-                $quiz_ids_to_clear[$att->quiz_id] = true;
-                if (self::delete($id)) {
-                    $deleted_count++;
-                }
+            if (self::delete($id)) {
+                $deleted_count++;
             }
-        }
-
-        foreach (array_keys($quiz_ids_to_clear) as $qid) {
-            Leaderboard::invalidate((int)$qid);
         }
 
         return $deleted_count;
@@ -397,8 +385,6 @@ final class Attempt
         }
 
         $deleted = (int)$wpdb->delete($table_attempts, ['quiz_id' => $quiz_id], ['%d']);
-
-        Leaderboard::invalidate($quiz_id);
 
         return $deleted;
     }
@@ -453,8 +439,6 @@ final class Attempt
                 'passed'     => $passed,
                 'status'     => $status,
             ], ['id' => $attempt_id], ['%d', '%d', '%f', '%d', '%s'], ['%d']);
-
-            Leaderboard::invalidate($attempt->quiz_id);
         }
 
         return true;

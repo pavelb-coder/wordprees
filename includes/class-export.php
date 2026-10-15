@@ -133,7 +133,7 @@ final class Export
             foreach ($questions as $q) {
                 $resp = $responses_by_attempt[$att->id][$q->id] ?? null;
                 if ($resp) {
-                    $row[] = Stats::format_user_answer($q, (string)$resp['user_answer']);
+                    $row[] = self::format_user_answer($q, (string)$resp['user_answer']);
                     $row[] = number_format((float)$resp['awarded_points'], 0, '.', '');
                 } else {
                     $row[] = '—';
@@ -239,7 +239,7 @@ final class Export
         foreach ($questions as $idx => $q) {
             $resp = $responses_map[$q->id] ?? null;
             $user_ans_raw = $resp ? (string)$resp['user_answer'] : '';
-            $formatted_ans = $resp ? Stats::format_user_answer($q, $user_ans_raw) : '—';
+            $formatted_ans = $resp ? self::format_user_answer($q, $user_ans_raw) : '—';
             $awarded = $resp ? (int)round((float)$resp['awarded_points']) : 0;
             $is_corr = $resp ? $resp['is_correct'] : null;
             $needs_rev = $resp ? !empty($resp['needs_manual_review']) : false;
@@ -304,118 +304,95 @@ final class Export
     }
 
     /**
-     * Export Complete Pivot Matrix (Participants x Questions with formatted answers)
-     * Analogous to Online Test Pad "Сводные данные"
+     * Format raw participant answer into human-readable text for CSV and reports
      */
-    public static function export_pivot_matrix(int $quiz_id, bool $do_exit = true): ?string
+    public static function format_user_answer(Question $q, string $raw): string
     {
-        if ($do_exit && !current_user_can('manage_options')) {
-            wp_die(esc_html__('У вас недостаточно прав для выполнения этой операции.', 'wp-olympiad'));
+        if ($raw === '' || $raw === '[]' || $raw === '{}') {
+            return '—';
         }
 
-        $quiz = Quiz::get($quiz_id);
-        if (!$quiz) {
-            wp_die(esc_html__('Олимпиада не найдена.', 'wp-olympiad'));
-        }
-
-        $matrix_data = Stats::get_pivot_matrix($quiz_id);
-        $questions = $matrix_data['questions'] ?? [];
-        $attempts = $matrix_data['attempts'] ?? [];
-
-        $filename = sprintf('matrix-%s-%s.csv', sanitize_title($quiz->title), date('Y-m-d'));
-
-        if ($do_exit) {
-            header('Content-Type: text/csv; charset=UTF-8');
-            header('Content-Disposition: attachment; filename="' . $filename . '"');
-            header('Pragma: no-cache');
-            header('Expires: 0');
-            $output = fopen('php://output', 'w');
-        } else {
-            $output = fopen('php://temp', 'r+');
-        }
-
-        if ($output === false) {
-            return null;
-        }
-
-        // Write UTF-8 BOM for Microsoft Excel compatibility
-        fwrite($output, "\xEF\xBB\xBF");
-
-        // Build Dynamic Headers
-        $headers = [
-            'ID попытки',
-            'ФИО Участника',
-            'Email',
-            'Организация',
-            'Дата сдачи',
-            'Время (мин:сек)',
-            'Нарушений',
-            'Итого баллов',
-            'Макс. балл',
-            'Процент (%)',
-            'Статус',
-        ];
-
-        foreach ($questions as $idx => $q) {
-            $q_num = $idx + 1;
-            $q_title_short = mb_substr($q->title, 0, 30, 'UTF-8');
-            $headers[] = sprintf('В%d: %s [Балл]', $q_num, $q_title_short);
-            $headers[] = sprintf('В%d: Ответ', $q_num);
-        }
-
-        fputcsv($output, $headers, ';', '"', "\\");
-
-        $status_labels = [
-            'in_progress'  => 'В процессе',
-            'completed'    => 'Завершено',
-            'graded'       => 'Проверено',
-            'needs_review' => 'На проверке',
-            'expired'      => 'Истекло время',
-            'disqualified' => 'Дисквалифицирован',
-        ];
-
-        foreach ($attempts as $att) {
-            $duration_m = floor((int)$att['duration_seconds'] / 60);
-            $duration_s = (int)$att['duration_seconds'] % 60;
-            $duration_fmt = sprintf('%02d:%02d', $duration_m, $duration_s);
-            $status = $status_labels[$att['status']] ?? $att['status'];
-
-            $row = [
-                $att['id'],
-                $att['participant_name'],
-                $att['participant_email'],
-                $att['participant_org'],
-                $att['submitted_at'] ?: $att['started_at'],
-                $duration_fmt,
-                $att['tab_switches'],
-                number_format((float)$att['score'], 0, '.', ''),
-                number_format((float)$att['max_score'], 0, '.', ''),
-                number_format((float)$att['percentage'], 2, '.', ''),
-                $status,
-            ];
-
-            foreach ($questions as $q) {
-                $resp = $att['responses'][$q->id] ?? null;
-                if ($resp) {
-                    $row[] = number_format((float)$resp['awarded_points'], 0, '.', '');
-                    $row[] = (string)$resp['formatted_answer'];
-                } else {
-                    $row[] = '0';
-                    $row[] = '—';
+        switch ($q->question_type) {
+            case 'single':
+            case 'dropdown':
+                foreach ($q->options['choices'] ?? [] as $ch) {
+                    if ((string)($ch['id'] ?? '') === $raw) {
+                        return (string)($ch['text'] ?? $raw);
+                    }
                 }
-            }
+                return $raw;
 
-            fputcsv($output, $row, ';', '"', "\\");
+            case 'boolean':
+                return ($raw === 'true') ? __('Верно', 'wp-olympiad') : __('Неверно', 'wp-olympiad');
+
+            case 'multi':
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $selected_texts = [];
+                    $choices_map = [];
+                    foreach ($q->options['choices'] ?? [] as $ch) {
+                        $choices_map[(string)$ch['id']] = $ch['text'];
+                    }
+                    foreach ($decoded as $cid) {
+                        $selected_texts[] = $choices_map[(string)$cid] ?? (string)$cid;
+                    }
+                    return implode(', ', $selected_texts);
+                }
+                return $raw;
+
+            case 'matching':
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $pairs_map = [];
+                    foreach ($q->options['pairs'] ?? [] as $p) {
+                        $pairs_map[$p['id']] = $p['left'];
+                    }
+                    $lines = [];
+                    foreach ($decoded as $pid => $right_val) {
+                        $left_label = $pairs_map[$pid] ?? $pid;
+                        $lines[] = "{$left_label} → {$right_val}";
+                    }
+                    return implode('; ', $lines);
+                }
+                return $raw;
+
+            case 'ordering':
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $items_map = [];
+                    foreach ($q->options['items'] ?? [] as $it) {
+                        $items_map[$it['id']] = $it['text'];
+                    }
+                    $lines = [];
+                    $pos = 1;
+                    foreach ($decoded as $iid) {
+                        $text = $items_map[$iid] ?? $iid;
+                        $lines[] = "{$pos}. {$text}";
+                        $pos++;
+                    }
+                    return implode(' → ', $lines);
+                }
+                return $raw;
+
+            case 'fill_blank':
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $lines = [];
+                    $i = 1;
+                    foreach ($decoded as $bid => $val) {
+                        $lines[] = "[{$i}]: {$val}";
+                        $i++;
+                    }
+                    return implode(', ', $lines);
+                }
+                return $raw;
+
+            case 'slider':
+            case 'numeric':
+            case 'short_text':
+            case 'essay':
+            default:
+                return $raw;
         }
-
-        if (!$do_exit) {
-            rewind($output);
-            $content = stream_get_contents($output);
-            fclose($output);
-            return (string)$content;
-        }
-
-        fclose($output);
-        exit;
     }
 }

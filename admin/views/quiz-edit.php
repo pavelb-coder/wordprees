@@ -26,7 +26,6 @@ $completion_message = $is_new ? 'Спасибо за участие! Ваши о
 $anti_cheat_copy = $is_new ? 1 : (int)$quiz->get_setting('anti_cheat_copy', 1);
 $anti_cheat_blur = $is_new ? 1 : (int)$quiz->get_setting('anti_cheat_blur', 1);
 $max_tab_switches = $is_new ? 5 : (int)$quiz->get_setting('max_tab_switches', 5);
-$enable_leaderboard = $is_new ? 1 : (int)$quiz->get_setting('enable_leaderboard', 1);
 $allow_external_embed = $is_new ? 1 : (int)$quiz->get_setting('allow_external_embed', 1);
 $webhook_url = $is_new ? '' : (string)$quiz->get_setting('webhook_url', '');
 $enable_certificate = $is_new ? 1 : (int)$quiz->get_setting('enable_certificate', 1);
@@ -620,7 +619,6 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                     <hr>
                     <p><label><input type="checkbox" name="require_org" value="1" <?php checked($require_org, 1); ?>> <?php esc_html_e('Требовать школу / класс / ВУЗ', 'wp-olympiad'); ?></label></p>
                     <p><label><input type="checkbox" name="require_email" value="1" <?php checked($require_email, 1); ?>> <?php esc_html_e('Требовать E-mail участника', 'wp-olympiad'); ?></label></p>
-                    <p><label><input type="checkbox" name="enable_leaderboard" value="1" <?php checked($enable_leaderboard, 1); ?>> <?php esc_html_e('Включить публичный рейтинг', 'wp-olympiad'); ?></label></p>
                 </div>
             </div>
         </div>

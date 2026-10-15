@@ -188,19 +188,12 @@ final class NetworkExport
             $protocol_csv = '';
         }
 
-        // 2. Generate Pivot Matrix CSV (Online Test Pad matrix)
-        $matrix_csv = Export::export_pivot_matrix($quiz_id, false);
-        if ($matrix_csv === null) {
-            $matrix_csv = '';
-        }
-
-        // 3. Generate questions keys & scoring breakdown CSV
+        // 2. Generate questions keys & scoring breakdown CSV
         $keys_csv = self::generate_questions_key_csv($quiz);
 
-        // 4. Generate README / Audit manifest
-        $stats = Stats::get_quiz_stats($quiz_id);
+        // 3. Generate README / Audit manifest
         $total_attempts = Attempt::count(['quiz_id' => $quiz_id]);
-        $readme_text = self::generate_manifest_text($quiz, $total_attempts, $stats, !empty($zip_password));
+        $readme_text = self::generate_manifest_text($quiz, $total_attempts, !empty($zip_password));
 
         // Create temporary directory for building the ZIP
         $upload_dir = wp_upload_dir();
@@ -228,8 +221,7 @@ final class NetworkExport
 
         $files = [
             '01_protocol_attempts_and_answers.csv' => $protocol_csv,
-            '02_pivot_matrix_summary.csv'          => $matrix_csv,
-            '03_questions_and_grading_keys.csv'    => $keys_csv,
+            '02_questions_and_grading_keys.csv'    => $keys_csv,
             'README_MANIFEST.txt'                  => $readme_text,
         ];
 
@@ -419,9 +411,12 @@ final class NetworkExport
     private static function generate_manifest_text(
         Quiz $quiz,
         int $total_attempts,
-        array $stats,
         bool $is_encrypted
     ): string {
+        $completed_attempts = Attempt::count(['quiz_id' => $quiz->id, 'status' => 'completed']);
+        $passed_attempts = Attempt::count(['quiz_id' => $quiz->id, 'passed' => 1]);
+        $pass_rate = $completed_attempts > 0 ? round(($passed_attempts / $completed_attempts) * 100, 1) : 0.0;
+
         $lines = [
             '========================================================================',
             '  WP OLYMPIAD: ОФИЦИАЛЬНЫЙ АРХИВ ПРОТОКОЛОВ И ОТВЕТОВ ТЕСТИРОВАНИЯ      ',
@@ -432,24 +427,19 @@ final class NetworkExport
             'Дата экспорта:        ' . current_time('mysql'),
             'Защита архива:        ' . ($is_encrypted ? 'ВКЛЮЧЕНА (Пароль, шифрование AES-256)' : 'БЕЗ ПАРОЛЯ'),
             '',
-            'СТАТИСТИЧЕСКАЯ СВОДКА:',
+            'СВОДКА УЧАСТИЯ:',
             '------------------------------------------------------------------------',
             'Всего участников:     ' . $total_attempts,
-            'Завершили тест:       ' . ($stats['completed_attempts'] ?? 0),
-            'Успешно сдали (зачёт):' . ($stats['passed_count'] ?? 0) . ' (' . ($stats['pass_rate'] ?? 0) . '%)',
-            'Средний балл:         ' . ($stats['avg_score'] ?? 0) . ' из ' . $quiz->get_total_points(),
-            'Максимальный балл:    ' . ($stats['max_score'] ?? 0),
-            'Минимальный балл:     ' . ($stats['min_score'] ?? 0),
+            'Завершили тест:       ' . $completed_attempts,
+            'Успешно сдали (зачёт):' . $passed_attempts . ' (' . $pass_rate . '%)',
             '',
             'СОДЕРЖИМОЕ АРХИВА:',
             '------------------------------------------------------------------------',
             '1. 01_protocol_attempts_and_answers.csv — Полный протокол со всеми ответами',
             '   каждого участника по каждому заданию олимпиады (кодировка UTF-8 BOM).',
-            '2. 02_pivot_matrix_summary.csv — Сводная матрица ответов (Online Test Pad),',
-            '   позволяющая увидеть всю таблицу результатов в разрезе участников и вопросов.',
-            '3. 03_questions_and_grading_keys.csv — Перечень всех заданий с правильными',
+            '2. 02_questions_and_grading_keys.csv — Перечень всех заданий с правильными',
             '   ключами, штрафами и критериями оценивания жюри.',
-            '4. README_MANIFEST.txt — Этот информационный файл.',
+            '3. README_MANIFEST.txt — Этот информационный файл.',
             '',
             'ИНСТРУКЦИЯ ПО ОТКРЫТИЮ В MICROSOFT EXCEL:',
             '------------------------------------------------------------------------',

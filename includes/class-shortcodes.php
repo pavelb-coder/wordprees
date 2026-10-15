@@ -17,9 +17,6 @@ final class Shortcodes
         add_shortcode('wp_olympiad', [self::class, 'render_quiz']);
         add_shortcode('olympiad', [self::class, 'render_quiz']);
 
-        add_shortcode('wp_olympiad_leaderboard', [self::class, 'render_leaderboard']);
-        add_shortcode('olympiad_leaderboard', [self::class, 'render_leaderboard']);
-
         add_shortcode('wp_olympiad_my_results', [self::class, 'render_my_results']);
 
         // Handle standalone external connection / direct link & iframe embed
@@ -396,24 +393,6 @@ final class Shortcodes
         </div>
         <?php
         return (string)ob_get_clean();
-    }
-
-    public static function render_leaderboard(array|string $atts): string
-    {
-        $atts = shortcode_atts([
-            'id'    => 0,
-            'limit' => 50,
-        ], (array)$atts, 'wp_olympiad_leaderboard');
-
-        $quiz_id = (int)$atts['id'];
-        $limit = max(1, min(100, (int)$atts['limit']));
-
-        if ($quiz_id <= 0) {
-            return '<div class="wpo-alert wpo-alert-error">' . esc_html__('Укажите ID олимпиады: [wp_olympiad_leaderboard id="1"]', 'wp-olympiad') . '</div>';
-        }
-
-        self::enqueue_assets();
-        return Leaderboard::render_html($quiz_id, $limit);
     }
 
     public static function render_my_results(): string

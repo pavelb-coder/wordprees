@@ -83,24 +83,6 @@ final class Admin
             'wp-olympiad-review',
             [self::class, 'render_review_page']
         );
-
-        add_submenu_page(
-            'wp-olympiad',
-            __('Лидерборд и рейтинг', 'wp-olympiad'),
-            __('Рейтинг участников', 'wp-olympiad'),
-            $capability,
-            'wp-olympiad-leaderboard',
-            [self::class, 'render_leaderboard_page']
-        );
-
-        add_submenu_page(
-            'wp-olympiad',
-            __('Аналитика и статистика', 'wp-olympiad'),
-            __('Аналитика / Статистика', 'wp-olympiad'),
-            $capability,
-            'wp-olympiad-stats',
-            [self::class, 'render_stats_page']
-        );
     }
 
     public static function enqueue_assets(string $hook): void
@@ -167,7 +149,6 @@ final class Admin
                     'anti_cheat_copy'   => !empty($_POST['anti_cheat_copy']) ? 1 : 0,
                     'anti_cheat_blur'   => !empty($_POST['anti_cheat_blur']) ? 1 : 0,
                     'max_tab_switches'  => max(0, (int)($_POST['max_tab_switches'] ?? 5)),
-                    'enable_leaderboard'=> !empty($_POST['enable_leaderboard']) ? 1 : 0,
                     'allow_external_embed' => !empty($_POST['allow_external_embed']) ? 1 : 0,
                     'webhook_url'       => esc_url_raw($_POST['webhook_url'] ?? ''),
                     'enable_certificate'=> !empty($_POST['enable_certificate']) ? 1 : 0,
@@ -377,32 +358,5 @@ final class Admin
         $questions = $quiz ? $quiz->get_questions(false) : [];
 
         require_once WP_OLYMPIAD_PATH . 'admin/views/attempt-review.php';
-    }
-
-    public static function render_leaderboard_page(): void
-    {
-        $quiz_id = (int)($_GET['quiz_id'] ?? 0);
-        $quizzes = Quiz::all();
-
-        if ($quiz_id <= 0 && !empty($quizzes)) {
-            $quiz_id = $quizzes[0]->id;
-        }
-
-        $leaderboard = $quiz_id > 0 ? Leaderboard::get_leaderboard($quiz_id, 100, true) : [];
-        require_once WP_OLYMPIAD_PATH . 'admin/views/leaderboard-view.php';
-    }
-
-    public static function render_stats_page(): void
-    {
-        $quiz_id = (int)($_GET['quiz_id'] ?? 0);
-        $quizzes = Quiz::all();
-
-        if ($quiz_id <= 0 && !empty($quizzes)) {
-            $quiz_id = $quizzes[0]->id;
-        }
-
-        $stats = $quiz_id > 0 ? \WPOlympiad\Stats::get_quiz_stats($quiz_id) : [];
-        $matrix_data = $quiz_id > 0 ? \WPOlympiad\Stats::get_pivot_matrix($quiz_id) : ['questions' => [], 'attempts' => []];
-        require_once WP_OLYMPIAD_PATH . 'admin/views/quiz-stats.php';
     }
 }

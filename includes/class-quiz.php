@@ -63,7 +63,6 @@ final class Quiz
             'anti_cheat_copy'     => 1,         // 1 = disable copy & right click
             'anti_cheat_blur'     => 1,         // 1 = track tab switches
             'max_tab_switches'    => 5,         // 0 = just log, >0 = limit
-            'enable_leaderboard'  => 1,         // 1 = public leaderboard allowed
             'allow_external_embed'=> 1,         // 1 = allow iframe embedding on external sites
             'webhook_url'         => '',        // External webhook URL for automated results dispatch
             'enable_certificate'  => 1,         // 1 = generate printable / downloadable diploma
