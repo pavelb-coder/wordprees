@@ -196,15 +196,13 @@ final class Admin
                     'show_anti_cheat_notice'   => !empty($_POST['show_anti_cheat_notice']) ? 1 : 0,
                     'anti_cheat_notice_text'   => sanitize_textarea_field($_POST['anti_cheat_notice_text'] ?? ''),
 
-                    // Password-Protected Network Folder Export Settings
+                    // Network Folder Export Settings
                     'enable_network_export'    => !empty($_POST['enable_network_export']) ? 1 : 0,
                     'network_folder_type'      => sanitize_key($_POST['network_folder_type'] ?? 'auto'),
-                    'network_folder_path'      => sanitize_text_field($_POST['network_folder_path'] ?? ''),
-                    'network_folder_user'      => sanitize_text_field($_POST['network_folder_user'] ?? ''),
+                    'network_folder_path'      => sanitize_text_field(wp_unslash($_POST['network_folder_path'] ?? '')),
+                    'network_folder_user'      => sanitize_text_field(wp_unslash($_POST['network_folder_user'] ?? '')),
                     'network_folder_password'  => (string)($_POST['network_folder_password'] ?? ''),
-                    'export_zip_password'      => (string)($_POST['export_zip_password'] ?? ''),
                     'network_auto_export'      => !empty($_POST['network_auto_export']) ? 1 : 0,
-                    'protect_local_directory'  => !empty($_POST['protect_local_directory']) ? 1 : 0,
                 ],
             ];
 

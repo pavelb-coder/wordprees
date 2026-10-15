@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
                 <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=export_csv&quiz_id=' . $quiz_id)); ?>" class="button button-primary">
                     📥 <?php esc_html_e('Экспорт в Excel / CSV', 'wp-olympiad'); ?>
                 </a>
-                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=export_network&quiz_id=' . $quiz_id), 'wpo_export_network_' . $quiz_id)); ?>" class="button button-secondary" title="<?php esc_attr_e('Экспортировать архив с ответами в локальную сетевую папку', 'wp-olympiad'); ?>">
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=export_network&quiz_id=' . $quiz_id), 'wpo_export_network_' . $quiz_id)); ?>" class="button button-secondary" title="<?php esc_attr_e('Экспортировать ответы в локальную сетевую папку', 'wp-olympiad'); ?>">
                     📁 <?php esc_html_e('В сетевую папку', 'wp-olympiad'); ?>
                 </a>
                 <?php if (!empty($attempts)): ?>
@@ -34,9 +34,6 @@ if (!defined('ABSPATH')) {
                 <strong>📁 <?php esc_html_e('Успешный экспорт в сетевую папку!', 'wp-olympiad'); ?></strong>
                 <?php if ($last_net && !empty($last_net['destination'])): ?>
                     <br><code><?php echo esc_html($last_net['destination']); ?></code>
-                    <?php if (!empty($last_net['is_encrypted'])): ?>
-                        — <span style="color:#0369a1; font-weight:700;">🔒 <?php esc_html_e('Архив защищён паролем AES-256', 'wp-olympiad'); ?></span>
-                    <?php endif; ?>
                 <?php endif; ?>
             </p>
         </div>

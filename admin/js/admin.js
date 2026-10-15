@@ -441,13 +441,7 @@
             var $spinner = $('#wpo-network-test-spinner');
             var $msg = $('#wpo-network-test-message');
 
-            var path = $('#network_folder_path').val().trim();
-            if (!path) {
-                $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
-                    .text('Пожалуйста, укажите путь к сетевой папке или URL хранилища.')
-                    .show();
-                return;
-            }
+            var path = $('#network_folder_path').val().trim() || $('#network_folder_path').attr('placeholder') || '';
 
             $btn.prop('disabled', true);
             $spinner.addClass('is-active');
@@ -459,8 +453,7 @@
                 type: $('#network_folder_type').val(),
                 path: path,
                 user: $('#network_folder_user').val(),
-                password: $('#network_folder_password').val(),
-                protect_directory: $('#protect_local_directory').is(':checked') ? 1 : 0
+                password: $('#network_folder_password').val()
             }, function (res) {
                 $btn.prop('disabled', false);
                 $spinner.removeClass('is-active');
@@ -490,13 +483,7 @@
             var $spinner = $('#wpo-network-test-spinner');
             var $msg = $('#wpo-network-test-message');
 
-            var path = $('#network_folder_path').val().trim();
-            if (!path) {
-                $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
-                    .text('Укажите путь к сетевой папке перед запуском экспорта.')
-                    .show();
-                return;
-            }
+            var path = $('#network_folder_path').val().trim() || $('#network_folder_path').attr('placeholder') || '';
 
             $btn.prop('disabled', true);
             $spinner.addClass('is-active');
@@ -510,15 +497,13 @@
                 type: $('#network_folder_type').val(),
                 path: path,
                 user: $('#network_folder_user').val(),
-                password: $('#network_folder_password').val(),
-                zip_password: $('#export_zip_password').val()
+                password: $('#network_folder_password').val()
             }, function (res) {
                 $btn.prop('disabled', false);
                 $spinner.removeClass('is-active');
                 if (res.success) {
-                    var encBadge = res.data.is_encrypted ? ' 🔒 <span style="font-weight:700;">(Защищён паролем AES-256)</span>' : '';
                     $msg.css({ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' })
-                        .html('✓ <strong>' + res.data.message + '</strong><br>Файл: <code>' + res.data.filename + '</code>' + encBadge + '<br>Размер: ' + (Math.round(res.data.size / 102.4) / 10) + ' КБ')
+                        .html('✓ <strong>' + res.data.message + '</strong><br>Файл: <code>' + res.data.filename + '</code><br>Размер: ' + (Math.round(res.data.size / 102.4) / 10) + ' КБ')
                         .fadeIn();
                 } else {
                     $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })

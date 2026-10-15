@@ -281,11 +281,10 @@ final class Ajax
         check_ajax_referer('wp_olympiad_admin_nonce', 'nonce');
 
         $config = [
-            'type'              => sanitize_key($_POST['type'] ?? 'auto'),
-            'path'              => sanitize_text_field($_POST['path'] ?? ''),
-            'user'              => sanitize_text_field($_POST['user'] ?? ''),
-            'password'          => (string)($_POST['password'] ?? ''),
-            'protect_directory' => !empty($_POST['protect_directory']),
+            'type'     => sanitize_key($_POST['type'] ?? 'auto'),
+            'path'     => sanitize_text_field(wp_unslash($_POST['path'] ?? '')),
+            'user'     => sanitize_text_field(wp_unslash($_POST['user'] ?? '')),
+            'password' => (string)($_POST['password'] ?? ''),
         ];
 
         $res = NetworkExport::test_connection($config);
@@ -310,11 +309,10 @@ final class Ajax
 
         $override = [];
         if (!empty($_POST['override'])) {
-            if (isset($_POST['path'])) $override['path'] = sanitize_text_field($_POST['path']);
+            if (isset($_POST['path'])) $override['path'] = sanitize_text_field(wp_unslash($_POST['path']));
             if (isset($_POST['type'])) $override['type'] = sanitize_key($_POST['type']);
-            if (isset($_POST['user'])) $override['user'] = sanitize_text_field($_POST['user']);
+            if (isset($_POST['user'])) $override['user'] = sanitize_text_field(wp_unslash($_POST['user']));
             if (isset($_POST['password'])) $override['password'] = (string)$_POST['password'];
-            if (isset($_POST['zip_password'])) $override['zip_password'] = (string)$_POST['zip_password'];
         }
 
         $res = NetworkExport::export_quiz($quiz_id, $override);

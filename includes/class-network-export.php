@@ -8,27 +8,35 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Password-Protected Network Folder & Storage Exporter
+ * Network Folder & Storage Exporter
  *
- * Supports exporting olympiad submissions and answer matrices to:
+ * Supports exporting olympiad submissions and answer protocols to:
  * 1. Local mounted network shares (NFS, CIFS/SMB, local NAS mounts, Windows shares);
  * 2. WebDAV cloud/network storage with HTTP Basic Authentication;
  * 3. FTP / FTPS network storage;
- * 4. Password-protected ZIP archives encrypted with AES-256 standard encryption.
+ * 4. Standard unencrypted ZIP archives and direct CSV protocols.
  */
 final class NetworkExport
 {
     /**
+     * Get default network storage path in the WordPress uploads directory
+     */
+    public static function get_default_network_path(): string
+    {
+        $upload = wp_upload_dir();
+        return wp_normalize_path(rtrim($upload['basedir'], '/\\') . '/olympiad_network_share');
+    }
+
+    /**
      * Export a quiz's answers to the configured network folder
      *
      * @param int $quiz_id
-     * @param array $override_config Optional overrides for path/credentials/encryption
+     * @param array $override_config Optional overrides for path/credentials
      * @return array{
      *     success: bool,
      *     message: string,
      *     filename?: string,
      *     destination?: string,
-     *     is_encrypted?: bool,
      *     files_count?: int,
      *     size?: int
      * }
@@ -45,15 +53,8 @@ final class NetworkExport
 
         $config = self::get_quiz_network_config($quiz, $override_config);
 
-        if (empty($config['path'])) {
-            return [
-                'success' => false,
-                'message' => __('Не указан путь к сетевой папке в настройках олимпиады.', 'wp-olympiad'),
-            ];
-        }
-
-        // Generate the password-protected ZIP archive package
-        $package = self::generate_export_package($quiz, (string)$config['zip_password']);
+        // Generate the unencrypted export package
+        $package = self::generate_export_package($quiz);
         if (!$package['success']) {
             return $package;
         }
@@ -62,10 +63,11 @@ final class NetworkExport
         $delivery = self::deliver_file(
             $package['temp_file'],
             $package['filename'],
-            $config
+            $config,
+            $package
         );
 
-        // Clean up temporary local file
+        // Clean up temporary local zip file
         if (file_exists($package['temp_file'])) {
             @unlink($package['temp_file']);
         }
@@ -75,19 +77,17 @@ final class NetworkExport
         }
 
         $result_data = [
-            'success'      => true,
-            'message'      => sprintf(
-                __('Ответы олимпиады «%1$s» успешно экспортированы в сетевую папку: %2$s%3$s', 'wp-olympiad'),
+            'success'     => true,
+            'message'     => sprintf(
+                __('Ответы олимпиады «%1$s» успешно экспортированы в сетевую папку: %2$s', 'wp-olympiad'),
                 $quiz->title,
-                $delivery['destination'],
-                !empty($config['zip_password']) ? ' (' . __('Архив защищён паролем AES-256', 'wp-olympiad') . ')' : ''
+                $delivery['destination']
             ),
-            'filename'     => $package['filename'],
-            'destination'  => $delivery['destination'],
-            'is_encrypted' => !empty($config['zip_password']),
-            'files_count'  => $package['files_count'],
-            'size'         => $package['size'],
-            'timestamp'    => current_time('mysql'),
+            'filename'    => $package['filename'],
+            'destination' => $delivery['destination'],
+            'files_count' => $package['files_count'],
+            'size'        => $package['size'],
+            'timestamp'   => current_time('mysql'),
         ];
 
         // Save last export metadata in transient
@@ -107,22 +107,21 @@ final class NetworkExport
      *     path: string,
      *     user: string,
      *     password: string,
-     *     zip_password: string,
-     *     auto_export: bool,
-     *     protect_directory: bool
+     *     auto_export: bool
      * }
      */
     public static function get_quiz_network_config(Quiz $quiz, array $override = []): array
     {
+        $raw_path = trim((string)($override['path'] ?? $quiz->get_setting('network_folder_path', '')));
+        $path = !empty($raw_path) ? $raw_path : self::get_default_network_path();
+
         return [
-            'enabled'           => isset($override['enabled']) ? (bool)$override['enabled'] : (bool)$quiz->get_setting('enable_network_export', 0),
-            'type'              => (string)($override['type'] ?? $quiz->get_setting('network_folder_type', 'auto')),
-            'path'              => trim((string)($override['path'] ?? $quiz->get_setting('network_folder_path', ''))),
-            'user'              => trim((string)($override['user'] ?? $quiz->get_setting('network_folder_user', ''))),
-            'password'          => (string)($override['password'] ?? $quiz->get_setting('network_folder_password', '')),
-            'zip_password'      => (string)($override['zip_password'] ?? $quiz->get_setting('export_zip_password', '')),
-            'auto_export'       => isset($override['auto_export']) ? (bool)$override['auto_export'] : (bool)$quiz->get_setting('network_auto_export', 0),
-            'protect_directory' => isset($override['protect_directory']) ? (bool)$override['protect_directory'] : (bool)$quiz->get_setting('protect_local_directory', 1),
+            'enabled'     => isset($override['enabled']) ? (bool)$override['enabled'] : (bool)$quiz->get_setting('enable_network_export', 0),
+            'type'        => (string)($override['type'] ?? $quiz->get_setting('network_folder_type', 'auto')),
+            'path'        => $path,
+            'user'        => trim((string)($override['user'] ?? $quiz->get_setting('network_folder_user', ''))),
+            'password'    => (string)($override['password'] ?? $quiz->get_setting('network_folder_password', '')),
+            'auto_export' => isset($override['auto_export']) ? (bool)$override['auto_export'] : (bool)$quiz->get_setting('network_auto_export', 0),
         ];
     }
 
@@ -136,10 +135,8 @@ final class NetworkExport
     {
         $path = trim($config['path'] ?? '');
         if (empty($path)) {
-            return [
-                'success' => false,
-                'message' => __('Укажите путь к локальной сетевой папке или URL хранилища.', 'wp-olympiad'),
-            ];
+            $path = self::get_default_network_path();
+            $config['path'] = $path;
         }
 
         $type = self::detect_type($config);
@@ -158,20 +155,21 @@ final class NetworkExport
     }
 
     /**
-     * Generate password-protected ZIP archive package
+     * Generate standard unencrypted export archive package
      *
      * @param Quiz $quiz
-     * @param string $zip_password
      * @return array{
      *     success: bool,
      *     message?: string,
      *     temp_file?: string,
      *     filename?: string,
+     *     protocol_csv?: string,
+     *     safe_slug?: string,
      *     files_count?: int,
      *     size?: int
      * }
      */
-    public static function generate_export_package(Quiz $quiz, string $zip_password = ''): array
+    public static function generate_export_package(Quiz $quiz): array
     {
         if (!class_exists('\ZipArchive')) {
             return [
@@ -193,14 +191,14 @@ final class NetworkExport
 
         // 3. Generate README / Audit manifest
         $total_attempts = Attempt::count(['quiz_id' => $quiz_id]);
-        $readme_text = self::generate_manifest_text($quiz, $total_attempts, !empty($zip_password));
+        $readme_text = self::generate_manifest_text($quiz, $total_attempts);
 
         // Create temporary directory for building the ZIP
         $upload_dir = wp_upload_dir();
         $temp_base = $upload_dir['basedir'] . '/wpo-network-export-temp';
         wp_mkdir_p($temp_base);
 
-        $safe_slug = sanitize_title($quiz->title) ?: 'olympiad-' . $quiz_id;
+        $safe_slug = self::build_safe_slug($quiz);
         $date_suffix = date('Y-m-d_H-i-s');
         $zip_filename = sprintf('wpo-%s-responses-%s.zip', $safe_slug, $date_suffix);
         $zip_path = $temp_base . '/' . $zip_filename;
@@ -214,11 +212,6 @@ final class NetworkExport
             ];
         }
 
-        $has_pwd = !empty($zip_password);
-        if ($has_pwd) {
-            $zip->setPassword($zip_password);
-        }
-
         $files = [
             '01_protocol_attempts_and_answers.csv' => $protocol_csv,
             '02_questions_and_grading_keys.csv'    => $keys_csv,
@@ -227,14 +220,6 @@ final class NetworkExport
 
         foreach ($files as $entry_name => $content) {
             $zip->addFromString($entry_name, $content);
-            if ($has_pwd) {
-                // Apply AES-256 standard encryption if supported, otherwise standard PKWARE
-                if (defined('\ZipArchive::EM_AES_256')) {
-                    $zip->setEncryptionName($entry_name, \ZipArchive::EM_AES_256);
-                } elseif (defined('\ZipArchive::EM_TRAD_PKWARE')) {
-                    $zip->setEncryptionName($entry_name, \ZipArchive::EM_TRAD_PKWARE);
-                }
-            }
         }
 
         $zip->close();
@@ -247,12 +232,28 @@ final class NetworkExport
         }
 
         return [
-            'success'     => true,
-            'temp_file'   => $zip_path,
-            'filename'    => $zip_filename,
-            'files_count' => count($files),
-            'size'        => (int)filesize($zip_path),
+            'success'      => true,
+            'temp_file'    => $zip_path,
+            'filename'     => $zip_filename,
+            'protocol_csv' => $protocol_csv,
+            'safe_slug'    => $safe_slug,
+            'files_count'  => count($files),
+            'size'         => (int)filesize($zip_path),
         ];
+    }
+
+    /**
+     * Build clean ASCII slug for filenames
+     */
+    public static function build_safe_slug(Quiz $quiz): string
+    {
+        $raw = sanitize_file_name(remove_accents($quiz->title));
+        // Remove percent-encodings and non-alphanumeric chars
+        $clean = preg_replace('/%[0-9a-f]{2}/i', '', $raw);
+        $clean = preg_replace('/[^a-zA-Z0-9_\-]/', '', $clean ?? '');
+        $clean = trim((string)$clean, '_-');
+
+        return !empty($clean) ? $clean : 'olympiad-' . $quiz->id;
     }
 
     /**
@@ -359,46 +360,45 @@ final class NetworkExport
                 return $tol > 0 ? "{$val} (±{$tol})" : (string)$val;
 
             case 'short_text':
-                $ans = $d['correct_answer'] ?? '';
-                $syns = $d['synonyms'] ?? [];
-                if (!empty($syns) && is_array($syns)) {
-                    return $ans . ' (синонимы: ' . implode(', ', $syns) . ')';
-                }
-                return (string)$ans;
+                $ans = $d['correct_answers'] ?? [];
+                return !empty($ans) ? implode(' | ', $ans) : '—';
 
             case 'matching':
                 $pairs = $d['pairs'] ?? [];
-                $out = [];
+                $lines = [];
                 foreach ($pairs as $p) {
-                    $pts = isset($p['points']) ? " [{$p['points']} б.]" : '';
-                    $out[] = ($p['left'] ?? '') . ' → ' . ($p['right'] ?? '') . $pts;
+                    $lines[] = ($p['left'] ?? '') . ' → ' . ($p['right'] ?? '');
                 }
-                return implode('; ', $out);
+                return !empty($lines) ? implode('; ', $lines) : '—';
 
             case 'ordering':
                 $items = $d['items'] ?? [];
-                $out = [];
-                foreach ($items as $idx => $it) {
-                    $out[] = ($idx + 1) . '. ' . ($it['text'] ?? '');
+                $lines = [];
+                $pos = 1;
+                foreach ($items as $it) {
+                    $lines[] = "{$pos}. " . ($it['text'] ?? '');
+                    $pos++;
                 }
-                return implode(' → ', $out);
+                return !empty($lines) ? implode(' → ', $lines) : '—';
 
             case 'fill_blank':
                 $blanks = $d['blanks'] ?? [];
-                $out = [];
-                foreach ($blanks as $b_id => $b_data) {
-                    $ans = $b_data['answer'] ?? '';
-                    $out[] = "{$b_id}: {$ans}";
+                $lines = [];
+                $pos = 1;
+                foreach ($blanks as $b) {
+                    $correct_vals = $b['correct_answers'] ?? [];
+                    $lines[] = "[{$pos}]: " . implode(' | ', $correct_vals);
+                    $pos++;
                 }
-                return implode(', ', $out);
+                return !empty($lines) ? implode('; ', $lines) : '—';
 
             case 'slider':
-                $val = $d['correct_value'] ?? 0;
-                $tol = (float)($d['tolerance'] ?? 0);
-                return $tol > 0 ? "{$val} (допуск ±{$tol})" : (string)$val;
+                $target = $d['target_value'] ?? 0;
+                $tol = (float)($d['tolerance'] ?? 0.0);
+                return $tol > 0 ? "{$target} (±{$tol})" : (string)$target;
 
             case 'essay':
-                return 'Ручная проверка жюри (критерии: ' . ($q->explanation ?: 'по регламенту') . ')';
+                return __('Ручная проверка жюри (развёрнутое решение)', 'wp-olympiad');
 
             default:
                 return '—';
@@ -406,12 +406,11 @@ final class NetworkExport
     }
 
     /**
-     * Generate text manifest inside the archive
+     * Generate text audit manifest for export package
      */
     private static function generate_manifest_text(
         Quiz $quiz,
-        int $total_attempts,
-        bool $is_encrypted
+        int $total_attempts
     ): string {
         $completed_attempts = Attempt::count(['quiz_id' => $quiz->id, 'status' => 'completed']);
         $passed_attempts = Attempt::count(['quiz_id' => $quiz->id, 'passed' => 1]);
@@ -421,11 +420,9 @@ final class NetworkExport
             '========================================================================',
             '  WP OLYMPIAD: ОФИЦИАЛЬНЫЙ АРХИВ ПРОТОКОЛОВ И ОТВЕТОВ ТЕСТИРОВАНИЯ      ',
             '========================================================================',
-            '',
-            'Олимпиада:            ' . $quiz->title,
-            'ID олимпиады:         ' . $quiz->id,
+            'Олимпиада:            ' . $quiz->title . ' (ID: ' . $quiz->id . ')',
             'Дата экспорта:        ' . current_time('mysql'),
-            'Защита архива:        ' . ($is_encrypted ? 'ВКЛЮЧЕНА (Пароль, шифрование AES-256)' : 'БЕЗ ПАРОЛЯ'),
+            'Формат выгрузки:      Стандартный ZIP и CSV протоколы (без пароля)',
             '',
             'СВОДКА УЧАСТИЯ:',
             '------------------------------------------------------------------------',
@@ -433,7 +430,7 @@ final class NetworkExport
             'Завершили тест:       ' . $completed_attempts,
             'Успешно сдали (зачёт):' . $passed_attempts . ' (' . $pass_rate . '%)',
             '',
-            'СОДЕРЖИМОЕ АРХИВА:',
+            'СОДЕРЖИМОЕ ВЫГРУЗКИ:',
             '------------------------------------------------------------------------',
             '1. 01_protocol_attempts_and_answers.csv — Полный протокол со всеми ответами',
             '   каждого участника по каждому заданию олимпиады (кодировка UTF-8 BOM).',
@@ -445,8 +442,7 @@ final class NetworkExport
             '------------------------------------------------------------------------',
             '- Файлы CSV сформированы с разделителем точка с запятой (;) и кодировкой',
             '  UTF-8 с меткой порядка байтов (BOM), что обеспечивает корректное',
-            '  отображение русского языка в Microsoft Excel 2013-2026 без кракозябр.',
-            '- Если архив защищён паролем, введите пароль, заданный организатором олимпиады.',
+            '  отображение русского языка в Microsoft Excel без кракозябр.',
             '',
             '========================================================================',
             'Сформировано модулем WP Olympiad Network Storage Export v1.0.0',
@@ -459,7 +455,7 @@ final class NetworkExport
     /**
      * Deliver file to the target destination based on detected/specified transport
      */
-    private static function deliver_file(string $temp_file, string $filename, array $config): array
+    private static function deliver_file(string $temp_file, string $filename, array $config, array $extra_package = []): array
     {
         $type = self::detect_type($config);
 
@@ -472,7 +468,7 @@ final class NetworkExport
 
             case 'filesystem':
             default:
-                return self::deliver_filesystem($temp_file, $filename, $config);
+                return self::deliver_filesystem($temp_file, $filename, $config, $extra_package);
         }
     }
 
@@ -502,9 +498,9 @@ final class NetworkExport
     /**
      * Deliver to local filesystem or mounted network share folder
      */
-    private static function deliver_filesystem(string $temp_file, string $filename, array $config): array
+    private static function deliver_filesystem(string $temp_file, string $filename, array $config, array $extra_package = []): array
     {
-        $dest_dir = self::resolve_local_path($config['path']);
+        $dest_dir = self::resolve_local_path($config['path'] ?? '');
 
         if (!file_exists($dest_dir)) {
             if (!wp_mkdir_p($dest_dir)) {
@@ -531,9 +527,11 @@ final class NetworkExport
             ];
         }
 
-        // Protect directory from web access if located inside the WordPress document root
-        if (!empty($config['protect_directory'])) {
-            self::protect_directory_from_web($dest_dir);
+        // Also place uncompressed CSV protocol directly in the network folder for immediate access
+        if (!empty($extra_package['protocol_csv'])) {
+            $slug = !empty($extra_package['safe_slug']) ? $extra_package['safe_slug'] : 'olympiad';
+            $csv_dest = rtrim($dest_dir, '/\\') . DIRECTORY_SEPARATOR . sprintf('protocol-%s-%s.csv', $slug, date('Y-m-d'));
+            @file_put_contents($csv_dest, $extra_package['protocol_csv']);
         }
 
         return [
@@ -568,22 +566,22 @@ final class NetworkExport
             'method'    => 'PUT',
             'headers'   => $headers,
             'body'      => $file_content,
-            'timeout'   => 120,
+            'timeout'   => 30,
             'sslverify' => false,
         ]);
 
         if (is_wp_error($res)) {
             return [
                 'success' => false,
-                'message' => sprintf(__('Ошибка отправки WebDAV: %s', 'wp-olympiad'), $res->get_error_message()),
+                'message' => sprintf(__('Ошибка отправки файла на WebDAV: %s', 'wp-olympiad'), $res->get_error_message()),
             ];
         }
 
         $code = (int)wp_remote_retrieve_response_code($res);
-        if (!in_array($code, [200, 201, 204], true)) {
+        if ($code < 200 || $code >= 300) {
             return [
                 'success' => false,
-                'message' => sprintf(__('WebDAV сервер вернул ошибку HTTP %1$d: %2$s', 'wp-olympiad'), $code, wp_remote_retrieve_response_message($res)),
+                'message' => sprintf(__('WebDAV сервер вернул ошибку HTTP %d при сохранении файла.', 'wp-olympiad'), $code),
             ];
         }
 
@@ -594,14 +592,14 @@ final class NetworkExport
     }
 
     /**
-     * Deliver to FTP network storage
+     * Deliver to FTP server
      */
     private static function deliver_ftp(string $temp_file, string $filename, array $config): array
     {
         if (!function_exists('ftp_connect')) {
             return [
                 'success' => false,
-                'message' => __('В PHP отсутствует расширение FTP (ext-ftp).', 'wp-olympiad'),
+                'message' => __('В PHP не установлено расширение FTP.', 'wp-olympiad'),
             ];
         }
 
@@ -610,32 +608,33 @@ final class NetworkExport
         $port = isset($parsed['port']) ? (int)$parsed['port'] : 21;
         $remote_dir = $parsed['path'] ?? '/';
 
-        $user = $config['user'] ?: ($parsed['user'] ?? 'anonymous');
-        $pass = $config['password'] ?: ($parsed['pass'] ?? '');
-
         $conn = @ftp_connect($host, $port, 15);
         if (!$conn) {
             return [
                 'success' => false,
-                'message' => sprintf(__('Не удалось подключиться к FTP серверу %s:%d', 'wp-olympiad'), $host, $port),
+                'message' => sprintf(__('Не удалось подключиться к FTP-серверу %s:%d', 'wp-olympiad'), $host, $port),
             ];
         }
+
+        $user = $config['user'] ?: ($parsed['user'] ?? 'anonymous');
+        $pass = $config['password'] ?: ($parsed['pass'] ?? '');
 
         if (!@ftp_login($conn, $user, $pass)) {
             @ftp_close($conn);
             return [
                 'success' => false,
-                'message' => sprintf(__('Неверный логин или пароль для FTP сервера %s', 'wp-olympiad'), $host),
+                'message' => __('Неверный логин или пароль для FTP.', 'wp-olympiad'),
             ];
         }
 
         @ftp_pasv($conn, true);
 
-        if ($remote_dir && $remote_dir !== '/') {
+        if (!empty($remote_dir) && $remote_dir !== '/') {
             @ftp_chdir($conn, $remote_dir);
         }
 
-        $upload = @ftp_put($conn, $filename, $temp_file, FTP_BINARY);
+        $remote_file = rtrim($remote_dir, '/') . '/' . $filename;
+        $upload = @ftp_put($conn, $remote_file, $temp_file, FTP_BINARY);
         @ftp_close($conn);
 
         if (!$upload) {
@@ -656,7 +655,7 @@ final class NetworkExport
      */
     private static function test_filesystem_connection(array $config): array
     {
-        $dest_dir = self::resolve_local_path($config['path']);
+        $dest_dir = self::resolve_local_path($config['path'] ?? '');
 
         if (!file_exists($dest_dir)) {
             if (!@wp_mkdir_p($dest_dir)) {
@@ -688,7 +687,7 @@ final class NetworkExport
 
         return [
             'success' => true,
-            'message' => sprintf(__('✓ Локальная сетевая папка «%s» найдена и полностью доступна для записи.', 'wp-olympiad'), $dest_dir),
+            'message' => sprintf(__('✓ Сетевая папка «%s» найдена и полностью доступна для записи.', 'wp-olympiad'), $dest_dir),
         ];
     }
 
@@ -794,10 +793,18 @@ final class NetworkExport
      */
     public static function resolve_local_path(string $path): string
     {
-        $path = trim($path);
+        $path = trim($path, " \t\n\r\0\x0B\"'");
+        if (empty($path)) {
+            return self::get_default_network_path();
+        }
 
-        // Windows UNC path (e.g. \\server\share\folder)
-        if (str_starts_with($path, '\\\\') || str_starts_with($path, '//')) {
+        // Clean up Windows UNC multiple slashes caused by escaping: \\\\ -> \\
+        if (preg_match('#^[\\\\]{2,}#', $path)) {
+            $path = '\\\\' . preg_replace('#[\\\\]+#', '\\', ltrim($path, '\\'));
+            return $path;
+        }
+        if (preg_match('#^/{2,}#', $path)) {
+            $path = '//' . preg_replace('#/+#', '/', ltrim($path, '/'));
             return $path;
         }
 
@@ -806,35 +813,27 @@ final class NetworkExport
             return $path;
         }
 
-        // Absolute Unix path
+        // Absolute Unix path (e.g. /mnt/share, /tmp/share)
         if (str_starts_with($path, '/')) {
             return $path;
         }
 
-        // Home directory shortcut
+        // Home directory shortcut (~/shares)
         if (str_starts_with($path, '~/')) {
             $home = getenv('HOME') ?: '/home/user';
-            return $home . substr($path, 1);
+            return rtrim($home, '/\\') . '/' . substr($path, 2);
         }
 
-        // Relative path — relative to ABSPATH
-        return rtrim(ABSPATH, '/\\') . DIRECTORY_SEPARATOR . ltrim($path, '/\\');
-    }
-
-    /**
-     * Protect local folder from direct web access
-     */
-    private static function protect_directory_from_web(string $dir): void
-    {
-        $htaccess = rtrim($dir, '/\\') . '/.htaccess';
-        if (!file_exists($htaccess)) {
-            $rule = "# Block direct web access to olympiad exports\n<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Deny from all\n</IfModule>\n";
-            @file_put_contents($htaccess, $rule);
+        // If path starts with wp-content or uploads
+        $upload = wp_upload_dir();
+        if (str_starts_with($path, 'wp-content/uploads/')) {
+            return rtrim(WP_CONTENT_DIR, '/\\') . '/uploads/' . substr($path, 19);
+        }
+        if (str_starts_with($path, 'wp-content/')) {
+            return rtrim(ABSPATH, '/\\') . '/' . $path;
         }
 
-        $index = rtrim($dir, '/\\') . '/index.php';
-        if (!file_exists($index)) {
-            @file_put_contents($index, "<?php\n// Silence is golden.\n");
-        }
+        // Standard relative path -> resolve to uploads directory
+        return wp_normalize_path(rtrim($upload['basedir'], '/\\') . '/' . ltrim($path, '/\\'));
     }
 }

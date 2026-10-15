@@ -70,6 +70,14 @@ final class Quiz
             'email_admin'         => 0,         // 1 = send notification to admin
             'admin_email_to'      => '',        // admin email recipient
 
+            // Network Folder Export Settings
+            'enable_network_export'   => 0,
+            'network_folder_type'     => 'auto',
+            'network_folder_path'     => '',
+            'network_folder_user'     => '',
+            'network_folder_password' => '',
+            'network_auto_export'     => 0,
+
             // Start / Introductory Page Customization
             'intro_badge'              => 'Олимпиада / Тестирование',
             'intro_title'              => '',   // empty = use quiz title
