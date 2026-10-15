@@ -80,9 +80,6 @@ if (!defined('ABSPATH')) {
             <a href="#tab-distribution" class="nav-tab" data-tab="tab-distribution">
                 📈 <?php esc_html_e('Распределение баллов и психометрика', 'wp-olympiad'); ?>
             </a>
-            <a href="#tab-ip" class="nav-tab" data-tab="tab-ip">
-                🛡️ <?php esc_html_e('Мониторинг IP-адресов и аудит сети', 'wp-olympiad'); ?>
-            </a>
         </h2>
 
         <!-- TAB 1: PIVOT MATRIX (Online Test Pad Core Feature) -->
@@ -441,115 +438,6 @@ if (!defined('ABSPATH')) {
                         </tr>
                     </tbody>
                 </table>
-            </div>
-        </div>
-
-        <!-- TAB 4: IP MONITORING & NETWORK AUDIT -->
-        <div id="tab-ip" class="wpo-tab-content" style="display:none;">
-            <div class="wpo-admin-card" style="margin-bottom:20px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                    <div>
-                        <h2 style="margin:0;"><?php esc_html_e('Мониторинг сетевой активности и IP-адресов', 'wp-olympiad'); ?></h2>
-                        <p class="description" style="margin:4px 0 0 0;">
-                            <?php esc_html_e('Анализ уникальности IP-адресов участников, выявление сдачи тестов с одного компьютера/помещения и фиксация смены IP в процессе решения.', 'wp-olympiad'); ?>
-                        </p>
-                    </div>
-                </div>
-
-                <!-- IP Metric Summary Cards -->
-                <div class="wpo-grid-3" style="gap:15px; margin-bottom:20px;">
-                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px;">
-                        <span class="description"><?php esc_html_e('Всего уникальных IP-адресов:', 'wp-olympiad'); ?></span>
-                        <h2 style="margin:6px 0 0 0; color:#2563eb;"><?php echo esc_html((string)$ip_stats['total_unique_ips']); ?></h2>
-                        <div style="font-size:12px; color:#64748b; margin-top:4px;"><?php esc_html_e('география подключений к тестированию', 'wp-olympiad'); ?></div>
-                    </div>
-
-                    <div style="background:<?php echo $ip_stats['shared_ips_count'] > 0 ? '#fffbeb' : '#f8fafc'; ?>; border:1px solid <?php echo $ip_stats['shared_ips_count'] > 0 ? '#fde68a' : '#e2e8f0'; ?>; border-radius:8px; padding:16px;">
-                        <span class="description"><?php esc_html_e('Совместных IP (несколько участников):', 'wp-olympiad'); ?></span>
-                        <h2 style="margin:6px 0 0 0; color:<?php echo $ip_stats['shared_ips_count'] > 0 ? '#d97706' : '#10b981'; ?>;">
-                            <?php echo esc_html((string)$ip_stats['shared_ips_count']); ?>
-                        </h2>
-                        <div style="font-size:12px; color:#64748b; margin-top:4px;">
-                            <?php echo $ip_stats['shared_ips_count'] > 0 ? esc_html__('⚠️ подозрение на совместное выполнение / списывание', 'wp-olympiad') : esc_html__('✓ совпадений IP не обнаружено', 'wp-olympiad'); ?>
-                        </div>
-                    </div>
-
-                    <div style="background:<?php echo $ip_stats['total_ip_mismatches'] > 0 ? '#fef2f2' : '#f8fafc'; ?>; border:1px solid <?php echo $ip_stats['total_ip_mismatches'] > 0 ? '#fca5a5' : '#e2e8f0'; ?>; border-radius:8px; padding:16px;">
-                        <span class="description"><?php esc_html_e('Случаев смены IP во время теста:', 'wp-olympiad'); ?></span>
-                        <h2 style="margin:6px 0 0 0; color:<?php echo $ip_stats['total_ip_mismatches'] > 0 ? '#dc2626' : '#10b981'; ?>;">
-                            <?php echo esc_html((string)$ip_stats['total_ip_mismatches']); ?>
-                        </h2>
-                        <div style="font-size:12px; color:#64748b; margin-top:4px;">
-                            <?php echo $ip_stats['total_ip_mismatches'] > 0 ? esc_html__('🚨 старт и сдача выполнены из разных сетей/VPN', 'wp-olympiad') : esc_html__('✓ все сессии завершены стабильно', 'wp-olympiad'); ?>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- IP Details Table -->
-                <?php if (empty($ip_stats['rows'])): ?>
-                    <p class="wpo-empty-notice"><?php esc_html_e('Данных по IP-адресам пока нет.', 'wp-olympiad'); ?></p>
-                <?php else: ?>
-                    <table class="wp-list-table widefat fixed striped">
-                        <thead>
-                            <tr>
-                                <th style="width: 140px;"><?php esc_html_e('IP-адрес', 'wp-olympiad'); ?></th>
-                                <th style="width: 90px; text-align:center;"><?php esc_html_e('Попыток', 'wp-olympiad'); ?></th>
-                                <th><?php esc_html_e('Участники (ФИО)', 'wp-olympiad'); ?></th>
-                                <th style="width: 120px; text-align:center;"><?php esc_html_e('Средний балл', 'wp-olympiad'); ?></th>
-                                <th style="width: 150px;"><?php esc_html_e('Статус безопасности', 'wp-olympiad'); ?></th>
-                                <th style="width: 130px;"><?php esc_html_e('Последняя сдача', 'wp-olympiad'); ?></th>
-                                <th style="width: 110px; text-align:right;"><?php esc_html_e('Действия', 'wp-olympiad'); ?></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($ip_stats['rows'] as $row): ?>
-                                <tr>
-                                    <td>
-                                        <strong><code><?php echo esc_html($row['ip_address']); ?></code></strong>
-                                    </td>
-                                    <td style="text-align:center;">
-                                        <span class="wpo-badge <?php echo $row['attempts_count'] > 1 ? 'wpo-badge-review' : ''; ?>">
-                                            <?php echo esc_html((string)$row['attempts_count']); ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <strong><?php echo esc_html($row['participant_names']); ?></strong>
-                                        <?php if ($row['distinct_participants'] > 1): ?>
-                                            <span style="color:#d97706; font-size:11px; margin-left:4px;">(<?php echo sprintf(esc_html__('%d разных чел.', 'wp-olympiad'), $row['distinct_participants']); ?>)</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td style="text-align:center;">
-                                        <strong><?php echo esc_html(sprintf('%.1f', $row['avg_score'])); ?></strong>
-                                        <span class="description">(макс: <?php echo esc_html((string)$row['max_score']); ?>)</span>
-                                    </td>
-                                    <td>
-                                        <?php if ($row['ip_mismatches'] > 0): ?>
-                                            <span class="wpo-badge wpo-badge-fail" title="<?php esc_attr_e('IP старта и сдачи не совпали', 'wp-olympiad'); ?>">
-                                                🚨 <?php esc_html_e('Смена IP', 'wp-olympiad'); ?> (<?php echo esc_html((string)$row['ip_mismatches']); ?>)
-                                            </span>
-                                        <?php elseif ($row['distinct_participants'] > 1): ?>
-                                            <span class="wpo-badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a;" title="<?php esc_attr_e('Несколько участников с одинакового IP', 'wp-olympiad'); ?>">
-                                                ⚠️ <?php esc_html_e('Общий IP', 'wp-olympiad'); ?>
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="wpo-badge wpo-badge-pass">
-                                                ✓ <?php esc_html_e('Норма', 'wp-olympiad'); ?>
-                                            </span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <?php echo esc_html(!empty($row['last_seen']) ? date_i18n('d.m.Y H:i', strtotime($row['last_seen'])) : '—'); ?>
-                                    </td>
-                                    <td style="text-align:right;">
-                                        <a href="<?php echo esc_url(admin_url('admin.php?page=wp-olympiad-attempts&quiz_id=' . $quiz_id . '&ip=' . urlencode($row['ip_address']))); ?>" class="button button-small" title="<?php esc_attr_e('Открыть все попытки с этого IP', 'wp-olympiad'); ?>">
-                                            🔍 <?php esc_html_e('Попытки', 'wp-olympiad'); ?>
-                                        </a>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                <?php endif; ?>
             </div>
         </div>
     <?php endif; ?>

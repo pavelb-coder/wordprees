@@ -54,13 +54,7 @@ if (!defined('ABSPATH')) {
                 <option value="disqualified" <?php selected($status, 'disqualified'); ?>><?php esc_html_e('Дисквалифицирован', 'wp-olympiad'); ?></option>
             </select>
 
-            <label for="filter_ip"><strong><?php esc_html_e('IP-адрес:', 'wp-olympiad'); ?></strong></label>
-            <input type="text" name="ip" id="filter_ip" value="<?php echo esc_attr($_GET['ip'] ?? ''); ?>" placeholder="например: 192.168.1.1" style="width:140px;">
-
             <button type="submit" class="button"><?php esc_html_e('Применить', 'wp-olympiad'); ?></button>
-            <?php if (!empty($_GET['ip'])): ?>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=wp-olympiad-attempts&quiz_id=' . $quiz_id . '&status=' . $status)); ?>" class="button button-link" style="color:#ef4444; text-decoration:none;">✕ <?php esc_html_e('Сбросить IP', 'wp-olympiad'); ?></a>
-            <?php endif; ?>
         </form>
     </div>
 
@@ -97,11 +91,10 @@ if (!defined('ABSPATH')) {
                             <th><?php esc_html_e('Участник', 'wp-olympiad'); ?></th>
                             <th><?php esc_html_e('Организация / Класс', 'wp-olympiad'); ?></th>
                             <th style="width: 140px;"><?php esc_html_e('Дата старта', 'wp-olympiad'); ?></th>
-                            <th style="width: 80px;"><?php esc_html_e('Время', 'wp-olympiad'); ?></th>
-                            <th style="width: 100px;"><?php esc_html_e('Баллы', 'wp-olympiad'); ?></th>
-                            <th style="width: 75px;"><?php esc_html_e('Вкладки', 'wp-olympiad'); ?></th>
-                            <th style="width: 130px;"><?php esc_html_e('IP-мониторинг', 'wp-olympiad'); ?></th>
-                            <th style="width: 110px;"><?php esc_html_e('Статус', 'wp-olympiad'); ?></th>
+                            <th style="width: 90px;"><?php esc_html_e('Время', 'wp-olympiad'); ?></th>
+                            <th style="width: 110px;"><?php esc_html_e('Баллы', 'wp-olympiad'); ?></th>
+                            <th style="width: 95px;"><?php esc_html_e('Вкладки', 'wp-olympiad'); ?></th>
+                            <th style="width: 130px;"><?php esc_html_e('Статус', 'wp-olympiad'); ?></th>
                             <th style="width: 140px; text-align:right;"><?php esc_html_e('Действия', 'wp-olympiad'); ?></th>
                         </tr>
                     </thead>
@@ -136,17 +129,6 @@ if (!defined('ABSPATH')) {
                                         </span>
                                     <?php else: ?>
                                         <span style="color:#10b981;">0</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <code><?php echo esc_html($att->ip_address ?: '—'); ?></code>
-                                    <?php if ($att->submitted_ip && $att->submitted_ip !== $att->ip_address): ?>
-                                        <div class="wpo-badge wpo-badge-fail" style="font-size:10px; margin-top:3px;" title="<?php echo esc_attr(sprintf(__('Смена IP во время теста: %1$s → %2$s', 'wp-olympiad'), $att->ip_address, $att->submitted_ip)); ?>">
-                                            ⚠️ → <?php echo esc_html($att->submitted_ip); ?>
-                                        </div>
-                                    <?php endif; ?>
-                                    <?php if ($att->ip_address): ?>
-                                        <a href="<?php echo esc_url(admin_url('admin.php?page=wp-olympiad-attempts&quiz_id=' . $quiz_id . '&ip=' . urlencode($att->ip_address))); ?>" style="text-decoration:none; margin-left:3px;" title="<?php esc_attr_e('Найти все попытки с этого IP', 'wp-olympiad'); ?>">🔍</a>
                                     <?php endif; ?>
                                 </td>
                                 <td>

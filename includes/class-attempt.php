@@ -29,7 +29,6 @@ final class Attempt
     public int $passed = 0;
     public string $status = 'in_progress';
     public string $ip_address = '';
-    public string $submitted_ip = '';
     public string $user_agent = '';
     public string $created_at = '';
 
@@ -53,7 +52,6 @@ final class Attempt
             $this->passed = (int)($data['passed'] ?? 0);
             $this->status = (string)($data['status'] ?? 'in_progress');
             $this->ip_address = (string)($data['ip_address'] ?? '');
-            $this->submitted_ip = (string)($data['submitted_ip'] ?? '');
             $this->user_agent = (string)($data['user_agent'] ?? '');
             $this->created_at = (string)($data['created_at'] ?? '');
         }
@@ -100,7 +98,7 @@ final class Attempt
         }
 
         $now = current_time('mysql');
-        $ip = AntiCheat::get_client_ip();
+        $ip = sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? '');
         $ua = substr(sanitize_text_field($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 250);
 
         $inserted = $wpdb->insert($table, [
@@ -120,10 +118,9 @@ final class Attempt
             'passed'            => 0,
             'status'            => 'in_progress',
             'ip_address'        => $ip,
-            'submitted_ip'      => '',
             'user_agent'        => $ua,
             'created_at'        => $now,
-        ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s', '%s']);
+        ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s']);
 
         if (!$inserted) {
             return null;
@@ -190,7 +187,7 @@ final class Attempt
     /**
      * Mark attempt as submitted / completed
      */
-    public function complete(float|int $score, float|int $max_score, bool $passed, string $status = 'completed', ?string $submitted_ip = null): bool
+    public function complete(float|int $score, float|int $max_score, bool $passed, string $status = 'completed'): bool
     {
         global $wpdb;
         $table = DB::attempts_table();
@@ -205,7 +202,6 @@ final class Attempt
         $this->percentage = ($this->max_score > 0) ? round(($this->score / $this->max_score) * 100, 2) : 0.0;
         $this->passed = $passed ? 1 : 0;
         $this->status = $status;
-        $this->submitted_ip = $submitted_ip ?? AntiCheat::get_client_ip();
 
         $res = $wpdb->update($table, [
             'submitted_at'     => $this->submitted_at,
@@ -215,8 +211,7 @@ final class Attempt
             'percentage'       => $this->percentage,
             'passed'           => $this->passed,
             'status'           => $this->status,
-            'submitted_ip'     => $this->submitted_ip,
-        ], ['id' => $this->id], ['%s', '%d', '%d', '%d', '%f', '%d', '%s', '%s'], ['%d']);
+        ], ['id' => $this->id], ['%s', '%d', '%d', '%d', '%f', '%d', '%s'], ['%d']);
 
         return $res !== false;
     }
@@ -282,12 +277,6 @@ final class Attempt
             $where[] = 'user_id = %d';
             $params[] = (int)$args['user_id'];
         }
-        if (!empty($args['ip'])) {
-            $where[] = '(ip_address LIKE %s OR submitted_ip LIKE %s)';
-            $like = '%' . $wpdb->esc_like(sanitize_text_field((string)$args['ip'])) . '%';
-            $params[] = $like;
-            $params[] = $like;
-        }
 
         $where_str = implode(' AND ', $where);
         $limit = isset($args['limit']) ? (int)$args['limit'] : 50;
@@ -329,46 +318,12 @@ final class Attempt
             $where[] = 'status = %s';
             $params[] = sanitize_key($args['status']);
         }
-        if (!empty($args['ip'])) {
-            $where[] = '(ip_address LIKE %s OR submitted_ip LIKE %s)';
-            $like = '%' . $wpdb->esc_like(sanitize_text_field((string)$args['ip'])) . '%';
-            $params[] = $like;
-            $params[] = $like;
-        }
 
         $where_str = implode(' AND ', $where);
         if (!empty($params)) {
             return (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE {$where_str}", ...$params));
         }
         return (int)$wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE {$where_str}");
-    }
-
-    /**
-     * Get other attempts sharing this attempt's IP address
-     *
-     * @return self[]
-     */
-    public function get_related_ip_attempts(int $limit = 10): array
-    {
-        if (empty($this->ip_address)) {
-            return [];
-        }
-
-        global $wpdb;
-        $table = DB::attempts_table();
-        $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM {$table} WHERE (ip_address = %s OR submitted_ip = %s) AND id != %d ORDER BY id DESC LIMIT %d",
-            $this->ip_address,
-            $this->ip_address,
-            $this->id,
-            $limit
-        ), ARRAY_A);
-
-        $results = [];
-        foreach ($rows as $r) {
-            $results[] = new self($r);
-        }
-        return $results;
     }
 
     /**

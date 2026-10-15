@@ -98,15 +98,13 @@ CREATE TABLE {$attempts_table} (
     passed tinyint(1) NOT NULL DEFAULT 0,
     status varchar(20) NOT NULL DEFAULT 'in_progress',
     ip_address varchar(45) NOT NULL DEFAULT '',
-    submitted_ip varchar(45) NOT NULL DEFAULT '',
     user_agent varchar(255) NOT NULL DEFAULT '',
     created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
     PRIMARY KEY  (id),
     UNIQUE KEY token (token),
     KEY quiz_user (quiz_id,user_id),
     KEY quiz_status_score (quiz_id,status,score,duration_seconds),
-    KEY started_at (started_at),
-    KEY ip_address (ip_address)
+    KEY started_at (started_at)
 ) {$charset_collate};
 
 CREATE TABLE {$responses_table} (

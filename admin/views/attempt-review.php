@@ -65,62 +65,6 @@ foreach ($questions as $q) {
         </div>
     </div>
 
-    <!-- Network & IP Monitoring Card -->
-    <?php
-    $related_ip_attempts = $attempt->get_related_ip_attempts(5);
-    $ip_mismatch = (!empty($attempt->submitted_ip) && $attempt->submitted_ip !== $attempt->ip_address);
-    ?>
-    <div class="wpo-admin-card" style="margin-bottom:20px; background:#f8fafc; border-left: 4px solid <?php echo $ip_mismatch ? '#ef4444' : '#3b82f6'; ?>;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <h3 style="margin:0; display:flex; align-items:center; gap:8px;">
-                🌐 <?php esc_html_e('Мониторинг IP-адресов и сетевая безопасность', 'wp-olympiad'); ?>
-            </h3>
-            <?php if ($ip_mismatch): ?>
-                <span class="wpo-badge wpo-badge-fail">🚨 <?php esc_html_e('Обнаружена смена IP-адреса!', 'wp-olympiad'); ?></span>
-            <?php else: ?>
-                <span class="wpo-badge wpo-badge-pass">✅ <?php esc_html_e('IP-адрес стабилен', 'wp-olympiad'); ?></span>
-            <?php endif; ?>
-        </div>
-        <div class="wpo-grid-4" style="gap:15px;">
-            <div>
-                <span class="description"><?php esc_html_e('IP при старте:', 'wp-olympiad'); ?></span>
-                <div style="font-size:14px; font-weight:600; margin-top:4px;"><code><?php echo esc_html($attempt->ip_address ?: '—'); ?></code></div>
-            </div>
-            <div>
-                <span class="description"><?php esc_html_e('IP при сдаче:', 'wp-olympiad'); ?></span>
-                <div style="font-size:14px; font-weight:600; margin-top:4px;">
-                    <code><?php echo esc_html($attempt->submitted_ip ?: ($attempt->ip_address ?: '—')); ?></code>
-                    <?php if ($ip_mismatch): ?>
-                        <span style="color:#ef4444; font-size:11px; font-weight:normal;">(изменён!)</span>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <div>
-                <span class="description"><?php esc_html_e('Браузер / Устройство:', 'wp-olympiad'); ?></span>
-                <div style="font-size:12px; color:#475569; word-break:break-all; margin-top:4px;"><?php echo esc_html($attempt->user_agent ?: '—'); ?></div>
-            </div>
-            <div>
-                <span class="description"><?php esc_html_e('Совместные сдачи с этого IP:', 'wp-olympiad'); ?></span>
-                <?php if (empty($related_ip_attempts)): ?>
-                    <div style="color:#10b981; font-weight:500; margin-top:4px;">✓ <?php esc_html_e('Других сдач с этого IP нет', 'wp-olympiad'); ?></div>
-                <?php else: ?>
-                    <div style="color:#d97706; font-weight:600; margin-top:4px;">
-                        ⚠️ <?php echo sprintf(esc_html__('Ещё %d участн. с этого IP:', 'wp-olympiad'), count($related_ip_attempts)); ?>
-                    </div>
-                    <div style="font-size:12px; margin-top:4px;">
-                        <?php foreach ($related_ip_attempts as $ra): ?>
-                            <div>
-                                <a href="<?php echo esc_url(admin_url('admin.php?page=wp-olympiad-review&attempt_id=' . $ra->id)); ?>">
-                                    #<?php echo esc_html((string)$ra->id); ?> <?php echo esc_html($ra->participant_name); ?> (<?php echo esc_html((string)$ra->score); ?> б.)
-                                </a>
-                            </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </div>
-    </div>
-
     <!-- Responses Inspection & Grading Form -->
     <form id="wpo-review-form" onsubmit="return false;">
         <input type="hidden" name="attempt_id" value="<?php echo esc_attr((string)$attempt->id); ?>">

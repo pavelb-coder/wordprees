@@ -167,9 +167,6 @@ final class Admin
                     'anti_cheat_copy'   => !empty($_POST['anti_cheat_copy']) ? 1 : 0,
                     'anti_cheat_blur'   => !empty($_POST['anti_cheat_blur']) ? 1 : 0,
                     'max_tab_switches'  => max(0, (int)($_POST['max_tab_switches'] ?? 5)),
-                    'max_attempts_per_ip' => max(0, (int)($_POST['max_attempts_per_ip'] ?? 0)),
-                    'disallow_ip_change'  => !empty($_POST['disallow_ip_change']) ? 1 : 0,
-                    'monitor_duplicate_ip'=> !empty($_POST['monitor_duplicate_ip']) ? 1 : 0,
                     'enable_leaderboard'=> !empty($_POST['enable_leaderboard']) ? 1 : 0,
                     'allow_external_embed' => !empty($_POST['allow_external_embed']) ? 1 : 0,
                     'webhook_url'       => esc_url_raw($_POST['webhook_url'] ?? ''),
@@ -327,7 +324,6 @@ final class Admin
     {
         $quiz_id = (int)($_GET['quiz_id'] ?? 0);
         $status = sanitize_key($_GET['status'] ?? '');
-        $ip_filter = sanitize_text_field($_GET['ip'] ?? '');
         $quizzes = Quiz::all();
 
         $args = [
@@ -338,9 +334,6 @@ final class Admin
         }
         if (!empty($status)) {
             $args['status'] = $status;
-        }
-        if (!empty($ip_filter)) {
-            $args['ip'] = $ip_filter;
         }
 
         $attempts = Attempt::get_all($args);
@@ -387,12 +380,6 @@ final class Admin
 
         $stats = $quiz_id > 0 ? \WPOlympiad\Stats::get_quiz_stats($quiz_id) : [];
         $matrix_data = $quiz_id > 0 ? \WPOlympiad\Stats::get_pivot_matrix($quiz_id) : ['questions' => [], 'attempts' => []];
-        $ip_stats = $quiz_id > 0 ? \WPOlympiad\Stats::get_ip_monitoring_data($quiz_id) : [
-            'total_unique_ips'    => 0,
-            'shared_ips_count'    => 0,
-            'total_ip_mismatches' => 0,
-            'rows'                => [],
-        ];
         require_once WP_OLYMPIAD_PATH . 'admin/views/quiz-stats.php';
     }
 }

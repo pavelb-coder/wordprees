@@ -64,9 +64,6 @@ final class Export
             'Дата сдачи',
             'Затрачено времени (мин:сек)',
             'Нарушений (вкладки)',
-            'IP старта',
-            'IP сдачи',
-            'Сверка IP',
             'Итого баллов',
             'Макс. балл',
             'Процент (%)',
@@ -117,8 +114,6 @@ final class Export
             $status = $status_labels[$att->status] ?? $att->status;
             $result = $att->passed ? 'Зачёт / Пройдено' : 'Не зачёт';
 
-            $ip_status = ($att->submitted_ip && $att->submitted_ip !== $att->ip_address) ? 'Смена IP' : 'Совпадает';
-
             $row = [
                 $att->id,
                 $att->participant_name,
@@ -128,9 +123,6 @@ final class Export
                 $att->submitted_at ?: '—',
                 $duration_fmt,
                 $att->tab_switches,
-                $att->ip_address ?: '—',
-                $att->submitted_ip ?: ($att->ip_address ?: '—'),
-                $ip_status,
                 number_format($att->score, 0, '.', ''),
                 number_format($att->max_score, 0, '.', ''),
                 number_format($att->percentage, 2, '.', ''),
@@ -227,10 +219,6 @@ final class Export
         fputcsv($output, ['Переключений вкладок', $attempt->tab_switches], ';', '"', "\\");
         fputcsv($output, ['Итоговый балл', sprintf('%d из %d (%d%%)', round($attempt->score), round($attempt->max_score), round($attempt->percentage))], ';', '"', "\\");
         fputcsv($output, ['Статус зачёта', $attempt->passed ? 'Зачёт' : 'Не зачёт'], ';', '"', "\\");
-        fputcsv($output, ['IP-адрес старта', $attempt->ip_address ?: '—'], ';', '"', "\\");
-        fputcsv($output, ['IP-адрес сдачи', $attempt->submitted_ip ?: ($attempt->ip_address ?: '—')], ';', '"', "\\");
-        $ip_check_label = ($attempt->submitted_ip && $attempt->submitted_ip !== $attempt->ip_address) ? 'ВНИМАНИЕ: Смена IP-адреса' : 'Совпадает (стабильно)';
-        fputcsv($output, ['Сверка IP-адресов', $ip_check_label], ';', '"', "\\");
         fputcsv($output, [], ';', '"', "\\");
 
         // Questions Table Header

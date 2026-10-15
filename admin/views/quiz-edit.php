@@ -26,9 +26,6 @@ $completion_message = $is_new ? 'Спасибо за участие! Ваши о
 $anti_cheat_copy = $is_new ? 1 : (int)$quiz->get_setting('anti_cheat_copy', 1);
 $anti_cheat_blur = $is_new ? 1 : (int)$quiz->get_setting('anti_cheat_blur', 1);
 $max_tab_switches = $is_new ? 5 : (int)$quiz->get_setting('max_tab_switches', 5);
-$max_attempts_per_ip = $is_new ? 0 : (int)$quiz->get_setting('max_attempts_per_ip', 0);
-$disallow_ip_change = $is_new ? 0 : (int)$quiz->get_setting('disallow_ip_change', 0);
-$monitor_duplicate_ip = $is_new ? 1 : (int)$quiz->get_setting('monitor_duplicate_ip', 1);
 $enable_leaderboard = $is_new ? 1 : (int)$quiz->get_setting('enable_leaderboard', 1);
 $allow_external_embed = $is_new ? 1 : (int)$quiz->get_setting('allow_external_embed', 1);
 $webhook_url = $is_new ? '' : (string)$quiz->get_setting('webhook_url', '');
@@ -344,26 +341,6 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                 <label>
                                     <input type="checkbox" name="anti_cheat_copy" value="1" <?php checked($anti_cheat_copy, 1); ?>>
                                     <?php esc_html_e('Запретить выделение текста, копирование и контекстное меню на странице теста', 'wp-olympiad'); ?>
-                                </label>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><label for="max_attempts_per_ip"><?php esc_html_e('Лимит попыток с одного IP:', 'wp-olympiad'); ?></label></th>
-                            <td>
-                                <input type="number" name="max_attempts_per_ip" id="max_attempts_per_ip" value="<?php echo esc_attr((string)$max_attempts_per_ip); ?>" min="0" max="100" step="1" class="small-text">
-                                <p class="description"><?php esc_html_e('Ограничение количества сдач теста с одного IP-адреса. 0 — без ограничений, 1 — строгий режим (один участник с одного IP/компьютера).', 'wp-olympiad'); ?></p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><?php esc_html_e('Сетевая безопасность IP:', 'wp-olympiad'); ?></th>
-                            <td>
-                                <label style="display:block; margin-bottom:6px;">
-                                    <input type="checkbox" name="disallow_ip_change" value="1" <?php checked($disallow_ip_change, 1); ?>>
-                                    <?php esc_html_e('Запретить смену IP-адреса во время прохождения теста (авто-дисквалификация при смене сети/VPN)', 'wp-olympiad'); ?>
-                                </label>
-                                <label style="display:block;">
-                                    <input type="checkbox" name="monitor_duplicate_ip" value="1" <?php checked($monitor_duplicate_ip, 1); ?>>
-                                    <?php esc_html_e('Включить аудит и протоколирование совместных IP (выявление подозрительных пулов и списывания)', 'wp-olympiad'); ?>
                                 </label>
                             </td>
                         </tr>

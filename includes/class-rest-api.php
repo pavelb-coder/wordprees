@@ -124,13 +124,6 @@ final class RestApi
             return new WP_Error('max_attempts_exceeded', $attempt_check['reason'], ['status' => 403]);
         }
 
-        // IP attempt limit check
-        $client_ip = AntiCheat::get_client_ip();
-        $ip_check = AntiCheat::can_ip_attempt($quiz, $client_ip);
-        if (!$ip_check['allowed']) {
-            return new WP_Error('ip_limit_exceeded', $ip_check['error'], ['status' => 403]);
-        }
-
         // Compose full organization/contact string
         $full_org = $participant_org;
         if (!empty($participant_city)) {
@@ -220,14 +213,6 @@ final class RestApi
             return new WP_Error('time_expired', $time_val['error'], ['status' => 400]);
         }
 
-        // Validate IP consistency (Anti-Cheat network audit)
-        $current_ip = AntiCheat::get_client_ip();
-        $ip_consistency = AntiCheat::validate_ip_consistency($attempt, $quiz, $current_ip);
-        if (!$ip_consistency['valid']) {
-            $attempt->complete(0, $quiz->get_total_points(), false, 'disqualified', $current_ip);
-            return new WP_Error('ip_mismatch', $ip_consistency['error'], ['status' => 403]);
-        }
-
         $user_answers = $request->get_param('answers');
         if (!is_array($user_answers)) {
             $user_answers = [];
@@ -243,13 +228,12 @@ final class RestApi
             // Save responses (optimized batch insert)
             Grader::save_responses($attempt->id, $grading['responses']);
 
-            // Update attempt status with submitted IP
+            // Update attempt status
             $attempt->complete(
                 $grading['total_score'],
                 $grading['max_score'],
                 $grading['passed'],
-                $grading['status'],
-                $current_ip
+                $grading['status']
             );
 
             $wpdb->query('COMMIT');
