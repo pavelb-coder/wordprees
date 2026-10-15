@@ -420,5 +420,118 @@
                 $btn.prop('disabled', false);
             });
         });
+
+        // 13. Password Toggle Button in Settings
+        $(document).on('click', '.wpo-toggle-pwd', function (e) {
+            e.preventDefault();
+            var targetId = $(this).attr('data-target');
+            var $input = $('#' + targetId);
+            if ($input.length) {
+                var currentType = $input.attr('type');
+                var newType = (currentType === 'password') ? 'text' : 'password';
+                $input.attr('type', newType);
+                $(this).text(newType === 'text' ? '🙈' : '👁️');
+            }
+        });
+
+        // 14. Test Network Folder Connection (AJAX)
+        $('#wpo-btn-test-network').on('click', function (e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var $spinner = $('#wpo-network-test-spinner');
+            var $msg = $('#wpo-network-test-message');
+
+            var path = $('#network_folder_path').val().trim();
+            if (!path) {
+                $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
+                    .text('Пожалуйста, укажите путь к сетевой папке или URL хранилища.')
+                    .show();
+                return;
+            }
+
+            $btn.prop('disabled', true);
+            $spinner.addClass('is-active');
+            $msg.hide();
+
+            $.post(config.ajaxUrl, {
+                action: 'wp_olympiad_test_network_connection',
+                nonce: config.nonce,
+                type: $('#network_folder_type').val(),
+                path: path,
+                user: $('#network_folder_user').val(),
+                password: $('#network_folder_password').val(),
+                protect_directory: $('#protect_local_directory').is(':checked') ? 1 : 0
+            }, function (res) {
+                $btn.prop('disabled', false);
+                $spinner.removeClass('is-active');
+                if (res.success) {
+                    $msg.css({ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' })
+                        .html(res.data.message)
+                        .fadeIn();
+                } else {
+                    $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
+                        .html('✕ ' + (res.data ? res.data.message : 'Ошибка подключения'))
+                        .fadeIn();
+                }
+            }).fail(function () {
+                $btn.prop('disabled', false);
+                $spinner.removeClass('is-active');
+                $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
+                    .html('✕ Сетевая ошибка при попытке проверки папки.')
+                    .fadeIn();
+            });
+        });
+
+        // 15. Run Network Export Now from Quiz Edit Page (AJAX)
+        $('#wpo-btn-run-network-export').on('click', function (e) {
+            e.preventDefault();
+            var $btn = $(this);
+            var quizId = parseInt($btn.attr('data-quiz-id'), 10);
+            var $spinner = $('#wpo-network-test-spinner');
+            var $msg = $('#wpo-network-test-message');
+
+            var path = $('#network_folder_path').val().trim();
+            if (!path) {
+                $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
+                    .text('Укажите путь к сетевой папке перед запуском экспорта.')
+                    .show();
+                return;
+            }
+
+            $btn.prop('disabled', true);
+            $spinner.addClass('is-active');
+            $msg.hide();
+
+            $.post(config.ajaxUrl, {
+                action: 'wp_olympiad_export_to_network',
+                nonce: config.nonce,
+                quiz_id: quizId,
+                override: 1,
+                type: $('#network_folder_type').val(),
+                path: path,
+                user: $('#network_folder_user').val(),
+                password: $('#network_folder_password').val(),
+                zip_password: $('#export_zip_password').val()
+            }, function (res) {
+                $btn.prop('disabled', false);
+                $spinner.removeClass('is-active');
+                if (res.success) {
+                    var encBadge = res.data.is_encrypted ? ' 🔒 <span style="font-weight:700;">(Защищён паролем AES-256)</span>' : '';
+                    $msg.css({ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0' })
+                        .html('✓ <strong>' + res.data.message + '</strong><br>Файл: <code>' + res.data.filename + '</code>' + encBadge + '<br>Размер: ' + (Math.round(res.data.size / 102.4) / 10) + ' КБ')
+                        .fadeIn();
+                } else {
+                    $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
+                        .html('✕ ' + (res.data ? res.data.message : 'Ошибка экспорта'))
+                        .fadeIn();
+                }
+            }).fail(function () {
+                $btn.prop('disabled', false);
+                $spinner.removeClass('is-active');
+                $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
+                    .html('✕ Сетевая ошибка при выполнении экспорта.')
+                    .fadeIn();
+            });
+        });
     });
 })(jQuery);

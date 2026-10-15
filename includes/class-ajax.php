@@ -33,6 +33,8 @@ final class Ajax
         add_action('wp_ajax_wp_olympiad_save_manual_grade', [self::class, 'ajax_save_manual_grade']);
         add_action('wp_ajax_wp_olympiad_delete_attempt', [self::class, 'ajax_delete_attempt']);
         add_action('wp_ajax_wp_olympiad_delete_response', [self::class, 'ajax_delete_response']);
+        add_action('wp_ajax_wp_olympiad_test_network_connection', [self::class, 'ajax_test_network_connection']);
+        add_action('wp_ajax_wp_olympiad_export_to_network', [self::class, 'ajax_export_to_network']);
     }
 
     public static function ajax_start(): void
@@ -269,6 +271,58 @@ final class Ajax
             wp_send_json_success(['message' => __('Ответ на задание успешно удалён.', 'wp-olympiad')]);
         } else {
             wp_send_json_error(['message' => __('Не удалось удалить ответ.', 'wp-olympiad')]);
+        }
+    }
+
+    public static function ajax_test_network_connection(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Доступ запрещён.', 'wp-olympiad')], 403);
+        }
+        check_ajax_referer('wp_olympiad_admin_nonce', 'nonce');
+
+        $config = [
+            'type'              => sanitize_key($_POST['type'] ?? 'auto'),
+            'path'              => sanitize_text_field($_POST['path'] ?? ''),
+            'user'              => sanitize_text_field($_POST['user'] ?? ''),
+            'password'          => (string)($_POST['password'] ?? ''),
+            'protect_directory' => !empty($_POST['protect_directory']),
+        ];
+
+        $res = NetworkExport::test_connection($config);
+        if ($res['success']) {
+            wp_send_json_success(['message' => $res['message']]);
+        } else {
+            wp_send_json_error(['message' => $res['message']]);
+        }
+    }
+
+    public static function ajax_export_to_network(): void
+    {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Доступ запрещён.', 'wp-olympiad')], 403);
+        }
+        check_ajax_referer('wp_olympiad_admin_nonce', 'nonce');
+
+        $quiz_id = (int)($_POST['quiz_id'] ?? 0);
+        if ($quiz_id <= 0) {
+            wp_send_json_error(['message' => __('Не указан ID олимпиады.', 'wp-olympiad')]);
+        }
+
+        $override = [];
+        if (!empty($_POST['override'])) {
+            if (isset($_POST['path'])) $override['path'] = sanitize_text_field($_POST['path']);
+            if (isset($_POST['type'])) $override['type'] = sanitize_key($_POST['type']);
+            if (isset($_POST['user'])) $override['user'] = sanitize_text_field($_POST['user']);
+            if (isset($_POST['password'])) $override['password'] = (string)$_POST['password'];
+            if (isset($_POST['zip_password'])) $override['zip_password'] = (string)$_POST['zip_password'];
+        }
+
+        $res = NetworkExport::export_quiz($quiz_id, $override);
+        if ($res['success']) {
+            wp_send_json_success($res);
+        } else {
+            wp_send_json_error($res);
         }
     }
 }

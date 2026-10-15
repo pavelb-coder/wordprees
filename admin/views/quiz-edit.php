@@ -36,6 +36,17 @@ $admin_email_to = $is_new ? '' : (string)$quiz->get_setting('admin_email_to', ''
 $direct_url = $is_new ? '' : $quiz->get_direct_url();
 $embed_code = $is_new ? '' : $quiz->get_embed_code();
 
+// Network Export Settings
+$enable_network_export = $is_new ? 0 : (int)$quiz->get_setting('enable_network_export', 0);
+$network_folder_type = $is_new ? 'auto' : (string)$quiz->get_setting('network_folder_type', 'auto');
+$network_folder_path = $is_new ? '' : (string)$quiz->get_setting('network_folder_path', '');
+$network_folder_user = $is_new ? '' : (string)$quiz->get_setting('network_folder_user', '');
+$network_folder_password = $is_new ? '' : (string)$quiz->get_setting('network_folder_password', '');
+$export_zip_password = $is_new ? '' : (string)$quiz->get_setting('export_zip_password', '');
+$network_auto_export = $is_new ? 0 : (int)$quiz->get_setting('network_auto_export', 0);
+$protect_local_directory = $is_new ? 1 : (int)$quiz->get_setting('protect_local_directory', 1);
+$last_network_export = !$is_new ? get_transient('wpo_last_network_export_' . $quiz->id) : null;
+
 // Start / Intro Page settings
 $intro_badge = $is_new ? 'Олимпиада / Тестирование' : (string)$quiz->get_setting('intro_badge', 'Олимпиада / Тестирование');
 $intro_title = $is_new ? '' : (string)$quiz->get_setting('intro_title', '');
@@ -390,6 +401,124 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <td>
                                 <input type="url" name="webhook_url" id="webhook_url" value="<?php echo esc_attr($webhook_url); ?>" class="large-text" placeholder="https://api.myschool.ru/olympiad-webhook или https://hook.eu2.make.com/...">
                                 <p class="description"><?php esc_html_e('При каждой завершённой попытке плагин автоматически отправит POST JSON с баллами, ФИО, школой и временем на этот адрес (для интеграции с Telegram-ботом, CRM, Google Таблицами или внешней LMS).', 'wp-olympiad'); ?></p>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Экспорт ответов в локальную сетевую папку (защищённую паролем) -->
+                <div class="wpo-card" id="wpo-network-export-card">
+                    <h2>📁 <?php esc_html_e('Экспорт ответов в локальную сетевую папку (защищённую паролем)', 'wp-olympiad'); ?></h2>
+                    <p class="description">
+                        <?php esc_html_e('Автоматическая или ручная выгрузка официальных протоколов, сводной матрицы ответов и ключей заданий в сетевую директорию или удалённое хранилище с защитой паролем (Zip AES-256).', 'wp-olympiad'); ?>
+                    </p>
+
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Включить экспорт в сеть:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="enable_network_export" id="enable_network_export" value="1" <?php checked($enable_network_export, 1); ?>>
+                                    <strong><?php esc_html_e('Активировать возможность выгрузки ответов в сетевую папку', 'wp-olympiad'); ?></strong>
+                                </label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="network_folder_type"><?php esc_html_e('Тип сетевого подключения:', 'wp-olympiad'); ?></label></th>
+                            <td>
+                                <select name="network_folder_type" id="network_folder_type" class="regular-text">
+                                    <option value="auto" <?php selected($network_folder_type, 'auto'); ?>><?php esc_html_e('Автоопределение по пути/протоколу', 'wp-olympiad'); ?></option>
+                                    <option value="local" <?php selected($network_folder_type, 'local'); ?>><?php esc_html_e('Локальный путь / Примонтированная папка (NFS / CIFS / D:\Share)', 'wp-olympiad'); ?></option>
+                                    <option value="webdav" <?php selected($network_folder_type, 'webdav'); ?>><?php esc_html_e('WebDAV / Облачное сетевое хранилище (Nextcloud, Synology, QNAP)', 'wp-olympiad'); ?></option>
+                                    <option value="ftp" <?php selected($network_folder_type, 'ftp'); ?>><?php esc_html_e('FTP / FTPS сервер', 'wp-olympiad'); ?></option>
+                                    <option value="smb" <?php selected($network_folder_type, 'smb'); ?>><?php esc_html_e('SMB / Windows Share (через smbclient или прямой UNC путь)', 'wp-olympiad'); ?></option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="network_folder_path"><?php esc_html_e('Путь к папке или URL хранилища:', 'wp-olympiad'); ?></label></th>
+                            <td>
+                                <input type="text" name="network_folder_path" id="network_folder_path" value="<?php echo esc_attr($network_folder_path); ?>" class="large-text code" placeholder="/mnt/network_share/olympiad_results или https://nas.local/webdav/protocols/">
+                                <p class="description">
+                                    <?php esc_html_e('Примеры путей: <code>/mnt/shares/olympiad</code>, <code>\\\\192.168.1.100\\Olympiad\\Results</code>, <code>https://nas.myschool.local/remote.php/webdav/results/</code>, <code>ftp://192.168.1.50/shares/olympiad/</code>', 'wp-olympiad'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="network_folder_user"><?php esc_html_e('Пользователь / Логин сети:', 'wp-olympiad'); ?></label></th>
+                            <td>
+                                <input type="text" name="network_folder_user" id="network_folder_user" value="<?php echo esc_attr($network_folder_user); ?>" class="regular-text" placeholder="например: olympiad_admin">
+                                <p class="description"><?php esc_html_e('Укажите логин для доступа к сетевой папке WebDAV, FTP или SMB (если для папки настроена авторизация).', 'wp-olympiad'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="network_folder_password"><?php esc_html_e('Пароль к сетевой папке:', 'wp-olympiad'); ?></label></th>
+                            <td>
+                                <div style="display:flex; gap:6px; align-items:center;">
+                                    <input type="password" name="network_folder_password" id="network_folder_password" value="<?php echo esc_attr($network_folder_password); ?>" class="regular-text" placeholder="пароль для сетевого доступа">
+                                    <button type="button" class="button wpo-toggle-pwd" data-target="network_folder_password" title="<?php esc_attr_e('Показать / скрыть пароль', 'wp-olympiad'); ?>">👁️</button>
+                                </div>
+                                <p class="description"><?php esc_html_e('Пароль учетной записи сетевой папки (хранится безопасно в БД WordPress).', 'wp-olympiad'); ?></p>
+                            </td>
+                        </tr>
+                        <tr style="background:#f8fafc; border-left:4px solid #3b82f6;">
+                            <th scope="row"><label for="export_zip_password"><?php esc_html_e('Пароль шифрования архива (AES-256):', 'wp-olympiad'); ?></label></th>
+                            <td>
+                                <div style="display:flex; gap:6px; align-items:center;">
+                                    <input type="password" name="export_zip_password" id="export_zip_password" value="<?php echo esc_attr($export_zip_password); ?>" class="regular-text" placeholder="секретный пароль к архиву выгрузки">
+                                    <button type="button" class="button wpo-toggle-pwd" data-target="export_zip_password" title="<?php esc_attr_e('Показать / скрыть пароль', 'wp-olympiad'); ?>">👁️</button>
+                                </div>
+                                <p class="description">
+                                    <strong><?php esc_html_e('Ключевая защита конфиденциальности:', 'wp-olympiad'); ?></strong>
+                                    <?php esc_html_e('Экспортируемый файл .zip шифруется военным стандартом AES-256. Просмотреть ответы, баллы и протоколы смогут только члены оргкомитета/жюри, знающие этот пароль.', 'wp-olympiad'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Автоматический экспорт:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="network_auto_export" value="1" <?php checked($network_auto_export, 1); ?>>
+                                    <?php esc_html_e('Автоматически обновлять архив ответов в сетевой папке при каждом завершении тестирования участником', 'wp-olympiad'); ?>
+                                </label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Защита веб-доступа (.htaccess):', 'wp-olympiad'); ?></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="protect_local_directory" value="1" <?php checked($protect_local_directory, 1); ?>>
+                                    <?php esc_html_e('Блокировать прямой доступ из браузера (создавать .htaccess Deny from all, если папка находится внутри сайта)', 'wp-olympiad'); ?>
+                                </label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Тестирование и запуск:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                                    <button type="button" class="button" id="wpo-btn-test-network">
+                                        🔍 <?php esc_html_e('Проверить доступ к папке', 'wp-olympiad'); ?>
+                                    </button>
+                                    <?php if (!$is_new): ?>
+                                        <button type="button" class="button button-primary" id="wpo-btn-run-network-export" data-quiz-id="<?php echo esc_attr((string)$quiz->id); ?>">
+                                            📤 <?php esc_html_e('Экспортировать в сетевую папку сейчас', 'wp-olympiad'); ?>
+                                        </button>
+                                    <?php endif; ?>
+                                    <span id="wpo-network-test-spinner" class="spinner" style="float:none; margin:0;"></span>
+                                </div>
+                                <div id="wpo-network-test-message" style="margin-top:10px; display:none; padding:10px 14px; border-radius:6px; font-weight:500;"></div>
+
+                                <?php if (!empty($last_network_export) && is_array($last_network_export)): ?>
+                                    <div style="margin-top:12px; padding:8px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; font-size:12px; color:#166534;">
+                                        <strong>🕒 <?php esc_html_e('Последний успешный экспорт:', 'wp-olympiad'); ?></strong>
+                                        <?php echo esc_html($last_network_export['timestamp'] ?? ''); ?> |
+                                        <code><?php echo esc_html($last_network_export['destination'] ?? ''); ?></code>
+                                        <?php if (!empty($last_network_export['is_encrypted'])): ?>
+                                            <span style="color:#0369a1; font-weight:700;">🔒 <?php esc_html_e('Защищён паролем AES-256', 'wp-olympiad'); ?></span>
+                                        <?php endif; ?>
+                                        (<?php echo esc_html(sprintf('%.1f КБ', ($last_network_export['size'] ?? 0) / 1024)); ?>)
+                                    </div>
+                                <?php endif; ?>
                             </td>
                         </tr>
                     </table>

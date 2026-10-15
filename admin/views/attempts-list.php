@@ -13,7 +13,10 @@ if (!defined('ABSPATH')) {
         <?php if ($quiz_id > 0): ?>
             <div style="display:flex; gap:10px; align-items:center;">
                 <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=export_csv&quiz_id=' . $quiz_id)); ?>" class="button button-primary">
-                    📥 <?php esc_html_e('Экспорт ответов в Excel / CSV', 'wp-olympiad'); ?>
+                    📥 <?php esc_html_e('Экспорт в Excel / CSV', 'wp-olympiad'); ?>
+                </a>
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=export_network&quiz_id=' . $quiz_id), 'wpo_export_network_' . $quiz_id)); ?>" class="button button-secondary" title="<?php esc_attr_e('Экспортировать архив с ответами в локальную сетевую папку', 'wp-olympiad'); ?>">
+                    📁 <?php esc_html_e('В сетевую папку', 'wp-olympiad'); ?>
                 </a>
                 <?php if (!empty($attempts)): ?>
                     <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-attempts&wpo_action=clear_quiz_attempts&quiz_id=' . $quiz_id), 'wpo_clear_quiz_attempts_' . $quiz_id)); ?>" class="button button-secondary wpo-text-danger" onclick="return confirm('<?php echo esc_js(__('ВНИМАНИЕ! Вы действительно хотите удалить ВСЕ ответы и попытки участников по данной олимпиаде? Это действие необратимо.', 'wp-olympiad')); ?>');">
@@ -23,6 +26,29 @@ if (!defined('ABSPATH')) {
             </div>
         <?php endif; ?>
     </div>
+
+    <?php if (isset($_GET['network_exported'])): ?>
+        <?php $last_net = get_transient('wpo_last_network_export_' . $quiz_id); ?>
+        <div class="notice notice-success is-dismissible" style="margin-bottom:15px;">
+            <p>
+                <strong>📁 <?php esc_html_e('Успешный экспорт в сетевую папку!', 'wp-olympiad'); ?></strong>
+                <?php if ($last_net && !empty($last_net['destination'])): ?>
+                    <br><code><?php echo esc_html($last_net['destination']); ?></code>
+                    <?php if (!empty($last_net['is_encrypted'])): ?>
+                        — <span style="color:#0369a1; font-weight:700;">🔒 <?php esc_html_e('Архив защищён паролем AES-256', 'wp-olympiad'); ?></span>
+                    <?php endif; ?>
+                <?php endif; ?>
+            </p>
+        </div>
+    <?php elseif (isset($_GET['network_error'])): ?>
+        <div class="notice notice-error is-dismissible" style="margin-bottom:15px;">
+            <p>
+                <strong>✕ <?php esc_html_e('Ошибка экспорта в сетевую папку:', 'wp-olympiad'); ?></strong>
+                <?php echo esc_html(urldecode($_GET['network_error'])); ?>
+                <br><a href="<?php echo esc_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . '#wpo-network-export-card')); ?>">⚙️ <?php esc_html_e('Проверить настройки сетевой папки в редактировании олимпиады', 'wp-olympiad'); ?></a>
+            </p>
+        </div>
+    <?php endif; ?>
 
     <?php if (isset($_GET['deleted'])): ?>
         <div class="notice notice-success is-dismissible" style="margin-bottom:15px;"><p><?php esc_html_e('Попытка и все ответы участника успешно удалены.', 'wp-olympiad'); ?></p></div>
