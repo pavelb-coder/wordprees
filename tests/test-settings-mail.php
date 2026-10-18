@@ -34,11 +34,14 @@ $it('Настройки / интерфейс: email-блока нет, один 
         foreach ([null, Quiz::get($id)] as $index => $quiz) {
             $html = $render($quiz); $previous = libxml_use_internal_errors(true); $doc = new \DOMDocument(); $doc->loadHTML('<?xml encoding="UTF-8">' . $html); libxml_clear_errors(); libxml_use_internal_errors($previous); $xp = new \DOMXPath($doc);
             $settings_assert(!str_contains($html, 'Email-оповещения'), 'Removed email card remains');
+            $settings_assert(!str_contains($html, 'Рандомизация и отображение'), 'Retired randomization card remains');
+            $settings_assert($xp->query('//input[@name="show_question_points"]')->length === 0, 'Retired points control remains');
+            $settings_assert($xp->query('//input[@name="require_email"]')->length === 1 && $xp->query('//input[@name="require_org"]')->length === 1, 'Intro requirements are missing or duplicated');
             foreach (['email_participant', 'email_admin', 'admin_email_to'] as $name) $settings_assert($xp->query('//*[@name="' . $name . '"]')->length === 0, 'Removed mail input remains');
             $checks = $xp->query('//input[@name="shuffle_questions"]');
             $settings_assert($checks->length === 1 && $xp->query('//*[@id="wpo-rules-card"]//input[@name="shuffle_questions"]')->length === 1, 'Shuffle is missing, duplicated or outside regulations');
             $settings_assert($checks->item(0)->hasAttribute('checked') === ($index === 1), 'New/old shuffle value is not reflected');
-            $settings_assert($xp->query('//input[@name="require_email"]')->length >= 1 && $xp->query('//input[@name="shuffle_answers"]')->length === 1, 'Unrelated questionnaire or answer settings removed');
+            $settings_assert($xp->query('//input[@name="require_email"]')->length >= 1 && $xp->query('//input[@name="shuffle_answers"]')->length === 0, 'Questionnaire field missing or retired answer control still present');
         }
         return true;
     } finally { Quiz::delete($id); }
@@ -56,4 +59,20 @@ $it('Настройки / сдача: старые email-флаги не отп�
         $settings_assert($calls === 0, 'Submission sent legacy notifications');
         return $attempt instanceof Attempt && $attempt->score === 2 && $attempt->participant_email === 'participant@example.invalid' && $attempt->status !== 'in_progress';
     } finally { remove_filter('pre_wp_mail', $spy, 1); Quiz::delete($id); }
+});
+
+
+$it('Удалённая карточка: частичное сохранение не сбрасывает параметры ответов и баллов, defaults сохранены', function () use ($settings_assert): bool {
+    $defaults = Quiz::default_settings();
+    $settings_assert($defaults['shuffle_answers'] === 1 && $defaults['show_question_points'] === 1, 'Existing defaults were changed');
+    foreach ([[0, 0], [0, 1], [1, 0], [1, 1]] as [$answers, $points]) {
+        $id = Quiz::create(['title' => 'Removed card settings preservation', 'settings' => ['shuffle_answers' => $answers, 'show_question_points' => $points]]);
+        try {
+            Quiz::get($id)->update(['title' => 'Renamed without retired inputs', 'settings' => ['shuffle_questions' => 1]]);
+            $fresh = Quiz::get($id);
+            $settings_assert((int)$fresh->get_setting('shuffle_answers') === $answers && (int)$fresh->get_setting('show_question_points') === $points, 'Retired card values reset by partial save');
+            $settings_assert((int)$fresh->get_setting('shuffle_questions') === 1, 'Regulations shuffle no longer saves');
+        } finally { Quiz::delete($id); }
+    }
+    return true;
 });

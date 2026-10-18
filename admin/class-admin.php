@@ -163,8 +163,9 @@ final class Admin
                     'pass_percentage'   => max(0.0, min(100.0, (float)($_POST['pass_percentage'] ?? 60.0))),
                     'max_attempts'      => max(0, (int)($_POST['max_attempts'] ?? 1)),
                     'shuffle_questions' => !empty($_POST['shuffle_questions']) ? 1 : 0,
-                    'shuffle_answers'   => !empty($_POST['shuffle_answers']) ? 1 : 0,
-                    'show_question_points' => !empty($_POST['show_question_points']) ? 1 : 0,
+                    // Retired card: absent/stale POST fields must not reset
+                    // shuffle_answers or show_question_points. Quiz merges existing
+                    // settings; new quizzes retain their established defaults.
                     'allow_guest'       => !empty($_POST['allow_guest']) ? 1 : 0,
                     'require_org'       => !empty($_POST['require_org']) ? 1 : 0,
                     'require_email'     => !empty($_POST['require_email']) ? 1 : 0,

@@ -17,8 +17,6 @@ $end_time = $is_new ? '' : (string)$quiz->get_setting('end_time', '');
 $pass_percentage = $is_new ? 60.0 : (float)$quiz->get_setting('pass_percentage', 60.0);
 $max_attempts = $is_new ? 1 : (int)$quiz->get_setting('max_attempts', 1);
 $shuffle_questions = $is_new ? 0 : (int)$quiz->get_setting('shuffle_questions', 0);
-$shuffle_answers = $is_new ? 1 : (int)$quiz->get_setting('shuffle_answers', 1);
-$show_question_points = $is_new ? 1 : (int)$quiz->get_setting('show_question_points', 1);
 $allow_guest = $is_new ? 1 : (int)$quiz->get_setting('allow_guest', 1);
 $require_org = $is_new ? 1 : (int)$quiz->get_setting('require_org', 1);
 $require_email = $is_new ? 1 : (int)$quiz->get_setting('require_email', 1);
@@ -935,15 +933,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                     </div>
                 </div>
 
-                <div class="wpo-card">
-                    <h3><?php esc_html_e('Рандомизация и отображение', 'wp-olympiad'); ?></h3>
-                    <p><label><input type="checkbox" name="shuffle_answers" value="1" <?php checked($shuffle_answers, 1); ?>> <?php esc_html_e('Перемешивать варианты ответов', 'wp-olympiad'); ?></label></p>
-                    <p><label><input type="checkbox" name="show_question_points" value="1" <?php checked($show_question_points, 1); ?>> <?php esc_html_e('Показывать баллы за задания в тесте', 'wp-olympiad'); ?></label></p>
-                    <p class="description" style="margin-left:22px; font-size:12px; color:#64748b; margin-top:-6px;"><?php esc_html_e('Если снять галочку, стоимость вопросов (баллы) скрывается от участника во время выполнения теста.', 'wp-olympiad'); ?></p>
-                    <hr>
-                    <p><label><input type="checkbox" name="require_org" value="1" <?php checked($require_org, 1); ?>> <?php esc_html_e('Требовать школу / класс / ВУЗ', 'wp-olympiad'); ?></label></p>
-                    <p><label><input type="checkbox" name="require_email" value="1" <?php checked($require_email, 1); ?>> <?php esc_html_e('Требовать E-mail участника', 'wp-olympiad'); ?></label></p>
-                </div>
+
             </div>
         </div>
 
