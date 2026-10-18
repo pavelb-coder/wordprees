@@ -2974,8 +2974,10 @@ $it('Импорт, экспорт вопросов и проверка подк�
     $export_res = NetworkExport::export_questions_to_network($quiz, ['path' => $test_network_dir]);
     if (empty($export_res['success'])) return false;
 
-    $expected_csv = $test_network_dir . '/вопросы/questions.csv';
-    $expected_json = $test_network_dir . '/вопросы/questions.json';
+    $csv_relative = current(array_filter($export_res['files'], static fn($f) => str_starts_with($f, 'вопросы/вопросы_') && str_ends_with($f, '.csv')));
+    $json_relative = current(array_filter($export_res['files'], static fn($f) => str_starts_with($f, 'вопросы/вопросы_') && str_ends_with($f, '.json')));
+    $expected_csv = $test_network_dir . '/' . $csv_relative;
+    $expected_json = $test_network_dir . '/' . $json_relative;
     $expected_list = $test_network_dir . '/вопросы/список_заданий.csv';
 
     if (!file_exists($expected_csv) || !file_exists($expected_json) || !file_exists($expected_list)) {
@@ -2986,7 +2988,7 @@ $it('Импорт, экспорт вопросов и проверка подк�
     $scanned_files = NetworkImport::scan_network_folder_for_import_files($quiz, ['path' => $test_network_dir]);
     $has_questions_csv = false;
     foreach ($scanned_files as $f) {
-        if ($f['name'] === 'questions.csv') {
+        if ($f['name'] === basename($csv_relative)) {
             $has_questions_csv = true;
             break;
         }
@@ -3001,7 +3003,7 @@ $it('Импорт, экспорт вопросов и проверка подк�
     $target_quiz = Quiz::get($target_quiz_id);
     if (!$target_quiz) return false;
 
-    $import_res = NetworkImport::import_from_network($target_quiz_id, 'вопросы/questions.csv', 'append', ['path' => $test_network_dir]);
+    $import_res = NetworkImport::import_from_network($target_quiz_id, $csv_relative, 'append', ['path' => $test_network_dir]);
     if (empty($import_res['success']) || ($import_res['imported_count'] ?? 0) < 2) return false;
 
     $target_questions = $target_quiz->get_questions(false);
@@ -4358,6 +4360,7 @@ require __DIR__ . '/test-settings-mail.php';
 require __DIR__ . '/test-guest-access.php';
 require __DIR__ . '/test-settings-fields.php';
 require __DIR__ . '/test-no-pass-threshold.php';
+require __DIR__ . '/test-export-cleanup.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

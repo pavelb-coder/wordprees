@@ -95,7 +95,7 @@ $it('Комплект шаблонов: пользовательские questio
             $pkg_assert(!empty($import['success']) && $import['imported_count'] === 13, 'User input format disabled: ' . $name);
         }
         $out = NetworkExport::export_quiz($id, ['type' => 'local', 'path' => $root]);
-        $pkg_assert(!empty($out['success']) && is_file($root . '/вопросы/questions.csv') && is_file($root . '/вопросы/questions.json'), 'Actual question export was disabled');
+        $pkg_assert(!empty($out['success']) && count(glob($root . '/вопросы/вопросы_*.csv')) >= 1 && count(glob($root . '/вопросы/вопросы_*.json')) >= 1 && !file_exists($root . '/вопросы/questions.csv') && !file_exists($root . '/вопросы/questions.json'), 'Actual question export was disabled');
         return count(Quiz::get($id)->get_questions(false)) === 13;
     } finally { Quiz::delete($id); $pkg_cleanup($root); }
 });

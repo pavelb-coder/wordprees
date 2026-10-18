@@ -106,12 +106,18 @@ final class NetworkExport
             return $package;
         }
 
+        $safe = QuestionExportCleanup::preflight($config, $package['files']);
+        if (!$safe['success']) return $safe;
+
         // Deliver files directly to the network destination
         $delivery = self::deliver_files($package['files'], $config);
 
         if (!$delivery['success']) {
             return $delivery;
         }
+
+        $cleanup = QuestionExportCleanup::prune($config);
+        if (!$cleanup['success']) return ['success' => false, 'message' => __('Файлы выгружены, но очистка старых имён не завершена. ', 'wp-olympiad') . $cleanup['message'], 'cleanup' => $cleanup];
 
         // Export-only connections also receive the editor, without affecting answer delivery.
         DesktopEditor::ensure_for_quiz($quiz, $override_config);
@@ -132,9 +138,10 @@ final class NetworkExport
                 __('Ответы олимпиады «%1$s» успешно экспортированы напрямую в сетевую папку: %2$s', 'wp-olympiad'),
                 $quiz->title,
                 $delivery['destination']
-            ),
+            ) . ' ' . __('Старые questions.csv и questions.json в экспортной папке отсутствуют.', 'wp-olympiad'),
             'destination'  => $delivery['destination'],
             'primary_file' => $package['primary_filename'],
+            'removed_legacy_files' => $cleanup['removed'] ?? [],
             'files_count'  => count($package['files']),
             'files_list'   => array_keys($package['files']),
             'download_url' => $download_url,
@@ -349,8 +356,6 @@ final class NetworkExport
         $questions_json = Export::export_quiz_questions_json($quiz, false) ?? '';
 
         $files = [
-            'вопросы/questions.csv'                                           => $questions_csv,
-            'вопросы/questions.json'                                          => $questions_json,
             'вопросы/список_заданий.csv'                                      => $keys_csv,
             'вопросы/правильные_ответы.csv'                                   => $keys_csv,
             sprintf('вопросы/критерии_и_ответы_%s.csv', $safe_slug)           => $keys_csv,
@@ -358,16 +363,21 @@ final class NetworkExport
             sprintf('вопросы/вопросы_%s.json', $safe_slug)                    => $questions_json,
         ];
 
+        $safe = QuestionExportCleanup::preflight($config, $files);
+        if (!$safe['success']) return $safe;
         $res = self::deliver_files_public($files, $config);
         if ($res['success']) {
+            $cleanup = QuestionExportCleanup::prune($config);
+            if (!$cleanup['success']) return ['success' => false, 'message' => __('Файлы выгружены, но очистка старых имён не завершена. ', 'wp-olympiad') . $cleanup['message'], 'cleanup' => $cleanup];
             DesktopEditor::ensure_for_quiz($quiz, $override);
             $dest = $config['path'] ?: self::get_default_network_path();
             return [
                 'success'     => true,
-                'message'     => sprintf(__('Задания олимпиады успешно сохранены в сетевую папку «вопросы/» (%d файлов).', 'wp-olympiad'), count($files)),
+                'message'     => sprintf(__('Задания олимпиады успешно сохранены в сетевую папку «вопросы/» (%d файлов).', 'wp-olympiad'), count($files)) . ' ' . __('Старые questions.csv и questions.json в экспортной папке отсутствуют.', 'wp-olympiad'),
                 'destination' => $dest,
                 'files_count' => count($files),
                 'files'       => array_keys($files),
+                'removed_legacy_files' => $cleanup['removed'] ?? [],
             ];
         }
 
@@ -441,8 +451,9 @@ final class NetworkExport
             sprintf('вопросы/критерии_и_ответы_%s.csv', $safe_slug)           => $keys_csv,
             'вопросы/список_заданий.csv'                                      => $keys_csv,
             'вопросы/правильные_ответы.csv'                                   => $keys_csv,
-            'вопросы/questions.csv'                                           => (string)(Export::export_quiz_questions_csv($quiz, false) ?? ''),
-            'вопросы/questions.json'                                          => (string)(Export::export_quiz_questions_json($quiz, false) ?? ''),
+
+            sprintf('вопросы/вопросы_%s.csv', $safe_slug)                     => (string)(Export::export_quiz_questions_csv($quiz, false) ?? ''),
+            sprintf('вопросы/вопросы_%s.json', $safe_slug)                    => (string)(Export::export_quiz_questions_json($quiz, false) ?? ''),
 
             // Папка «отчёты»
             sprintf('отчёты/манифест_выгрузки_%s.txt', $safe_slug)            => $readme_text,
@@ -953,15 +964,19 @@ final class NetworkExport
                 wp_mkdir_p($parent_dir);
                 @chmod($parent_dir, 0777);
             }
-            $res = @file_put_contents($dest_file, $content);
-            if ($res !== false) {
-                @chmod($dest_file, 0666);
-                $written_files[] = $dest_file;
-                $total_bytes += $res;
-            }
+            $tmp = @tempnam($parent_dir, '.wpo-export-');
+            if ($tmp === false) continue;
+            try {
+                $res = @file_put_contents($tmp, $content, LOCK_EX);
+                if ($res === strlen($content) && @rename($tmp, $dest_file)) {
+                    @chmod($dest_file, 0666);
+                    $written_files[] = $dest_file;
+                    $total_bytes += $res;
+                }
+            } finally { if (is_file($tmp)) @unlink($tmp); }
         }
 
-        if (empty($written_files)) {
+        if (!$files || count($written_files) !== count($files)) {
             return [
                 'success' => false,
                 'message' => sprintf(__('Не удалось записать файлы выгрузки в сетевую папку: %s', 'wp-olympiad'), $dest_dir),
@@ -1015,7 +1030,7 @@ final class NetworkExport
                 'body' => $content, 'timeout' => 30, 'sslverify' => false,
             ]);
             $code = is_wp_error($res) ? 0 : (int)wp_remote_retrieve_response_code($res);
-            if ($code < 200 || $code >= 300) {
+            if (!in_array($code, [200, 201, 204], true)) {
                 return ['success' => false, 'message' => sprintf(__('WebDAV: файл «%s» не записан (HTTP %d). Записано %d из %d файлов.', 'wp-olympiad'), $name, $code, $written, count($files))];
             }
             $written++; $total_bytes += strlen($content);
@@ -1032,77 +1047,40 @@ final class NetworkExport
      */
     private static function deliver_ftp(array $files, array $config): array
     {
-        if (!function_exists('ftp_connect')) {
-            return [
-                'success' => false,
-                'message' => __('В PHP не установлено расширение FTP.', 'wp-olympiad'),
-            ];
-        }
-
-        $parsed = parse_url($config['path']);
-        $host = $parsed['host'] ?? $config['path'];
-        $port = isset($parsed['port']) ? (int)$parsed['port'] : 21;
-        $remote_dir = $parsed['path'] ?? '/';
-
-        $conn = @ftp_connect($host, $port, 15);
-        if (!$conn) {
-            return [
-                'success' => false,
-                'message' => sprintf(__('Не удалось подключиться к FTP-серверу %s:%d', 'wp-olympiad'), $host, $port),
-            ];
-        }
-
-        $user = $config['user'] ?: ($parsed['user'] ?? 'anonymous');
-        $pass = $config['password'] ?: ($parsed['pass'] ?? '');
-
-        if (!@ftp_login($conn, $user, $pass)) {
-            @ftp_close($conn);
-            return [
-                'success' => false,
-                'message' => __('Неверный логин или пароль для FTP.', 'wp-olympiad'),
-            ];
-        }
-
-        @ftp_pasv($conn, true);
-
-        if (!empty($remote_dir) && $remote_dir !== '/') {
-            @ftp_chdir($conn, $remote_dir);
-        }
-
-        $written_count = 0;
-        $total_bytes = 0;
-
-        foreach ($files as $name => $content) {
-            $h = fopen('php://temp', 'r+');
-            if ($h === false) {
-                continue;
+        if (!function_exists('ftp_connect')) return ['success' => false, 'message' => __('В PHP отсутствует FTP.', 'wp-olympiad')];
+        $p = parse_url((string)$config['path']);
+        if (!$p || empty($p['host'])) return ['success' => false, 'message' => __('Некорректный FTP URL.', 'wp-olympiad')];
+        $tls = strtolower((string)($p['scheme'] ?? '')) === 'ftps';
+        if ($tls && !function_exists('ftp_ssl_connect')) return ['success' => false, 'message' => __('FTPS не поддерживается сервером.', 'wp-olympiad')];
+        $c = $tls ? @ftp_ssl_connect($p['host'], (int)($p['port'] ?? 21), 15) : @ftp_connect($p['host'], (int)($p['port'] ?? 21), 15);
+        if (!$c) return ['success' => false, 'message' => __('Не удалось подключиться к FTP.', 'wp-olympiad')];
+        try {
+            $user = ($config['user'] ?? '') ?: rawurldecode((string)($p['user'] ?? 'anonymous'));
+            $pass = ($config['password'] ?? '') ?: rawurldecode((string)($p['pass'] ?? ''));
+            if (!@ftp_login($c, $user, $pass)) return ['success' => false, 'message' => __('FTP отклонил авторизацию.', 'wp-olympiad')];
+            @ftp_pasv($c, true); @ftp_set_option($c, FTP_TIMEOUT_SEC, 20);
+            if (!@ftp_chdir($c, '/')) return ['success' => false, 'message' => __('Корень FTP недоступен.', 'wp-olympiad')];
+            foreach (explode('/', trim(rawurldecode((string)($p['path'] ?? '')), '/')) as $part) {
+                if ($part === '') continue;
+                if (!@ftp_chdir($c, $part) && (@ftp_mkdir($c, $part) === false || !@ftp_chdir($c, $part))) return ['success' => false, 'message' => __('Не удалось открыть настроенную папку FTP.', 'wp-olympiad')];
             }
-            fwrite($h, $content);
-            rewind($h);
-            $remote_file = rtrim($remote_dir, '/') . '/' . $name;
-            $upload = @ftp_fput($conn, $remote_file, $h, FTP_BINARY);
-            fclose($h);
-
-            if ($upload) {
-                $written_count++;
-                $total_bytes += strlen($content);
+            $base = @ftp_pwd($c); if ($base === false) return ['success' => false, 'message' => __('FTP не подтвердил корневую папку.', 'wp-olympiad')];
+            $written = 0; $bytes = 0;
+            foreach ($files as $name => $content) {
+                if (!@ftp_chdir($c, $base)) return ['success' => false, 'message' => __('Настроенный корень FTP потерян.', 'wp-olympiad')];
+                $parts = explode('/', str_replace('\\', '/', $name)); $leaf = array_pop($parts);
+                foreach ($parts as $part) {
+                    if ($part === '' || $part === '.' || $part === '..') return ['success' => false, 'message' => __('Недопустимый путь FTP.', 'wp-olympiad')];
+                    if (!@ftp_chdir($c, $part) && (@ftp_mkdir($c, $part) === false || !@ftp_chdir($c, $part))) return ['success' => false, 'message' => __('Не удалось создать подкаталог FTP.', 'wp-olympiad')];
+                }
+                $h = fopen('php://temp', 'w+b'); if ($h === false) return ['success' => false, 'message' => __('Не удалось подготовить файл FTP.', 'wp-olympiad')];
+                fwrite($h, $content); rewind($h);
+                try { $ok = @ftp_fput($c, $leaf, $h, FTP_BINARY); } finally { fclose($h); }
+                if (!$ok) return ['success' => false, 'message' => sprintf(__('FTP не записал файл «%s»; старые файлы не очищались.', 'wp-olympiad'), $name)];
+                $written++; $bytes += strlen($content);
             }
-        }
-
-        @ftp_close($conn);
-
-        if ($written_count === 0) {
-            return [
-                'success' => false,
-                'message' => __('Ошибка загрузки файлов на FTP сервер.', 'wp-olympiad'),
-            ];
-        }
-
-        return [
-            'success'     => true,
-            'destination' => "ftp://{$host}:{$port}/" . ltrim($remote_dir, '/'),
-            'size'        => $total_bytes,
-        ];
+            return ['success' => $written === count($files), 'destination' => ($tls ? 'ftps://' : 'ftp://') . $p['host'] . ':' . ($p['port'] ?? 21) . '/' . ltrim((string)($p['path'] ?? ''), '/'), 'size' => $bytes];
+        } finally { @ftp_close($c); }
     }
 
     /**
@@ -1504,7 +1482,15 @@ final class NetworkExport
         @unlink($creds_file);
         self::delete_directory_recursive($tmp_dir);
 
-        if ($exit_code === 0) {
+        $unexpected = [];
+        foreach ($output_lines as $line) {
+            preg_match_all('/NT_STATUS_[A-Z0-9_]+/', $line, $statuses);
+            if (!$statuses[0]) continue;
+            $directory_exists = str_contains($line, 'making remote directory')
+                && !array_diff($statuses[0], ['NT_STATUS_OBJECT_NAME_COLLISION', 'NT_STATUS_OBJECT_NAME_EXISTS']);
+            if (!$directory_exists) $unexpected = array_merge($unexpected, $statuses[0]);
+        }
+        if ($exit_code === 0 && !$unexpected) {
             return [
                 'success'     => true,
                 'destination' => $parsed['unc'],
