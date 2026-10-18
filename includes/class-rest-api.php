@@ -410,8 +410,8 @@ final class RestApi
             }
         }
 
-        // Send email notifications to participant / admin
-        Mailer::send_attempt_emails($quiz, $attempt);
+        // Email notifications are disabled, including legacy quizzes with saved flags.
+        // Do not globally filter wp_mail: WordPress account/security mail is unrelated.
 
         // Prepare feedback according to quiz show_results_mode
         $mode = (string)$quiz->get_setting('show_results_mode', 'immediate');

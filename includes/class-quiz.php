@@ -76,9 +76,9 @@ final class Quiz
             'api_key'             => '',        // Plain key shown to administrators
             'api_key_hash'        => '',        // sha256 hash used for lookup
             'api_key_created'     => '',        // Y-m-d H:i:s when the key was issued
-            'email_participant'   => 1,         // 1 = send results to participant email
-            'email_admin'         => 0,         // 1 = send notification to admin
-            'admin_email_to'      => '',        // admin email recipient
+            'email_participant'   => 0,         // Deprecated: olympiad emails are disabled
+            'email_admin'         => 0,         // Deprecated: olympiad emails are disabled
+            'admin_email_to'      => '',        // Deprecated recipient retained for data compatibility
 
             // Network Folder Connection & Auto-Export/Import Settings
             'enable_network_export'        => 0,

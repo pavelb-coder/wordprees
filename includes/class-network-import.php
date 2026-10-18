@@ -67,58 +67,29 @@ final class NetworkImport
         return $results;
     }
 
-    /**
-     * Download sample questions template (XLSM, XLSX, CSV, JSON) to admin browser
-     */
-    public static function download_template(string $format = 'csv'): void
+    /** Download the single bundled question template; user import formats are unchanged. */
+    public static function download_template(string $format = 'xlsx'): void
     {
         if (!current_user_can('manage_options')) {
-            wp_die(esc_html__('У вас недостаточно прав для выполнения этой операции.', 'wp-olympiad'));
+            wp_die(esc_html__('У вас недостаточно прав для выполнения этой операции.', 'wp-olympiad'), '', ['response' => 403]);
         }
-
-        $format = strtolower($format);
-
-        if ($format === 'xlsm') {
-            $content = self::get_template_xlsm();
-            $filename = 'questions_template_macros.xlsm';
-            $mime = 'application/vnd.ms-excel.sheet.macroEnabled.12';
-        } elseif ($format === 'xlsx') {
-            $content = self::get_template_xlsx();
-            $filename = 'questions_template.xlsx';
-            $mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        } elseif ($format === 'json') {
-            $content = self::get_template_json();
-            $filename = 'questions_template.json';
-            $mime = 'application/json; charset=UTF-8';
-        } else {
-            $content = self::get_template_csv();
-            $filename = 'questions_template.csv';
-            $mime = 'text/csv; charset=UTF-8';
+        if (strtolower($format) !== 'xlsx') {
+            wp_die(esc_html__('Этот образец удалён из комплекта. Доступен шаблон Excel (.xlsx). Импорт ваших CSV, JSON и XLSM по-прежнему поддерживается.', 'wp-olympiad'), '', ['response' => 410]);
         }
-
-        header('Content-Type: ' . $mime);
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        $content = self::get_template_xlsx();
+        if (!str_starts_with($content, "PK\x03\x04")) {
+            wp_die(esc_html__('Шаблон Excel недоступен. Переустановите актуальный ZIP плагина.', 'wp-olympiad'), '', ['response' => 503]);
+        }
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="questions_template.xlsx"');
         header('Content-Length: ' . strlen($content));
-        header('Pragma: no-cache');
-        header('Expires: 0');
+        header('Pragma: no-cache'); header('Expires: 0');
         echo $content;
         exit;
     }
 
-    /**
-     * Get binary content of macro-enabled Excel template (.xlsm)
-     */
-    public static function get_template_xlsm(): string
-    {
-        $path = WP_OLYMPIAD_PATH . 'templates/questions_template_macros.xlsm';
-        if (file_exists($path) && is_readable($path)) {
-            $data = @file_get_contents($path);
-            if ($data !== false && strlen($data) > 0) {
-                return $data;
-            }
-        }
-        return '';
-    }
+    /** Legacy accessor retained without serving or rebuilding the removed macro template. */
+    public static function get_template_xlsm(): string { return ''; }
 
     /**
      * Get binary content of standard Excel template (.xlsx)

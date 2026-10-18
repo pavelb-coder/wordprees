@@ -1131,7 +1131,7 @@
             var quizId = isBuilder ? (parseInt($('#wpo-questions-list').attr('data-quiz-id'), 10) || 0) : (parseInt($btn.attr('data-quiz-id'), 10) || 0);
 
             var origText = $btn.text();
-            $btn.prop('disabled', true).text('Помещение шаблонов...');
+            $btn.prop('disabled', true).text('Помещение шаблона Excel...');
             if ($spinner.length) $spinner.addClass('is-active');
             $msg.hide();
 
@@ -1149,7 +1149,7 @@
                 if (res.success && res.data) {
                     var html = '✓ <strong>' + res.data.message + '</strong>';
                     if (res.data.destination) {
-                        html += '<div style="margin-top:6px; font-size:12px; color:#1e293b;">Сетевая папка: <code>' + res.data.destination + '</code> (' + (res.data.files_count || 5) + ' файлов)</div>';
+                        html += '<div style="margin-top:6px; font-size:12px; color:#1e293b;">Сетевая папка: <code>' + res.data.destination + '</code> · Файлов: ' + (Array.isArray(res.data.files) ? res.data.files.length : (res.data.files_count || 0)) + '</div>';
                     }
                     if (res.data.files && res.data.files.length > 0) {
                         html += '<div style="margin-top:4px; font-size:11px; color:#475569;">Размещены: ' + res.data.files.join(', ') + '</div>';

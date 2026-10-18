@@ -1,33 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Build only questions_template.xlsx from the shared 13-type import schema.
+
+The template has dropdowns, column hints and instructions; no VBA or XLSM is
+produced. CSV/JSON remain supported user import formats, not bundled samples.
+This development tool writes only into this plugin's templates/ directory.
 """
-Generate Excel question templates for WP Olympiad.
-
-Files produced (into plugin templates/ and mirrored into wp-test):
-  1. questions_template_macros.xlsm — macro-enabled workbook (validation, CSV export, sample rows)
-  2. questions_template.xlsx        — workbook with dropdowns, hints and instructions
-
-The schema (columns, samples, hints) is NOT duplicated here: it is read from
-tools/import-samples.json, which is generated from the plugin's single source of
-truth WPOlympiad\\ImportTemplate by tools/build_templates.sh. That keeps the
-Excel template, the CSV/JSON templates and the importer in sync.
-"""
-
 import json
 import os
-import shutil
-import struct
-import subprocess
 import sys
-import urllib.request
-
 import xlsxwriter
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 PLUGIN_DIR = os.path.dirname(TOOLS_DIR)
 SCHEMA_FILE = os.path.join(TOOLS_DIR, 'import-samples.json')
 TEMPLATES_DIR = os.path.join(PLUGIN_DIR, 'templates')
-WP_TEST_TEMPLATES = '/home/user/wp-test/wp-content/plugins/wp-olympiad/templates'
 
 
 def load_schema():
@@ -55,81 +42,6 @@ def load_schema():
     return schema
 
 
-def ovba_compress(data: bytes) -> bytes:
-    """Compress data using MS-OVBA compression specification."""
-    out = bytearray([0x01])
-    pos = 0
-    while pos < len(data):
-        chunk = data[pos : min(pos + 4096, len(data))]
-        pos += len(chunk)
-        if len(chunk) == 4096:
-            header = ((4098 - 3) & 0x0FFF) | (0b011 << 12) | (0 << 15)
-            out.extend(struct.pack('<H', header))
-            out.extend(chunk)
-        else:
-            chunk_data = bytearray()
-            c_pos = 0
-            while c_pos < len(chunk):
-                sub = chunk[c_pos : min(c_pos + 8, len(chunk))]
-                c_pos += len(sub)
-                chunk_data.append(0x00)
-                chunk_data.extend(sub)
-            chunk_size = len(chunk_data) + 2
-            header = ((chunk_size - 3) & 0x0FFF) | (0b011 << 12) | (1 << 15)
-            out.extend(struct.pack('<H', header))
-            out.extend(chunk_data)
-    return bytes(out)
-
-
-def build_vba_project_bin(vba_code: str) -> str:
-    """Build vbaProject.bin with embedded validation and export macros."""
-    base_file = '/tmp/base_vbaProject.bin'
-    if not os.path.exists(base_file):
-        url = 'https://raw.githubusercontent.com/jmcnamara/XlsxWriter/main/examples/vbaProject.bin'
-        with urllib.request.urlopen(url) as r:
-            with open(base_file, 'wb') as f:
-                f.write(r.read())
-
-    ole_dir = '/tmp/ole_build'
-    work_dir = '/tmp/ole_work'
-    os.system('rm -rf %s %s && mkdir -p %s %s' % (ole_dir, work_dir, ole_dir, work_dir))
-    # ms_cfb writes fatChain.bin into the current working directory — keep it out of the plugin.
-    subprocess.run(['python3', '-m', 'ms_cfb', '-x', ole_dir, '-f', base_file], check=True, cwd=work_dir)
-
-    for legacy, canonical in (('PROJECT.bin', 'PROJECT'), ('PROJECTwm.bin', 'PROJECTwm')):
-        src = os.path.join(ole_dir, legacy)
-        if os.path.exists(src):
-            os.rename(src, os.path.join(ole_dir, canonical))
-
-    # Code page 1251 (Windows-1251 Cyrillic) in dir.bin
-    from oletools.olevba import decompress_stream
-    with open(os.path.join(ole_dir, 'VBA/dir.bin'), 'rb') as f:
-        dir_comp = f.read()
-    dir_raw = bytearray(decompress_stream(dir_comp))
-    idx = dir_raw.find(b'\x03\x00')
-    if idx != -1:
-        struct.pack_into('<H', dir_raw, idx + 6, 1251)
-    with open(os.path.join(ole_dir, 'VBA/dir.bin'), 'wb') as f:
-        f.write(ovba_compress(bytes(dir_raw)))
-
-    with open(os.path.join(ole_dir, 'VBA/Module1.bin'), 'rb') as f:
-        mod1_orig = f.read()
-
-    new_mod1 = mod1_orig[:955] + ovba_compress(vba_code.encode('cp1251'))
-    with open(os.path.join(ole_dir, 'VBA/Module1.bin'), 'wb') as f:
-        f.write(new_mod1)
-
-    for s in ('__SRP_0.bin', '__SRP_1.bin', '__SRP_2.bin', '__SRP_3.bin'):
-        p = os.path.join(ole_dir, 'VBA', s)
-        if os.path.exists(p):
-            os.remove(p)
-
-    out_bin = '/tmp/olympiad_vbaProject.bin'
-    subprocess.run(['python3', '-m', 'ms_cfb', '-c', ole_dir, '-f', out_bin], check=True, cwd=work_dir)
-    os.system('rm -rf %s' % work_dir)
-    return out_bin
-
-
 def col_letter(idx: int) -> str:
     """1-based column index → Excel letter."""
     letters = ''
@@ -139,310 +51,7 @@ def col_letter(idx: int) -> str:
     return letters
 
 
-def build_vba_code(schema) -> str:
-    keys = schema['keys']
-    types = schema['types']
-    idx = {key: i + 1 for i, key in enumerate(keys)}
-    last_col = col_letter(len(keys))
-
-    type_case = '|' + '|'.join(types) + '|'
-    last_key = keys[-1].upper()
-
-    consts = []
-    for key in keys:
-        consts.append('Const C_%s As Long = %d' % (key.upper(), idx[key]))
-
-    return '''Attribute VB_Name = "Module1"
-Option Explicit
-
-' ==============================================================================
-' ШАБЛОН ИМПОРТА ВОПРОСОВ (WP OLYMPIAD) — макросы проверки и экспорта
-' Колонки: A..%LAST_COL% (%COUNT% шт.). Типы заданий: %TYPE_COUNT%.
-' ==============================================================================
-
-%CONSTS%
-
-' ------------------------------------------------------------------------------
-' Нормализация типа задания: русские названия -> код плагина
-' ------------------------------------------------------------------------------
-Private Function NormalizeType(ByVal t As String) As String
-    t = LCase$(Trim$(t))
-    t = Replace(t, "ё", "е")
-    t = Replace(t, "_", " ")
-    t = Replace(t, "  ", " ")
-    Select Case t
-        Case "single", "radio", "один", "один выбор", "одиночный выбор", "тест", "выбор одного"
-            NormalizeType = "single"
-        Case "multi", "checkbox", "множественный", "множественный выбор", "несколько ответов"
-            NormalizeType = "multi"
-        Case "dropdown", "выпадающий", "выпадающий список", "список"
-            NormalizeType = "dropdown"
-        Case "boolean", "true false", "true/false", "да нет", "да/нет", "верно неверно", "верно/неверно"
-            NormalizeType = "boolean"
-        Case "number", "numeric", "число", "числовой", "числовой ответ", "задача"
-            NormalizeType = "number"
-        Case "text", "short text", "текст", "текстовый", "текстовый ответ", "краткий ответ"
-            NormalizeType = "text"
-        Case "matching", "match", "соответствие", "соответствия", "сопоставление"
-            NormalizeType = "matching"
-        Case "ordering", "sequence", "последовательность", "порядок", "хронология"
-            NormalizeType = "ordering"
-        Case "fill blank", "fill_blank", "blank", "cloze", "пропуски", "заполнение пропусков"
-            NormalizeType = "fill_blank"
-        Case "slider", "scale", "шкала", "ползунок", "диапазон"
-            NormalizeType = "slider"
-        Case "word scramble", "word_scramble", "scramble", "anagram", "анаграмма", "составление слова", "буквы"
-            NormalizeType = "word_scramble"
-        Case "dictation", "диктант", "интерактивный диктант"
-            NormalizeType = "dictation"
-        Case "essay", "long answer", "эссе", "развернутый ответ", "решение", "развёрнутый ответ"
-            NormalizeType = "essay"
-        Case Else
-            NormalizeType = t
-    End Select
-End Function
-
-Private Function IsNumericCell(ByVal v As Variant) As Boolean
-    Dim s As String
-    s = Trim$(CStr(v))
-    s = Replace(s, ",", ".")
-    s = Replace(s, "±", "")
-    s = Replace(s, " ", "")
-    If s = "" Then
-        IsNumericCell = False
-    Else
-        IsNumericCell = IsNumeric(s)
-    End If
-End Function
-
-' ------------------------------------------------------------------------------
-' ПРОВЕРКА ДАННЫХ ПЕРЕД ИМПОРТОМ
-' ------------------------------------------------------------------------------
-Sub ValidateQuestions()
-    Dim ws As Worksheet: Set ws = ActiveSheet
-    Dim lastRow As Long, r As Long, errCount As Long, warnCount As Long
-    Dim qType As String, title As String, tpl As String, v As String
-
-    lastRow = ws.Cells(ws.Rows.Count, C_TITLE).End(xlUp).Row
-    If lastRow < 2 Then
-        MsgBox "Таблица не содержит вопросов для проверки." & vbCrLf & _
-               "Заполните строки начиная со 2-й.", vbExclamation, "WP Olympiad — Проверка"
-        Exit Sub
-    End If
-
-    errCount = 0
-    warnCount = 0
-    ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, C_%LAST_KEY%)).Interior.Pattern = xlNone
-
-    For r = 2 To lastRow
-        qType = NormalizeType(CStr(ws.Cells(r, C_TYPE).Value))
-        title = Trim$(CStr(ws.Cells(r, C_TITLE).Value))
-
-        If qType = "" And title = "" Then GoTo NextRow
-
-        ' 1. Тип задания
-        If qType = "" Then
-            ws.Cells(r, C_TYPE).Interior.Color = RGB(255, 205, 210)
-            errCount = errCount + 1
-        ElseIf InStr(1, "%TYPE_LIST%", "|" & qType & "|", vbTextCompare) = 0 Then
-            ws.Cells(r, C_TYPE).Interior.Color = RGB(255, 205, 210)
-            errCount = errCount + 1
-        End If
-
-        ' 2. Формулировка
-        If title = "" Then
-            ws.Cells(r, C_TITLE).Interior.Color = RGB(255, 205, 210)
-            errCount = errCount + 1
-        End If
-
-        ' 3. Обязательность (0/1)
-        v = Trim$(CStr(ws.Cells(r, C_IS_REQUIRED).Value))
-        If v <> "" And v <> "0" And v <> "1" Then
-            ws.Cells(r, C_IS_REQUIRED).Interior.Color = RGB(255, 205, 210)
-            errCount = errCount + 1
-        End If
-
-        ' 4. Поля, специфичные для типа
-        Select Case qType
-            Case "single", "multi", "dropdown", "matching", "ordering"
-                If Trim$(CStr(ws.Cells(r, C_CHOICES).Value)) = "" Then
-                    ws.Cells(r, C_CHOICES).Interior.Color = RGB(255, 205, 210)
-                    errCount = errCount + 1
-                End If
-
-            Case "number", "slider"
-                If Not IsNumericCell(ws.Cells(r, C_TARGET_VALUE).Value) Then
-                    ws.Cells(r, C_TARGET_VALUE).Interior.Color = RGB(255, 205, 210)
-                    errCount = errCount + 1
-                End If
-                If qType = "slider" And Trim$(CStr(ws.Cells(r, C_EXTRA).Value)) = "" Then
-                    ws.Cells(r, C_EXTRA).Interior.Color = RGB(255, 235, 156)
-                    warnCount = warnCount + 1
-                End If
-
-            Case "text"
-                If Trim$(CStr(ws.Cells(r, C_ANSWERS).Value)) = "" And Trim$(CStr(ws.Cells(r, C_CORRECT).Value)) = "" Then
-                    ws.Cells(r, C_ANSWERS).Interior.Color = RGB(255, 205, 210)
-                    errCount = errCount + 1
-                End If
-
-            Case "word_scramble"
-                If Trim$(CStr(ws.Cells(r, C_ANSWERS).Value)) = "" Then
-                    ws.Cells(r, C_ANSWERS).Interior.Color = RGB(255, 205, 210)
-                    errCount = errCount + 1
-                End If
-
-            Case "boolean"
-                If Trim$(CStr(ws.Cells(r, C_CORRECT).Value)) = "" Then
-                    ws.Cells(r, C_CORRECT).Interior.Color = RGB(255, 205, 210)
-                    errCount = errCount + 1
-                End If
-
-            Case "fill_blank", "dictation"
-                tpl = Trim$(CStr(ws.Cells(r, C_TEMPLATE).Value))
-                If tpl = "" Then tpl = title
-                If InStr(tpl, "{") = 0 Or InStr(tpl, "}") = 0 Then
-                    ws.Cells(r, C_TITLE).Interior.Color = RGB(255, 205, 210)
-                    errCount = errCount + 1
-                End If
-        End Select
-
-NextRow:
-    Next r
-
-    If errCount = 0 Then
-        MsgBox "Проверка успешно пройдена!" & vbCrLf & vbCrLf & _
-               "Всего заданий проверено: " & (lastRow - 1) & vbCrLf & _
-               "Предупреждений: " & warnCount & vbCrLf & _
-               "Ошибок не обнаружено. Таблица готова к импорту.", _
-               vbInformation, "WP Olympiad — Проверка данных"
-    Else
-        MsgBox "Обнаружено ошибок: " & errCount & vbCrLf & _
-               "Предупреждений: " & warnCount & vbCrLf & vbCrLf & _
-               "Ячейки с некорректными данными выделены цветом:" & vbCrLf & _
-               "  • красный — ошибка, строка не импортируется;" & vbCrLf & _
-               "  • жёлтый — предупреждение, импорт возможен.", _
-               vbCritical, "WP Olympiad — Ошибки валидации"
-    End If
-End Sub
-
-' ------------------------------------------------------------------------------
-' ЭКСПОРТ В CSV (UTF-8, разделитель «;») — готов к импорту без правок
-' ------------------------------------------------------------------------------
-Sub ExportToCSV()
-    Dim ws As Worksheet: Set ws = ActiveSheet
-    Dim lastRow As Long, lastCol As Long, r As Long, c As Long
-    lastRow = ws.Cells(ws.Rows.Count, C_TITLE).End(xlUp).Row
-    If lastRow < 2 Then
-        MsgBox "Таблица пуста! Нечего экспортировать.", vbExclamation, "WP Olympiad"
-        Exit Sub
-    End If
-
-    Dim defaultPath As String
-    defaultPath = "questions.csv"
-    If ws.Parent.Path <> "" Then
-        defaultPath = ws.Parent.Path & Application.PathSeparator & "questions.csv"
-    End If
-
-    Dim fName As Variant
-    fName = Application.GetSaveAsFilename(InitialFileName:=defaultPath, _
-               FileFilter:="CSV Files (*.csv), *.csv", _
-               Title:="Экспорт вопросов в CSV (WP Olympiad)")
-    If fName = False Then Exit Sub
-
-    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
-    If lastCol < %COUNT% Then lastCol = %COUNT%
-    If lastCol > %COUNT% Then lastCol = %COUNT%
-
-    Dim adStream As Object
-    Set adStream = CreateObject("ADODB.Stream")
-    adStream.Type = 2
-    adStream.Charset = "utf-8"
-    adStream.Open
-
-    Dim lineStr As String, val As String
-    For r = 1 To lastRow
-        lineStr = ""
-        For c = 1 To lastCol
-            val = CStr(ws.Cells(r, c).Value)
-            val = Replace(val, """", """""")
-            If InStr(val, ";") > 0 Or InStr(val, """") > 0 Or InStr(val, vbLf) > 0 Or InStr(val, vbCr) > 0 Then
-                val = """" & val & """"
-            End If
-            If lineStr <> "" Then lineStr = lineStr & ";"
-            lineStr = lineStr & val
-        Next c
-        adStream.WriteText lineStr & vbCrLf
-    Next r
-
-    adStream.SaveToFile fName, 2
-    adStream.Close
-
-    MsgBox "Экспорт успешно завершён!" & vbCrLf & vbCrLf & _
-           "Файл: " & fName & vbCrLf & _
-           "Экспортировано заданий: " & (lastRow - 1) & vbCrLf & vbCrLf & _
-           "Положите файл в сетевую папку (import/) — плагин импортирует его автоматически.", _
-           vbInformation, "WP Olympiad — Экспорт завершён"
-End Sub
-
-' ------------------------------------------------------------------------------
-' ДОБАВИТЬ ПУСТУЮ СТРОКУ С ЗАГОТОВКОЙ
-' ------------------------------------------------------------------------------
-Sub AddSampleRow()
-    Dim ws As Worksheet: Set ws = ActiveSheet
-    Dim nextRow As Long
-    nextRow = ws.Cells(ws.Rows.Count, C_TITLE).End(xlUp).Row + 1
-    If nextRow < 2 Then nextRow = 2
-
-    ws.Cells(nextRow, C_TYPE).Value = "single"
-    ws.Cells(nextRow, C_TITLE).Value = "Новый вопрос олимпиады #" & (nextRow - 1)
-    ws.Cells(nextRow, C_POINTS).Value = 1
-    ws.Cells(nextRow, C_PENALTY).Value = 0
-    ws.Cells(nextRow, C_GROUP_NAME).Value = "Основной раздел"
-    ws.Cells(nextRow, C_CHOICES).Value = "*Правильный вариант | Вариант 2 | Вариант 3"
-    ws.Cells(nextRow, C_EXPLANATION).Value = "Пояснение к правильному ответу"
-    ws.Cells(nextRow, C_IS_REQUIRED).Value = 1
-
-    ws.Range(ws.Cells(nextRow, 1), ws.Cells(nextRow, %COUNT%)).Interior.Pattern = xlNone
-    ws.Cells(nextRow, C_TITLE).Select
-
-    MsgBox "Добавлена новая строка #" & nextRow & ". Заполните параметры задания.", vbInformation, "WP Olympiad"
-End Sub
-
-' ------------------------------------------------------------------------------
-' ОЧИСТИТЬ ТАБЛИЦУ (заголовки остаются)
-' ------------------------------------------------------------------------------
-Sub ClearQuestions()
-    Dim ws As Worksheet: Set ws = ActiveSheet
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, C_TITLE).End(xlUp).Row
-    If lastRow < 2 Then
-        MsgBox "Таблица уже пуста.", vbInformation, "WP Olympiad"
-        Exit Sub
-    End If
-
-    If MsgBox("Вы действительно хотите удалить все вопросы из таблицы?" & vbCrLf & _
-              "Будут очищены строки со 2 по " & lastRow & " (заголовки останутся).", _
-              vbYesNo + vbQuestion, "Подтверждение очистки") = vbYes Then
-        ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, %COUNT%)).ClearContents
-        ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, %COUNT%)).Interior.Pattern = xlNone
-        MsgBox "Таблица вопросов очищена.", vbInformation, "WP Olympiad"
-    End If
-End Sub
-''' .replace('%LAST_COL%', last_col) \
-    .replace('%COUNT%', str(len(keys))) \
-    .replace('%TYPE_COUNT%', str(len(types))) \
-    .replace('%CONSTS%', '\n'.join(consts)) \
-    .replace('%TYPE_LIST%', type_case) \
-    .replace('%TYPE_COUNT%', str(len(types))) \
-    .replace('%LAST_KEY%', last_key)
-
-
-def finalize_vba(code: str) -> str:
-    return code.replace('\r\n', '\n').replace('\n', '\r\n')
-
-
-def create_excel_workbook(file_path, schema, is_macro=False, vba_bin=None):
+def create_excel_workbook(file_path, schema):
     keys = schema['keys']
     columns = schema['columns']
     samples = schema['samples']
@@ -450,8 +59,6 @@ def create_excel_workbook(file_path, schema, is_macro=False, vba_bin=None):
     total_cols = len(keys)
 
     wb = xlsxwriter.Workbook(file_path)
-    if is_macro and vba_bin:
-        wb.add_vba_project(vba_bin)
 
     # --- FORMATS ---
     fmt_header = wb.add_format({
@@ -560,15 +167,7 @@ def create_excel_workbook(file_path, schema, is_macro=False, vba_bin=None):
     ws.autofilter(0, 0, len(samples), total_cols - 1)
     ws.freeze_panes(1, 2)
 
-    buttons_col = total_cols + 1  # one empty spacer column before the macro panel
-    if is_macro:
-        buttons_letter = col_letter(buttons_col + 1)
-        ws.set_column(buttons_col, buttons_col, 25)
-        ws.write(0, buttons_col, '⚙ МАКРОСЫ', wb.add_format({'bold': True, 'font_size': 11, 'color': '#1E3A8A', 'align': 'center'}))
-        ws.insert_button('%s2' % buttons_letter, {'macro': 'ValidateQuestions', 'caption': '✔ Проверить данные', 'width': 185, 'height': 34})
-        ws.insert_button('%s4' % buttons_letter, {'macro': 'ExportToCSV', 'caption': '📥 Экспорт в CSV', 'width': 185, 'height': 34})
-        ws.insert_button('%s6' % buttons_letter, {'macro': 'AddSampleRow', 'caption': '➕ Добавить строку', 'width': 185, 'height': 34})
-        ws.insert_button('%s8' % buttons_letter, {'macro': 'ClearQuestions', 'caption': '🧹 Очистить таблицу', 'width': 185, 'height': 34})
+    # No VBA projects or macro buttons are included in the distributed workbook.
 
     # --- SHEET 2: ИНСТРУКЦИЯ ---
     ws_info = wb.add_worksheet('Инструкция')
@@ -600,8 +199,8 @@ def create_excel_workbook(file_path, schema, is_macro=False, vba_bin=None):
         'Откройте лист «Вопросы». Строка 1 — заголовки, её менять нельзя (по ним работает импорт).',
         'Заполните строки со 2-й: минимум — тип задания и текст вопроса. Остальное — по необходимости.',
         'Баллы (points) и штраф (penalty) по умолчанию: 1 и 0. Числа можно писать с запятой: 9,8.',
-        'Для проверки нажмите «✔ Проверить данные» (в файле .xlsm) — макрос подсветит ошибки.',
-        'Сохраните файл как questions.csv в кодировке UTF-8 или нажмите «📥 Экспорт в CSV».',
+        'Для проверки используйте «Проверить файл заданий» в WordPress — проверка не меняет базу.',
+        'Сохраните заполненную книгу как Мои_вопросы.xlsx. Макросы и преобразование в CSV не требуются.',
         'Положите файл в сетевую папку (каталог import/ или корень) — плагин импортирует его автоматически,' ,
         'либо в админке олимпиады нажмите «✔ Проверить файл заданий», чтобы увидеть отчёт без импорта.',
     ]
@@ -753,33 +352,16 @@ def create_excel_workbook(file_path, schema, is_macro=False, vba_bin=None):
 def main():
     schema = load_schema()
     os.makedirs(TEMPLATES_DIR, exist_ok=True)
-
-    vba_bin = build_vba_project_bin(finalize_vba(build_vba_code(schema)))
-
-    xlsm_path = os.path.join(TEMPLATES_DIR, 'questions_template_macros.xlsm')
-    xlsx_path = os.path.join(TEMPLATES_DIR, 'questions_template.xlsx')
-
-    create_excel_workbook(xlsm_path, schema, is_macro=True, vba_bin=vba_bin)
-    create_excel_workbook(xlsx_path, schema, is_macro=False)
-
-    legacy_names = [
-        'шаблон_вопросов_макросы.xlsm', 'шаблон_вопросов.xlsx', 'шаблон_вопросов.csv',
-        'шаблон_вопросов.json', 'инструкция_по_импорту.txt',
-    ]
-    for target_dir in (TEMPLATES_DIR, WP_TEST_TEMPLATES):
-        if not os.path.isdir(target_dir):
-            continue
-        for fname in ('questions_template_macros.xlsm', 'questions_template.xlsx'):
-            src = os.path.join(TEMPLATES_DIR, fname)
-            dst = os.path.join(target_dir, fname)
-            if os.path.abspath(src) != os.path.abspath(dst):
-                shutil.copyfile(src, dst)
-        for legacy in legacy_names:
-            path = os.path.join(target_dir, legacy)
-            if os.path.exists(path):
-                os.remove(path)
-
-    print('Excel templates generated (%d columns, %d types) and deployed.' % (len(schema['keys']), len(schema['types'])))
+    # Remove only old build artifacts, never anything in a user's network share.
+    for name in ('questions.csv', 'questions.json', 'questions_template.csv',
+                 'questions_template.json', 'questions_template_macros.xlsm'):
+        path = os.path.join(TEMPLATES_DIR, name)
+        if os.path.lexists(path):
+            if os.path.isdir(path) and not os.path.islink(path):
+                raise RuntimeError('Obsolete template path is a directory: ' + path)
+            os.unlink(path)
+    create_excel_workbook(os.path.join(TEMPLATES_DIR, 'questions_template.xlsx'), schema)
+    print('XLSX template generated (%d columns, %d types); no network files modified.' % (len(schema['keys']), len(schema['types'])))
 
 
 if __name__ == '__main__':

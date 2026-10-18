@@ -177,9 +177,10 @@ final class Admin
                     'allow_external_embed' => !empty($_POST['allow_external_embed']) ? 1 : 0,
                     'api_enabled'       => !empty($_POST['api_enabled']) ? 1 : 0,
                     'webhook_url'       => esc_url_raw($_POST['webhook_url'] ?? ''),
-                    'email_participant' => !empty($_POST['email_participant']) ? 1 : 0,
-                    'email_admin'       => !empty($_POST['email_admin']) ? 1 : 0,
-                    'admin_email_to'    => sanitize_email($_POST['admin_email_to'] ?? ''),
+                    // Notifications have been retired. Cached forms cannot re-enable them.
+                    'email_participant' => 0,
+                    'email_admin'       => 0,
+                    'admin_email_to'    => '',
 
                     // Start / Introductory Page Settings
                     'enable_intro_page'        => !empty($_POST['enable_intro_page']) ? 1 : 0,
@@ -366,9 +367,9 @@ final class Admin
             exit;
         }
 
-        // Direct Download of Question Import Templates (CSV / JSON)
+        // Direct download of the single bundled XLSX question template.
         if ($action === 'download_question_template') {
-            $format = sanitize_key($_GET['format'] ?? 'csv');
+            $format = sanitize_key($_GET['format'] ?? 'xlsx');
             NetworkImport::download_template($format);
             exit;
         }
@@ -380,7 +381,7 @@ final class Admin
             if (!$quiz) {
                 wp_die(esc_html__('Олимпиада не найдена.', 'wp-olympiad'));
             }
-            $format = sanitize_key($_GET['format'] ?? 'csv');
+            $format = sanitize_key($_GET['format'] ?? 'xlsx');
             if ($format === 'json') {
                 Export::export_quiz_questions_json($quiz);
             } else {

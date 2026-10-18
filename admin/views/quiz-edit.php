@@ -30,9 +30,6 @@ $max_tab_switches = $is_new ? 5 : (int)$quiz->get_setting('max_tab_switches', 5)
 $anti_cheat_popup_warnings = $is_new ? 1 : (int)$quiz->get_setting('anti_cheat_popup_warnings', 1);
 $allow_external_embed = $is_new ? 1 : (int)$quiz->get_setting('allow_external_embed', 1);
 $webhook_url = $is_new ? '' : (string)$quiz->get_setting('webhook_url', '');
-$email_participant = $is_new ? 1 : (int)$quiz->get_setting('email_participant', 1);
-$email_admin = $is_new ? 0 : (int)$quiz->get_setting('email_admin', 0);
-$admin_email_to = $is_new ? '' : (string)$quiz->get_setting('admin_email_to', '');
 $direct_url = $is_new ? '' : $quiz->get_direct_url();
 $embed_code = $is_new ? '' : $quiz->get_embed_code();
 
@@ -320,7 +317,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                     </table>
                 </div>
 
-                <div class="wpo-card">
+                <div class="wpo-card" id="wpo-rules-card">
                     <h2><?php esc_html_e('Регламент и расписание олимпиады', 'wp-olympiad'); ?></h2>
                     <table class="form-table">
                         <tr>
@@ -356,6 +353,16 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <td>
                                 <input type="number" name="max_attempts" id="max_attempts" value="<?php echo esc_attr((string)$max_attempts); ?>" min="0" max="10" step="1" class="small-text">
                                 <p class="description"><?php esc_html_e('1 — для строгих олимпиад и экзаменов. 0 — неограниченно.', 'wp-olympiad'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Порядок вопросов:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <label for="shuffle_questions">
+                                    <input type="checkbox" name="shuffle_questions" id="shuffle_questions" value="1" <?php checked($shuffle_questions, 1); ?>>
+                                    <?php esc_html_e('Перемешивать порядок вопросов', 'wp-olympiad'); ?>
+                                </label>
+                                <p class="description"><?php esc_html_e('Вопросы выдаются в случайной последовательности. Если выключено — используется порядок из конструктора.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
                     </table>
@@ -781,8 +788,8 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                         <tr class="wpo-auto-import-row">
                             <th scope="row"><label for="network_auto_import_file"><?php esc_html_e('Имя файла заданий (необязательно):', 'wp-olympiad'); ?></label></th>
                             <td>
-                                <input type="text" name="network_auto_import_file" id="network_auto_import_file" value="<?php echo esc_attr($network_auto_import_file); ?>" class="regular-text code" placeholder="questions.csv или пусто для автопоиска">
-                                <p class="description"><?php esc_html_e('Оставьте пустым для автопоиска самого свежего файла заданий в папке (questions.csv, questions.xlsx, questions_template_macros.xlsm, questions.json и др.).', 'wp-olympiad'); ?></p>
+                                <input type="text" name="network_auto_import_file" id="network_auto_import_file" value="<?php echo esc_attr($network_auto_import_file); ?>" class="regular-text code" placeholder="Мои_вопросы.xlsx или пусто для автопоиска">
+                                <p class="description"><?php esc_html_e('Оставьте пустым для автопоиска вашего файла заданий (.xlsx, .xlsm, .csv или .json).', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
                         <tr>
@@ -800,8 +807,8 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                     <button type="button" class="button" id="wpo-btn-test-network">
                                         🔍 <?php esc_html_e('Проверить доступ к папке', 'wp-olympiad'); ?>
                                     </button>
-                                    <button type="button" class="button button-secondary" id="wpo-btn-deploy-network-templates" data-quiz-id="<?php echo esc_attr((string)($quiz ? $quiz->id : 0)); ?>" title="<?php esc_attr_e('Поместить образцы заданий (.xlsm, .xlsx, .csv, .json) в сетевую папку', 'wp-olympiad'); ?>">
-                                        📥 <?php esc_html_e('Поместить шаблоны заданий в папку', 'wp-olympiad'); ?>
+                                    <button type="button" class="button button-secondary" id="wpo-btn-deploy-network-templates" data-quiz-id="<?php echo esc_attr((string)($quiz ? $quiz->id : 0)); ?>" title="<?php esc_attr_e('Поместить шаблон Excel (.xlsx) и инструкцию в сетевую папку', 'wp-olympiad'); ?>">
+                                        📥 <?php esc_html_e('Поместить шаблон Excel в папку', 'wp-olympiad'); ?>
                                     </button>
                                     <?php if (!$is_new): ?>
                                         <button type="button" class="button button-secondary" id="wpo-btn-validate-import" data-quiz-id="<?php echo esc_attr((string)$quiz->id); ?>" title="<?php esc_attr_e('Разобрать файл заданий и показать отчёт по каждой строке, не изменяя базу', 'wp-olympiad'); ?>">
@@ -929,28 +936,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                 </div>
 
                 <div class="wpo-card">
-                    <h3><?php esc_html_e('Email-оповещения', 'wp-olympiad'); ?></h3>
-                    <p>
-                        <label>
-                            <input type="checkbox" name="email_participant" value="1" <?php checked($email_participant, 1); ?>>
-                            <?php esc_html_e('Отправлять итоги на email участника', 'wp-olympiad'); ?>
-                        </label>
-                    </p>
-                    <p>
-                        <label>
-                            <input type="checkbox" name="email_admin" value="1" <?php checked($email_admin, 1); ?>>
-                            <?php esc_html_e('Уведомлять организатора о сдачах', 'wp-olympiad'); ?>
-                        </label>
-                    </p>
-                    <div class="wpo-field" style="margin-top:10px;">
-                        <label for="admin_email_to"><?php esc_html_e('Email организатора:', 'wp-olympiad'); ?></label>
-                        <input type="email" name="admin_email_to" id="admin_email_to" value="<?php echo esc_attr($admin_email_to); ?>" class="widefat" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>">
-                    </div>
-                </div>
-
-                <div class="wpo-card">
                     <h3><?php esc_html_e('Рандомизация и отображение', 'wp-olympiad'); ?></h3>
-                    <p><label><input type="checkbox" name="shuffle_questions" value="1" <?php checked($shuffle_questions, 1); ?>> <?php esc_html_e('Перемешивать порядок вопросов', 'wp-olympiad'); ?></label></p>
                     <p><label><input type="checkbox" name="shuffle_answers" value="1" <?php checked($shuffle_answers, 1); ?>> <?php esc_html_e('Перемешивать варианты ответов', 'wp-olympiad'); ?></label></p>
                     <p><label><input type="checkbox" name="show_question_points" value="1" <?php checked($show_question_points, 1); ?>> <?php esc_html_e('Показывать баллы за задания в тесте', 'wp-olympiad'); ?></label></p>
                     <p class="description" style="margin-left:22px; font-size:12px; color:#64748b; margin-top:-6px;"><?php esc_html_e('Если снять галочку, стоимость вопросов (баллы) скрывается от участника во время выполнения теста.', 'wp-olympiad'); ?></p>

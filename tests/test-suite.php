@@ -626,19 +626,13 @@ $it("Шаблонизатор тегов (replace_template_tags): подстан
            str_contains($result, 'Победитель олимпиады');
 });
 
-// 37. Email Notification Dispatch
-$it("Email-оповещения (Mailer::send_attempt_emails): отправка итогов", function () use ($quiz, $attempt1) {
-    $mail_sent = false;
-    add_filter('pre_wp_mail', function ($null, $atts) use (&$mail_sent, $attempt1) {
-        if ($atts['to'] === $attempt1->participant_email) {
-            $mail_sent = true;
-            return true; // prevent actual send
-        }
-        return $null;
-    }, 10, 2);
-
-    \WPOlympiad\Mailer::send_attempt_emails($quiz, $attempt1);
-    return $mail_sent === true;
+// 37. The legacy mail entry point is retained but never dispatches notifications.
+$it("Email-оповещения отключены: прежний Mailer не отправляет письма", function () use ($quiz, $attempt1) {
+    $calls = 0;
+    $spy = static function ($pre, $atts) use (&$calls) { $calls++; return true; };
+    add_filter('pre_wp_mail', $spy, 10, 2);
+    try { \WPOlympiad\Mailer::send_attempt_emails($quiz, $attempt1); return $calls === 0; }
+    finally { remove_filter('pre_wp_mail', $spy, 10); }
 });
 
 // =======================================================
@@ -2631,82 +2625,28 @@ $it('Импорт заданий по шаблону из сетевой пап�
 // ---------------------------------------------------------------------------
 // 64. Размещение шаблонов импорта вопросов в сетевой папке по отдельной кнопке
 // ---------------------------------------------------------------------------
-$it('Размещение шаблонов импорта вопросов в сетевую папку по кнопке (без авто-размещения при проверке подключения)', function (): bool {
-    $temp_net_dir = sys_get_temp_dir() . '/wpo_test_deploy_templates_' . uniqid();
-    if (file_exists($temp_net_dir)) {
-        exec('rm -rf ' . escapeshellarg($temp_net_dir));
-    }
-
-    $quiz_id = Quiz::create([
-        'title'  => 'Проверка раздельного размещения шаблонов',
-        'status' => 'publish',
-        'settings' => [
-            'network_folder_type' => 'local',
-            'network_folder_path' => $temp_net_dir,
-        ],
-    ]);
-    $quiz = Quiz::get($quiz_id);
-
-    // 1. Проверяем подключение к папке: шаблоны НЕ должны создаваться автоматически при тесте!
-    $test_res = NetworkExport::test_connection([
-        'type' => 'local',
-        'path' => $temp_net_dir,
-    ]);
-
-    if (empty($test_res['success'])) return false;
-    // Шаблоны НЕ должны создаваться при обычной проверке подключения!
-    if (!is_file($temp_net_dir . '/import/QuestionStudio.exe')) return false;
-    foreach (['questions_template.csv', 'questions_template.json', 'questions.csv', 'questions_template.xlsx', 'questions_template_macros.xlsm', 'README_IMPORT.txt'] as $template_file) {
-        if (file_exists($temp_net_dir . '/import/' . $template_file)) return false;
-    }
-
-    // 2. Вызываем отдельное целевое действие размещения шаблонов
-    $deploy_res = NetworkExport::deploy_import_templates([
-        'type' => 'local',
-        'path' => $temp_net_dir,
-    ]);
-    if (!$deploy_res) return false;
-
-    // 3. Проверяем наличие созданных шаблонов в сетевой папке строго внутри каталога import/
-    $sub_csv = $temp_net_dir . '/import/questions_template.csv';
-    $sub_json = $temp_net_dir . '/import/questions_template.json';
-    $sub_work_csv = $temp_net_dir . '/import/questions.csv';
-    $sub_readme = $temp_net_dir . '/import/README_IMPORT.txt';
-
-    if (!file_exists($sub_csv) || filesize($sub_csv) < 100) return false;
-    if (!file_exists($sub_json) || filesize($sub_json) < 100) return false;
-    if (!file_exists($sub_work_csv) || filesize($sub_work_csv) < 100) return false;
-    if (!file_exists($sub_readme) || filesize($sub_readme) < 100) return false;
-
-    // Проверяем, что в корне сетевой папки НЕТ никаких файлов вне каталогов
-    $root_loose_files = array_filter(glob($temp_net_dir . '/*'), 'is_file');
-    if (!empty($root_loose_files)) return false;
-
-    // Проверяем наличие BOM и заголовков в CSV шаблоне
-    $csv_content = file_get_contents($sub_csv);
-    if (!str_contains($csv_content, "\xEF\xBB\xBF")) return false; // UTF-8 BOM
-    if (!str_contains($csv_content, 'type;title;points;penalty')) return false;
-
-    // 4. Проверяем, что сетевой сканер файлов импорта сразу же видит эти шаблоны в подкаталоге
-    $scan_files = NetworkImport::scan_network_folder_for_import_files($quiz);
-    if (count($scan_files) < 3) return false;
-
-    $file_names = array_column($scan_files, 'name');
-    if (!in_array('questions.csv', $file_names, true)) return false;
-    if (!in_array('questions_template.csv', $file_names, true)) return false;
-    if (!in_array('questions_template.json', $file_names, true)) return false;
-
-    // 5. Проверяем импорт одного из созданных шаблонов
-    $import_res = NetworkImport::import_from_network($quiz_id, 'import/questions_template.csv', 'append');
-    if (empty($import_res['success']) || $import_res['imported_count'] !== 13) return false;
-
-    $imported_qs = $quiz->get_questions(false);
-    if (count($imported_qs) !== 13) return false;
-
-    // Очистка
-    exec('rm -rf ' . escapeshellarg($temp_net_dir));
-    Quiz::delete($quiz_id);
-    return true;
+$it('Размещение только XLSX и инструкции по кнопке; удалённые образцы не создаются', function (): bool {
+    $root = sys_get_temp_dir() . '/wpo_xlsx_deploy_' . wp_generate_password(12, false, false);
+    $id = Quiz::create(['title' => 'Только Excel-шаблон', 'settings' => ['network_folder_type' => 'local', 'network_folder_path' => $root]]);
+    $removed = ['questions.csv', 'questions.json', 'questions_template.csv', 'questions_template.json', 'questions_template_macros.xlsm'];
+    try {
+        $connection = NetworkExport::test_connection(['type' => 'local', 'path' => $root]);
+        if (empty($connection['success']) || !is_file($root . '/import/QuestionStudio.exe')) return false;
+        foreach (array_merge($removed, ['questions_template.xlsx', 'README_IMPORT.txt']) as $name) {
+            if (file_exists($root . '/import/' . $name)) return false;
+        }
+        $result = NetworkExport::deploy_import_templates_result(['type' => 'local', 'path' => $root]);
+        if (empty($result['success']) || $result['files'] !== ['import/questions_template.xlsx', 'import/README_IMPORT.txt']) return false;
+        foreach ($removed as $name) { if (file_exists($root . '/import/' . $name)) return false; }
+        if (!is_file($root . '/import/questions_template.xlsx') || filesize($root . '/import/questions_template.xlsx') < 5000) return false;
+        if (!is_file($root . '/import/README_IMPORT.txt') || filesize($root . '/import/README_IMPORT.txt') < 100) return false;
+        if (array_filter(glob($root . '/*'), 'is_file')) return false;
+        $quiz = Quiz::get($id);
+        $found = NetworkImport::scan_network_folder_for_import_files($quiz);
+        if (array_column($found, 'name') !== ['questions_template.xlsx']) return false;
+        $import = NetworkImport::import_from_network($id, 'import/questions_template.xlsx', 'append');
+        return !empty($import['success']) && $import['imported_count'] === 13 && count(Quiz::get($id)->get_questions(false)) === 13;
+    } finally { Quiz::delete($id); exec('rm -rf ' . escapeshellarg($root)); }
 });
 
 // ---------------------------------------------------------------------------
@@ -2757,123 +2697,36 @@ $it('Отключение стартовой страницы: прямой за
 });
 
 // ---------------------------------------------------------------------------
-// 66. Шаблон Excel с макросами (.xlsm) и выпадающими списками (.xlsx)
+// 66. Единственный Excel-шаблон без макросов; пользовательский XLSM читается
 // ---------------------------------------------------------------------------
-$it('Excel-шаблон с макросами (.xlsm) и выпадающими списками: генерация, валидация и прямой импорт', function (): bool {
-    // 1. Проверяем получение бинарного контента шаблонов
-    $xlsm_data = NetworkImport::get_template_xlsm();
-    $xlsx_data = NetworkImport::get_template_xlsx();
-
-    if (empty($xlsm_data) || !str_starts_with($xlsm_data, "PK\x03\x04")) return false;
-    if (empty($xlsx_data) || !str_starts_with($xlsx_data, "PK\x03\x04")) return false;
-    if (strlen($xlsm_data) < 5000 || strlen($xlsx_data) < 5000) return false;
-
-    // 2. Проверяем структуру OpenXML архива .xlsm (наличие листов и vbaProject.bin)
-    $tmp_xlsm = tempnam(sys_get_temp_dir(), 'wpo_t_xlsm_');
-    file_put_contents($tmp_xlsm, $xlsm_data);
-    $zip = new \ZipArchive();
-    if ($zip->open($tmp_xlsm) !== true) {
-        @unlink($tmp_xlsm);
-        return false;
-    }
-    $has_sheet1 = ($zip->locateName('xl/worksheets/sheet1.xml') !== false);
-    $has_vba = ($zip->locateName('xl/vbaProject.bin') !== false);
-    $sheet_xml_str = $zip->getFromName('xl/worksheets/sheet1.xml');
-    $zip->close();
-    @unlink($tmp_xlsm);
-
-    if (!$has_sheet1 || !$has_vba || $sheet_xml_str === false) return false;
-
-    // Проверяем наличие выпадающих списков (dataValidation) в XML таблицы
-    if (!str_contains($sheet_xml_str, 'dataValidation')) return false;
-
-    // 3. Проверяем прямой парсинг Excel-файлов (.xlsx и .xlsm) через NetworkImport
-    $parsed_xlsx = NetworkImport::parse_excel_content($xlsx_data);
-    if (count($parsed_xlsx) !== 13) return false;
-
-    $parsed_xlsm = NetworkImport::parse_questions_content($xlsm_data, 'questions_template_macros.xlsm');
-    if (count($parsed_xlsm) !== 13) return false;
-
-    // Проверяем типы всех 13 разобранных вопросов
-    $types = array_column($parsed_xlsm, 'question_type');
-    $expected_types = ['single', 'multi', 'dropdown', 'boolean', 'number', 'text', 'matching', 'ordering', 'fill_blank', 'slider', 'word_scramble', 'dictation', 'essay'];
-    if ($types !== $expected_types) return false;
-
-    // 4. Проверяем импорт разобранных вопросов Excel в олимпиаду
-    $quiz_id = Quiz::create([
-        'title'  => 'Олимпиада из Excel шаблона с макросами',
-        'status' => 'publish',
-    ]);
-    $quiz = Quiz::get($quiz_id);
-
-    $import_res = NetworkImport::import_to_quiz($quiz_id, $parsed_xlsm, 'replace');
-    if (empty($import_res['success']) || $import_res['imported_count'] !== 13) {
-        Quiz::delete($quiz_id);
-        return false;
-    }
-
-    $qs = $quiz->get_questions(false);
-    if (count($qs) !== 13) {
-        Quiz::delete($quiz_id);
-        return false;
-    }
-
-    // Проверяем корректность параметров отдельных вопросов
-    $single_q = $qs[0];
-    if ($single_q->question_type !== 'single' || $single_q->points !== 3 || $single_q->penalty !== 1) {
-        Quiz::delete($quiz_id);
-        return false;
-    }
-
-    $num_q = $qs[4];
-    if ($num_q->question_type !== 'number' || (float)($num_q->options['target_value'] ?? 0) !== 9.8) {
-        Quiz::delete($quiz_id);
-        return false;
-    }
-
-    $match_q = $qs[6];
-    $pairs = $match_q->options['pairs'] ?? [];
-    if ($match_q->question_type !== 'matching' || empty($pairs) || count($pairs) !== 4) {
-        Quiz::delete($quiz_id);
-        return false;
-    }
-
-    // 5. Проверяем авто-размещение Excel шаблонов в сетевую папку
-    $temp_net_dir = sys_get_temp_dir() . '/wpo_net_excel_' . uniqid();
-    mkdir($temp_net_dir, 0777, true);
-
-    $deploy_res = NetworkExport::deploy_import_templates(['path' => $temp_net_dir]);
-    if (!$deploy_res) {
-        exec('rm -rf ' . escapeshellarg($temp_net_dir));
-        Quiz::delete($quiz_id);
-        return false;
-    }
-
-    if (!file_exists($temp_net_dir . '/import/questions_template_macros.xlsm')) return false;
-    if (!file_exists($temp_net_dir . '/import/questions_template.xlsx')) return false;
-    if (!file_exists($temp_net_dir . '/import/questions_template.csv')) return false;
-    if (!file_exists($temp_net_dir . '/import/questions_template.json')) return false;
-    if (!file_exists($temp_net_dir . '/import/README_IMPORT.txt')) return false;
-
-    // В папке import НЕ должно быть русифицированных файлов (только чистая латиница)
-    $import_files = scandir($temp_net_dir . '/import');
-    foreach ($import_files as $f) {
-        if ($f === '.' || $f === '..') continue;
-        if (preg_match('/[\p{Cyrillic}]/u', $f)) {
-            exec('rm -rf ' . escapeshellarg($temp_net_dir));
-            Quiz::delete($quiz_id);
-            return false;
-        }
-    }
-
-    // В корне сетевой папки не должно быть файлов
-    $root_files = array_filter(glob($temp_net_dir . '/*'), 'is_file');
-    if (!empty($root_files)) return false;
-
-    // Очистка
-    exec('rm -rf ' . escapeshellarg($temp_net_dir));
-    Quiz::delete($quiz_id);
-    return true;
+$it('Excel-шаблон без макросов: 13 типов, списки, импорт XLSX и пользовательского XLSM', function (): bool {
+    $xlsx = NetworkImport::get_template_xlsx();
+    if (!str_starts_with($xlsx, "PK\x03\x04") || strlen($xlsx) < 5000 || NetworkImport::get_template_xlsm() !== '') return false;
+    $temp = tempnam(sys_get_temp_dir(), 'wpo_macro_compat_');
+    $id = 0;
+    try {
+        file_put_contents($temp, $xlsx); $zip = new \ZipArchive();
+        if ($zip->open($temp) !== true) return false;
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $types = $zip->getFromName('[Content_Types].xml');
+        if ($zip->locateName('xl/vbaProject.bin') !== false || $sheet === false || !str_contains($sheet, 'dataValidation')) { $zip->close(); return false; }
+        // A valid macro-enabled OOXML workbook may have no VBA project. Create
+        // this user-file fixture only at runtime; no XLSM sample is distributed.
+        $macro_types = str_replace('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml', 'application/vnd.ms-excel.sheet.macroEnabled.main+xml', (string)$types, $replaced);
+        if ($replaced !== 1) { $zip->close(); return false; }
+        $zip->addFromString('[Content_Types].xml', $macro_types); $zip->close();
+        $user_xlsm = (string)file_get_contents($temp);
+        $parsed = NetworkImport::parse_questions_content($xlsx, 'Мои_вопросы.xlsx');
+        $macro_parsed = NetworkImport::parse_questions_content($user_xlsm, 'Мои_вопросы.xlsm');
+        $expected = ['single', 'multi', 'dropdown', 'boolean', 'number', 'text', 'matching', 'ordering', 'fill_blank', 'slider', 'word_scramble', 'dictation', 'essay'];
+        if (array_column($parsed, 'question_type') !== $expected || array_column($macro_parsed, 'question_type') !== $expected) return false;
+        $id = Quiz::create(['title' => 'XLSX: все типы, без макросов']);
+        $result = NetworkImport::import_to_quiz($id, $parsed, 'replace'); $questions = Quiz::get($id)->get_questions(false);
+        if (empty($result['success']) || $result['imported_count'] !== 13 || count($questions) !== 13) return false;
+        return $questions[0]->points === 3 && $questions[0]->penalty === 1
+            && (float)($questions[4]->options['target_value'] ?? 0) === 9.8
+            && count($questions[6]->options['pairs'] ?? []) === 4;
+    } finally { if ($id) Quiz::delete($id); @unlink($temp); }
 });
 
 // ---------------------------------------------------------------------------
@@ -3471,10 +3324,10 @@ $it('Шаблон импорта: 13 типов заданий, русские �
     }
     if (mb_strpos($readme, 'extra') === false) return false;
 
-    // 7. Excel-шаблоны (.xlsx и .xlsm): все 13 типов, без мусора с листа «Инструкция»
-    foreach (['questions_template.xlsx', 'questions_template_macros.xlsm'] as $excel_file) {
+    // 7. Единственный XLSX-шаблон: все 13 типов, без мусора с листа «Инструкция»
+    foreach (['questions_template.xlsx'] as $excel_file) {
         $path = dirname(__DIR__) . '/templates/' . $excel_file;
-        if (!file_exists($path)) continue;
+        if (!file_exists($path)) return false;
         $binary = (string)file_get_contents($path);
         $excel_analysis = NetworkImport::analyze_questions_content($binary, $excel_file);
         if ($excel_analysis['stats']['importable'] !== 13 || $excel_analysis['stats']['errors'] !== 0) {
@@ -4502,6 +4355,8 @@ $it("Настройки олимпиады: update_setting не затирает
 
 require __DIR__ . '/test-desktop-editor.php';
 require __DIR__ . '/test-network-sync.php';
+require __DIR__ . '/test-template-package.php';
+require __DIR__ . '/test-settings-mail.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

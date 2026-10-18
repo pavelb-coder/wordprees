@@ -288,26 +288,17 @@ final class NetworkExport
                 }
             }
 
-            $xlsm = NetworkImport::get_template_xlsm();
+            // The distribution intentionally contains only XLSX + its guide.
+            // Never recreate CSV/JSON aliases or the removed macro-enabled sample.
             $xlsx = NetworkImport::get_template_xlsx();
-            $csv = NetworkImport::get_template_csv();
-            $json = NetworkImport::get_template_json();
-            $readme = NetworkImport::get_template_readme();
-
-            // Шаблоны импорта размещаются внутри папки import/
-            // Исключительно латинские/ASCII имена файлов для исключения проблем с кодировками
+            if (!str_starts_with($xlsx, "PK\x03\x04")) {
+                return ['success' => false, 'message' => __('Шаблон Excel недоступен. Переустановите актуальный ZIP плагина.', 'wp-olympiad')];
+            }
+            $prefix = DesktopEditor::import_prefix($config);
             $files = [
-                'import/questions_template_macros.xlsm' => $xlsm,
-                'import/questions_template.xlsx'        => $xlsx,
-                'import/questions_template.csv'         => $csv,
-                'import/questions_template.json'        => $json,
-                'import/questions.csv'                  => $csv,
-                'import/questions.json'                 => $json,
-                'import/README_IMPORT.txt'              => $readme,
+                $prefix . 'questions_template.xlsx' => $xlsx,
+                $prefix . 'README_IMPORT.txt' => NetworkImport::get_template_readme(),
             ];
-
-            // If XLSM or XLSX template binaries are empty on disk, omit empty entries
-            $files = array_filter($files, fn($data) => is_string($data) && strlen($data) > 0);
 
             $res = self::deliver_files($files, $config);
 
@@ -329,7 +320,7 @@ final class NetworkExport
                 'destination' => $deployed_dest,
                 'files'       => array_keys($files),
                 'message'     => sprintf(
-                    __('Шаблоны для импорта вопросов успешно помещены в сетевую папку (подкаталог import/): questions_template_macros.xlsm, questions_template.xlsx, questions_template.csv, questions_template.json, questions.csv и README_IMPORT.txt. Путь: %s', 'wp-olympiad'),
+                    __('Шаблон Excel и инструкция помещены в сетевую папку: questions_template.xlsx и README_IMPORT.txt. Путь: %s', 'wp-olympiad'),
                     $deployed_dest
                 ),
             ];
@@ -997,48 +988,42 @@ final class NetworkExport
      */
     private static function deliver_webdav(array $files, array $config): array
     {
-        $base_url = rtrim($config['path'], '/');
-        $headers = [];
+        $base_url = rtrim($config['path'], '/'); $headers = [];
         if (!empty($config['user']) || !empty($config['password'])) {
             $headers['Authorization'] = 'Basic ' . base64_encode("{$config['user']}:{$config['password']}");
         }
-
-        $written_count = 0;
-        $total_bytes = 0;
-
+        $created = []; $written = 0; $total_bytes = 0;
         foreach ($files as $name => $content) {
-            $url = $base_url . '/' . rawurlencode($name);
-            $mime = str_ends_with($name, '.csv') ? 'text/csv; charset=UTF-8' : 'text/plain; charset=UTF-8';
-
-            $res = wp_remote_request($url, [
-                'method'    => 'PUT',
-                'headers'   => array_merge($headers, ['Content-Type' => $mime]),
-                'body'      => $content,
-                'timeout'   => 30,
-                'sslverify' => false,
-            ]);
-
-            if (!is_wp_error($res)) {
-                $code = (int)wp_remote_retrieve_response_code($res);
-                if ($code >= 200 && $code < 300) {
-                    $written_count++;
-                    $total_bytes += strlen($content);
-                }
+            $segments = explode('/', str_replace('\\', '/', trim($name, '/')));
+            if (array_intersect($segments, ['', '.', '..'])) {
+                return ['success' => false, 'message' => __('Недопустимый относительный путь файла WebDAV.', 'wp-olympiad')];
             }
+            $encoded = array_map('rawurlencode', $segments); $parent = '';
+            foreach (array_slice($encoded, 0, -1) as $segment) {
+                $parent .= '/' . $segment;
+                if (isset($created[$parent])) continue;
+                $res = wp_remote_request($base_url . $parent, ['method' => 'MKCOL', 'headers' => $headers, 'timeout' => 30, 'sslverify' => false]);
+                $code = is_wp_error($res) ? 0 : (int)wp_remote_retrieve_response_code($res);
+                if (!in_array($code, [200, 201, 204, 405], true)) {
+                    return ['success' => false, 'message' => sprintf(__('Не удалось создать папку WebDAV (HTTP %d).', 'wp-olympiad'), $code)];
+                }
+                $created[$parent] = true;
+            }
+            $extension = strtolower((string)pathinfo($name, PATHINFO_EXTENSION));
+            $mime = ['csv' => 'text/csv; charset=UTF-8', 'json' => 'application/json; charset=UTF-8',
+                'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'txt' => 'text/plain; charset=UTF-8'][$extension] ?? 'application/octet-stream';
+            $res = wp_remote_request($base_url . '/' . implode('/', $encoded), [
+                'method' => 'PUT', 'headers' => array_merge($headers, ['Content-Type' => $mime]),
+                'body' => $content, 'timeout' => 30, 'sslverify' => false,
+            ]);
+            $code = is_wp_error($res) ? 0 : (int)wp_remote_retrieve_response_code($res);
+            if ($code < 200 || $code >= 300) {
+                return ['success' => false, 'message' => sprintf(__('WebDAV: файл «%s» не записан (HTTP %d). Записано %d из %d файлов.', 'wp-olympiad'), $name, $code, $written, count($files))];
+            }
+            $written++; $total_bytes += strlen($content);
         }
-
-        if ($written_count === 0) {
-            return [
-                'success' => false,
-                'message' => __('Ошибка отправки файлов на WebDAV сервер.', 'wp-olympiad'),
-            ];
-        }
-
-        return [
-            'success'     => true,
-            'destination' => $base_url,
-            'size'        => $total_bytes,
-        ];
+        return ['success' => $written === count($files) && $written > 0, 'destination' => $base_url, 'size' => $total_bytes];
     }
 
     /**

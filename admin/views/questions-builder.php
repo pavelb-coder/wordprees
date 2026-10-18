@@ -231,21 +231,12 @@ foreach ($questions as $question_obj) {
                 <!-- Download templates banner -->
                 <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px 16px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                     <div>
-                        <strong style="color:#1e40af; display:block; font-size:13px;">📄 <?php esc_html_e('Шаблоны для заполнения вопросов:', 'wp-olympiad'); ?></strong>
+                        <strong style="color:#1e40af; display:block; font-size:13px;">📄 <?php esc_html_e('Шаблон для заполнения вопросов:', 'wp-olympiad'); ?></strong>
                         <span style="font-size:12px; color:#475569;"><?php esc_html_e('Все 13 типов заданий: выбор, соответствия, последовательность, пропуски, шкала, анаграмма, диктант, эссе и др. Заголовки можно писать по-русски.', 'wp-olympiad'); ?></span>
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                        <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=download_question_template&format=xlsm')); ?>" class="button button-small button-primary" title="<?php esc_attr_e('Excel с макросами валидации и экспорта', 'wp-olympiad'); ?>">
-                            📊 Excel (.xlsm с макросами)
-                        </a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=download_question_template&format=xlsx')); ?>" class="button button-small button-secondary" title="<?php esc_attr_e('Стандартный файл Excel с выпадающими списками', 'wp-olympiad'); ?>">
-                            📗 Excel (.xlsx)
-                        </a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=download_question_template&format=csv')); ?>" class="button button-small button-secondary">
-                            📥 CSV
-                        </a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=download_question_template&format=json')); ?>" class="button button-small button-secondary">
-                            📥 JSON
+                        <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=download_question_template&format=xlsx')); ?>" class="button button-small button-primary" title="<?php esc_attr_e('Стандартный файл Excel с выпадающими списками', 'wp-olympiad'); ?>">
+                            📗 Шаблон Excel (.xlsx)
                         </a>
                     </div>
                 </div>
@@ -312,7 +303,7 @@ foreach ($questions as $question_obj) {
                             </select>
                         </div>
                         <div style="margin-top:6px;">
-                            <input type="text" id="wpo-import-manual-filename" class="widefat" placeholder="<?php esc_attr_e('Или введите относительный путь: questions.csv, questions_template_macros.xlsm...', 'wp-olympiad'); ?>" style="font-size:12px;">
+                            <input type="text" id="wpo-import-manual-filename" class="widefat" placeholder="<?php esc_attr_e('Или введите путь к вашему файлу: Мои_вопросы.xlsx, задания.csv...', 'wp-olympiad'); ?>" style="font-size:12px;">
                         </div>
                     </div>
                 </div>

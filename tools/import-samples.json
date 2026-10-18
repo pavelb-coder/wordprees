@@ -132,7 +132,7 @@
         {
             "key": "extra",
             "label": "Доп. параметры",
-            "hint": "Пары key=value через «;». Ключи: min, max, step, extra_letters, audio_url, scoring, mistakes, mode, distractors, min_words, max_words, keywords, min_keywords, match, typo, shuffle, case_sensitive.",
+            "hint": "Пары key=value через «;». Ключи: min, max, step, extra_letters, audio_url, scoring, mistakes, mode, distractors, min_words, max_words, keywords, min_keywords, match, typo, shuffle, case_sensitive, show_points (1 — показывать баллы за это задание, по умолчанию они скрыты).",
             "example": "",
             "width": 30,
             "required": false
