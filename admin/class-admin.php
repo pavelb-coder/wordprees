@@ -166,7 +166,6 @@ final class Admin
                     // Retired card: absent/stale POST fields must not reset
                     // shuffle_answers or show_question_points. Quiz merges existing
                     // settings; new quizzes retain their established defaults.
-                    'allow_guest'       => !empty($_POST['allow_guest']) ? 1 : 0,
                     'require_org'       => !empty($_POST['require_org']) ? 1 : 0,
                     'require_email'     => !empty($_POST['require_email']) ? 1 : 0,
                     'show_results_mode' => sanitize_key($_POST['show_results_mode'] ?? 'immediate'),
@@ -242,6 +241,9 @@ final class Admin
                     'style' => Style::sanitize_post($_POST),
                 ],
             ];
+
+            // Missing fields in cached/partial forms must not disable guest access.
+            $data['settings'] = array_merge($data['settings'], Quiz::guest_access_patch($_POST));
 
             // Секрет для подписи webhook создаётся автоматически, как только указан URL.
             if (!empty($data['settings']['webhook_url'])) {

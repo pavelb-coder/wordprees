@@ -319,6 +319,18 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                     <h2><?php esc_html_e('Регламент и расписание олимпиады', 'wp-olympiad'); ?></h2>
                     <table class="form-table">
                         <tr>
+                            <th scope="row"><?php esc_html_e('Доступ участников:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <input type="hidden" name="wpo_guest_access_present" value="1">
+                                <label for="allow_guest">
+                                    <input type="checkbox" name="allow_guest" id="allow_guest" value="1" <?php checked($allow_guest, 1); ?>>
+                                    <?php esc_html_e('Участие без регистрации и входа на сайт', 'wp-olympiad'); ?>
+                                </label>
+                                <p class="description"><?php esc_html_e('Участник заполняет анкету и начинает тест без учётной записи WordPress. Если появляется требование войти в систему, включите этот параметр и сохраните олимпиаду.', 'wp-olympiad'); ?></p>
+                                <p class="description"><?php esc_html_e('Если выключено — участвовать могут только вошедшие пользователи сайта. Авторизованная интеграция по ключу API работает отдельно.', 'wp-olympiad'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
                             <th scope="row"><label for="time_limit"><?php esc_html_e('Лимит времени (минут):', 'wp-olympiad'); ?></label></th>
                             <td>
                                 <input type="number" name="time_limit" id="time_limit" value="<?php echo esc_attr((string)$time_limit); ?>" min="0" max="600" step="1" class="small-text">

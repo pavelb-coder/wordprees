@@ -169,6 +169,17 @@ final class Quiz
         ];
     }
 
+    /** Normalize only an explicit guest-access control; absence means preserve. */
+    public static function guest_access_patch(array $form): array
+    {
+        $marker = $form['wpo_guest_access_present'] ?? null;
+        if ($marker !== 1 && $marker !== '1' && !array_key_exists('allow_guest', $form)) return [];
+        $raw = $form['allow_guest'] ?? 0;
+        if (!is_scalar($raw) && $raw !== null) return [];
+        $value = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        return $value === null ? [] : ['allow_guest' => $value ? 1 : 0];
+    }
+
     /**
      * Get grade title and message based on percentage
      *

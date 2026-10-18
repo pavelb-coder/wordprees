@@ -142,11 +142,23 @@ final class RestApi
 
     public static function handle_start(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
+        // A client-supplied flag or header cannot create an authenticated context.
+        return self::start_attempt($request, false);
+    }
+
+    private static function start_attempt(WP_REST_Request $request, bool $authenticated_integration): WP_REST_Response|WP_Error
+    {
         $quiz_id = (int)$request->get_param('quiz_id');
         $quiz = Quiz::get($quiz_id);
 
         if (!$quiz) {
             return new WP_Error('quiz_not_found', __('Олимпиада не найдена.', 'wp-olympiad'), ['status' => 404]);
+        }
+
+        // Keep the public REST entry point consistent with the rendered page.
+        // A validated per-quiz API integration is authenticated independently.
+        if (!(bool)$quiz->get_setting('allow_guest', 1) && !is_user_logged_in() && !$authenticated_integration) {
+            return new WP_Error('login_required', __('Для участия войдите на сайт или попросите организатора включить гостевой доступ.', 'wp-olympiad'), ['status' => 401]);
         }
 
         // Active time window check
@@ -726,7 +738,7 @@ final class RestApi
             $inner->set_param('agreement', $request->get_param('agreement'));
         }
 
-        $response = self::handle_start($inner);
+        $response = self::start_attempt($inner, self::$api_quiz !== null && self::$api_quiz->id === $quiz->id);
         if (is_wp_error($response)) {
             return $response;
         }
