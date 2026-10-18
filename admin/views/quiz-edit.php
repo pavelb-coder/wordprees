@@ -971,6 +971,26 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                 </button>
             </div>
 
+            <div class="wpo-style-library" id="wpo-style-library">
+                <h3><?php esc_html_e('Мои темы оформления', 'wp-olympiad'); ?></h3>
+                <div class="wpo-style-library-row">
+                    <label for="wpo-style-theme-select" class="screen-reader-text"><?php esc_html_e('Сохранённая тема', 'wp-olympiad'); ?></label>
+                    <select id="wpo-style-theme-select"><option value=""><?php esc_html_e('Выберите сохранённую тему', 'wp-olympiad'); ?></option></select>
+                    <button type="button" class="button" id="wpo-style-theme-apply"><?php esc_html_e('Применить тему', 'wp-olympiad'); ?></button>
+                    <button type="button" class="button" id="wpo-style-theme-delete"><?php esc_html_e('Удалить тему', 'wp-olympiad'); ?></button>
+                </div>
+                <div class="wpo-style-library-row">
+                    <label for="wpo-style-theme-name" class="screen-reader-text"><?php esc_html_e('Название темы', 'wp-olympiad'); ?></label>
+                    <input type="text" id="wpo-style-theme-name" maxlength="80" placeholder="<?php esc_attr_e('Название моей темы', 'wp-olympiad'); ?>">
+                    <button type="button" class="button button-secondary" id="wpo-style-theme-save"><?php esc_html_e('Сохранить тему', 'wp-olympiad'); ?></button>
+                    <button type="button" class="button" id="wpo-style-theme-export"><?php esc_html_e('Экспорт JSON', 'wp-olympiad'); ?></button>
+                    <label class="button" for="wpo-style-theme-import"><?php esc_html_e('Импорт JSON', 'wp-olympiad'); ?></label>
+                    <input type="file" id="wpo-style-theme-import" accept=".json,application/json" hidden>
+                </div>
+                <p class="description"><?php esc_html_e('Темы доступны для других олимпиад этого сайта. JSON переносит только оформление и URL фона, без вопросов/результатов/ключей; картинки не встраиваются. После применения нажмите обычное сохранение олимпиады.', 'wp-olympiad'); ?></p>
+                <p id="wpo-style-theme-status" role="status" aria-live="polite"></p>
+            </div>
+
             <div class="wpo-style-body">
                 <div class="wpo-style-controls">
 
@@ -1098,10 +1118,21 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             </td>
                         </tr>
                         <tr>
+                            <th scope="row"><label for="wpo-style-card-opacity"><?php esc_html_e('Непрозрачность карточек:', 'wp-olympiad'); ?></label></th>
+                            <td><div class="wpo-style-range"><input type="range" name="style_card_opacity" id="wpo-style-card-opacity" min="40" max="100" step="1" value="<?php echo esc_attr((string)$style['card_opacity']); ?>" data-wpo-style="card_opacity" data-unit="%"><output><?php echo esc_html((string)$style['card_opacity']); ?> %</output></div>
+                            <p class="description"><?php esc_html_e('Меняет только фон карточек, не прозрачность текста и ответов.', 'wp-olympiad'); ?></p></td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="wpo-style-card-blur"><?php esc_html_e('Стекло / размытие под карточками:', 'wp-olympiad'); ?></label></th>
+                            <td><div class="wpo-style-range"><input type="range" name="style_card_blur" id="wpo-style-card-blur" min="0" max="24" step="1" value="<?php echo esc_attr((string)$style['card_blur']); ?>" data-wpo-style="card_blur" data-unit="px"><output><?php echo esc_html((string)$style['card_blur']); ?> px</output></div>
+                            <button type="button" class="button" id="wpo-style-glass"><?php esc_html_e('Попробовать стекло', 'wp-olympiad'); ?></button>
+                            <p class="description"><?php esc_html_e('Эффект лучше виден с непрозрачностью ниже 100% и фоном позади карточки. В старых браузерах остаётся полупрозрачная заливка.', 'wp-olympiad'); ?></p></td>
+                        </tr>
+                        <tr>
                             <th scope="row"><?php esc_html_e('Фон страницы (самый дальний план):', 'wp-olympiad'); ?></th>
                             <td>
                                 <label style="display:block; margin-bottom:6px;">
-                                    <input type="checkbox" name="style_canvas_bg_enabled" value="1" id="wpo-style-canvas-enabled" data-wpo-style="canvas_enabled" <?php checked(!empty($style['canvas_bg']) || !empty($style['canvas_image'])); ?>>
+                                    <input type="checkbox" name="style_canvas_bg_enabled" value="1" id="wpo-style-canvas-enabled" data-wpo-style="canvas_enabled" <?php checked(!empty($style['canvas_bg']) || !empty($style['canvas_image']) || $style['canvas_gradient'] !== 'none'); ?>>
                                     <?php esc_html_e('Показывать фон страницы позади карточки теста', 'wp-olympiad'); ?>
                                 </label>
                                 <p class="description" style="margin:0 0 8px;">
@@ -1112,6 +1143,21 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                     <input type="color" id="wpo-style-canvas-bg" name="style_canvas_bg" value="<?php echo esc_attr($style['canvas_bg'] !== '' ? (string)$style['canvas_bg'] : '#f1f5f9'); ?>" data-wpo-style="canvas_bg">
                                     <input type="text" class="wpo-style-hex" value="<?php echo esc_attr($style['canvas_bg'] !== '' ? (string)$style['canvas_bg'] : '#f1f5f9'); ?>" data-hex-for="canvas_bg" maxlength="7" spellcheck="false">
                                     <span class="description"><?php esc_html_e('Цвет фона (виден под картинкой и вокруг неё)', 'wp-olympiad'); ?></span>
+                                </div>
+
+                                <div class="wpo-gradient-controls">
+                                    <label for="wpo-style-canvas-gradient"><strong><?php esc_html_e('Градиент дальнего фона:', 'wp-olympiad'); ?></strong></label>
+                                    <select name="style_canvas_gradient" id="wpo-style-canvas-gradient" data-wpo-style="canvas_gradient">
+                                        <?php foreach (['none' => 'Без градиента', 'linear' => 'Линейный', 'radial' => 'Радиальный'] as $key => $label): ?><option value="<?php echo esc_attr($key); ?>" <?php selected($style['canvas_gradient'], $key); ?>><?php echo esc_html($label); ?></option><?php endforeach; ?>
+                                    </select>
+                                    <div class="wpo-gradient-color-row">
+                                        <?php foreach (['canvas_gradient_from' => 'Первый цвет', 'canvas_gradient_to' => 'Второй цвет'] as $key => $label): ?>
+                                            <label><?php echo esc_html($label); ?> <input type="color" name="style_<?php echo esc_attr($key); ?>" id="wpo-style-<?php echo esc_attr(str_replace('_', '-', $key)); ?>" value="<?php echo esc_attr($style[$key]); ?>" data-wpo-style="<?php echo esc_attr($key); ?>"></label>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <label for="wpo-style-canvas-gradient-angle"><?php esc_html_e('Угол линейного градиента:', 'wp-olympiad'); ?></label>
+                                    <div class="wpo-style-range"><input type="range" name="style_canvas_gradient_angle" id="wpo-style-canvas-gradient-angle" min="0" max="360" step="1" value="<?php echo esc_attr((string)$style['canvas_gradient_angle']); ?>" data-wpo-style="canvas_gradient_angle" data-unit="°"><output><?php echo esc_html((string)$style['canvas_gradient_angle']); ?> °</output></div>
+                                    <p class="description"><?php esc_html_e('Градиент находится за картинкой; затемнение — поверх фона. Это дальний холст, не возвращение удалённого баннера.', 'wp-olympiad'); ?></p>
                                 </div>
 
                                 <div style="margin-top:12px;">
@@ -1181,7 +1227,16 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <strong>👁 <?php esc_html_e('Живой предпросмотр', 'wp-olympiad'); ?></strong>
                             <span class="wpo-style-preview-hint"><?php esc_html_e('Обновляется при изменении настроек', 'wp-olympiad'); ?></span>
                         </div>
+                        <div class="wpo-style-device-toolbar" role="group" aria-label="<?php esc_attr_e('Устройство предпросмотра', 'wp-olympiad'); ?>">
+                            <button type="button" class="button is-active" data-wpo-preview-device="desktop" aria-pressed="true">ПК</button>
+                            <button type="button" class="button" data-wpo-preview-device="tablet" aria-pressed="false">Планшет</button>
+                            <button type="button" class="button" data-wpo-preview-device="mobile" aria-pressed="false">Телефон</button>
+                            <span id="wpo-style-device-size"></span>
+                        </div>
+                        <p id="wpo-style-preview-status" role="status" aria-live="polite"></p>
                         <div class="wpo-style-preview-frame">
+                            <div id="wpo-style-device-holder">
+                            <iframe id="wpo-style-preview-device" title="<?php esc_attr_e('Предпросмотр оформления тестирования', 'wp-olympiad'); ?>" sandbox="allow-same-origin" hidden></iframe>
                             <div class="wpo-quiz-wrapper" id="wpo-style-preview">
                                 <div class="wpo-card">
                                     <div class="wpo-badge-tag"><?php esc_html_e('Олимпиада / Тестирование', 'wp-olympiad'); ?></div>
@@ -1227,6 +1282,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         <button type="button" class="wpo-btn wpo-btn-primary" tabindex="-1"><?php esc_html_e('Далее', 'wp-olympiad'); ?></button>
                                     </div>
                                 </div>
+                            </div>
                             </div>
                         </div>
                     </div>

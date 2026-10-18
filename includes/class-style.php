@@ -290,6 +290,12 @@ final class Style
             'canvas_image_position' => 'center',
             'canvas_overlay'        => 0,
             'canvas_full_width'     => 0,
+            'canvas_gradient' => 'none',
+            'canvas_gradient_from' => '#2563eb',
+            'canvas_gradient_to' => '#7c3aed',
+            'canvas_gradient_angle' => 135,
+            'card_opacity' => 100,
+            'card_blur' => 0,
         ]);
     }
 
@@ -324,6 +330,7 @@ final class Style
                 continue;
             }
             $value = $data[$key];
+            if (!is_scalar($value) && $value !== null) continue;
 
             switch ($key) {
                 case 'preset':
@@ -378,11 +385,26 @@ final class Style
                 case 'canvas_overlay':
                     $out[$key] = self::clamp_int($value, 0, 90, 0);
                     break;
+                case 'canvas_gradient':
+                    $out[$key] = in_array($value, ['none', 'linear', 'radial'], true) ? $value : 'none';
+                    break;
+                case 'canvas_gradient_from': case 'canvas_gradient_to':
+                    $out[$key] = self::hex((string)$value, $defaults[$key]);
+                    break;
+                case 'canvas_gradient_angle':
+                    $out[$key] = self::clamp_int($value, 0, 360, 135);
+                    break;
+                case 'card_opacity':
+                    $out[$key] = self::clamp_int($value, 40, 100, 100);
+                    break;
+                case 'card_blur':
+                    $out[$key] = self::clamp_int($value, 0, 24, 0);
+                    break;
                 case 'canvas_full_width':
                     $out[$key] = !empty($value) ? 1 : 0;
                     break;
                 case 'label':
-                    $out[$key] = (string)$value;
+                    $out[$key] = mb_substr(sanitize_text_field((string)$value), 0, 80);
                     break;
                 default:
                     $out[$key] = self::hex((string)$value, (string)$default);
@@ -398,7 +420,7 @@ final class Style
      * @param array<string, mixed> $post Raw $_POST array.
      * @return array<string, mixed>
      */
-    public static function sanitize_post(array $post): array
+    public static function sanitize_post(array $post, array $existing = []): array
     {
         $defaults = self::defaults();
         $out = ['preset' => 'custom'];
@@ -442,6 +464,15 @@ final class Style
         $out['button_radius'] = self::clamp_int($post['style_button_radius'] ?? 8, 0, 40, 8);
         $out['line_height']   = self::clamp_float($post['style_line_height'] ?? 1.5, 1.1, 2.2, 1.5);
 
+        // Missing new controls in an older cached form preserve already saved effects.
+        $new = [];
+        foreach (['canvas_gradient', 'canvas_gradient_from', 'canvas_gradient_to', 'canvas_gradient_angle', 'card_opacity', 'card_blur'] as $key) {
+            $new[$key] = $post['style_' . $key] ?? $existing[$key] ?? $defaults[$key];
+        }
+        $normalized = self::normalize($new);
+        foreach ($new as $key => $_value) $out[$key] = $normalized[$key];
+        if (!$canvas_enabled) $out['canvas_gradient'] = 'none';
+
         $out['custom_css'] = self::sanitize_css((string)($post['style_custom_css'] ?? ''));
 
         return $out;
@@ -465,6 +496,30 @@ final class Style
             $decl[] = 'background-color:' . $color;
         }
 
+        $gradient = self::canvas_gradient_css($style);
+        if ($gradient !== '') {
+            $layers = []; $sizes = []; $repeats = []; $positions = [];
+            $overlay = max(0, min(90, (int)($style['canvas_overlay'] ?? 0)));
+            if ($overlay > 0) {
+                $a = $overlay / 100;
+                $layers[] = 'linear-gradient(rgba(0,0,0,' . $a . '),rgba(0,0,0,' . $a . '))';
+                $sizes[] = '100% 100%'; $repeats[] = 'no-repeat'; $positions[] = 'center center';
+            }
+            if ($image !== '') {
+                $layers[] = 'url("' . $image . '")';
+                $fit = (string)($style['canvas_image_fit'] ?? 'cover');
+                $sizes[] = ['contain' => 'contain', 'repeat' => 'auto', 'fill' => '100% 100%'][$fit] ?? 'cover';
+                $repeats[] = $fit === 'repeat' ? 'repeat' : 'no-repeat';
+                $positions[] = ['top'=>'center top','bottom'=>'center bottom','left'=>'left center','right'=>'right center'][$style['canvas_image_position'] ?? 'center'] ?? 'center center';
+            }
+            $layers[] = $gradient; $sizes[] = '100% 100%'; $repeats[] = 'no-repeat'; $positions[] = 'center center';
+            $decl[] = 'background-image:' . implode(',', $layers);
+            $decl[] = 'background-size:' . implode(',', $sizes);
+            $decl[] = 'background-repeat:' . implode(',', $repeats);
+            $decl[] = 'background-position:' . implode(',', $positions);
+            if ($fixed) $decl[] = 'background-attachment:fixed';
+            return $decl;
+        }
         if ($image === '') {
             return $decl;
         }
@@ -514,6 +569,16 @@ final class Style
         return $decl;
     }
 
+    public static function canvas_gradient_css(array $style): string
+    {
+        $type = $style['canvas_gradient'] ?? 'none';
+        if (!in_array($type, ['linear', 'radial'], true)) return '';
+        $from = self::hex((string)($style['canvas_gradient_from'] ?? ''), '#2563eb');
+        $to = self::hex((string)($style['canvas_gradient_to'] ?? ''), '#7c3aed');
+        return $type === 'radial' ? 'radial-gradient(ellipse at center,' . $from . ',' . $to . ')'
+            : 'linear-gradient(' . self::clamp_int($style['canvas_gradient_angle'] ?? 135, 0, 360, 135) . 'deg,' . $from . ',' . $to . ')';
+    }
+
     /**
      * Build the scoped stylesheet for one quiz.
      */
@@ -538,6 +603,7 @@ final class Style
             '--wpo-danger'       => (string)$s['danger'],
             '--wpo-warning'      => (string)$s['warning'],
             '--wpo-bg'           => $bg,
+            '--wpo-card-bg' => (int)$s['card_opacity'] === 100 ? $bg : self::rgba($bg, (int)$s['card_opacity'] / 100),
             '--wpo-surface'      => (string)$s['surface'],
             '--wpo-border'       => (string)$s['border'],
             '--wpo-text'         => (string)$s['text'],
@@ -578,10 +644,12 @@ final class Style
         }
         $css .= '}';
 
+        $css .= $scope . ' .wpo-card{background:var(--wpo-card-bg,var(--wpo-bg));backdrop-filter:' . ((int)$s['card_blur'] > 0 ? 'blur(' . (int)$s['card_blur'] . 'px)' : 'none') . ';-webkit-backdrop-filter:' . ((int)$s['card_blur'] > 0 ? 'blur(' . (int)$s['card_blur'] . 'px)' : 'none') . ';}';
+
         // Canvas (page) background behind the card: color and/or an image on the farthest plane.
         $canvas_color = (string)$s['canvas_bg'];
         $canvas_image = (string)$s['canvas_image'];
-        if ($canvas_color !== '' || $canvas_image !== '') {
+        if ($canvas_color !== '' || $canvas_image !== '' || $s['canvas_gradient'] !== 'none') {
             $decl = self::canvas_background_declarations($s);
 
             if (!empty($s['canvas_full_width'])) {
@@ -680,7 +748,6 @@ final class Style
 
             if ($close === null) {
                 // Unbalanced CSS — append the rest as-is to avoid data loss.
-                $out .= substr($css, $i);
                 break;
             }
 
@@ -716,10 +783,16 @@ final class Style
                 continue;
             }
             if (preg_match('/^(html|body|:root)$/i', $selector)) {
-                $scoped[] = rtrim($prefix) . ' ' . $selector;
+                $scoped[] = rtrim($prefix);
                 continue;
             }
-            if (str_starts_with($selector, '#') && str_contains($selector, 'wpo-quiz-')) {
+            $selector = preg_replace('/#wpo-quiz-[0-9]+\b/', rtrim($prefix), $selector);
+            $own = rtrim($prefix);
+            if ($selector === $own) { $scoped[] = $selector; continue; }
+            if (str_starts_with($selector, $own . ' ') || str_starts_with($selector, $own . '>')) {
+                $tail = ltrim(substr($selector, strlen($own)));
+                // A root-adjacent sibling selector would escape the quiz.
+                if ($tail !== '' && ($tail[0] === '+' || $tail[0] === '~')) continue;
                 $scoped[] = $selector;
                 continue;
             }
@@ -785,6 +858,8 @@ final class Style
             return '';
         }
 
+        if (wp_parse_url($url, PHP_URL_USER) !== null || wp_parse_url($url, PHP_URL_PASS) !== null) return '';
+
         if (str_starts_with($url, '//') || str_starts_with($url, '/') || str_starts_with($url, './') || str_starts_with($url, '../')) {
             return esc_url_raw($url);
         }
@@ -794,6 +869,7 @@ final class Style
             return '';
         }
 
+        if (wp_parse_url($clean, PHP_URL_USER) !== null || wp_parse_url($clean, PHP_URL_PASS) !== null) return '';
         return $clean;
     }
 
@@ -884,6 +960,8 @@ final class Style
     {
         $css = wp_check_invalid_utf8($css);
         $css = str_ireplace(['</style', '<style', '<?php', '<?=', '?>', '<script', '</script>'], '', $css);
+        $css = preg_replace('/@import\s+[^;]+;?/i', '', $css);
+        $css = preg_replace('/(?:expression\s*\(|javascript\s*:|vbscript\s*:|-moz-binding\s*:|behavior\s*:)/i', '', $css);
         $css = trim($css);
 
         if (strlen($css) > self::CUSTOM_CSS_LIMIT) {

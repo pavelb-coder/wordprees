@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-2.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: WP Olympiad & Testing Master 1.0.8\n"
+"Project-Id-Version: WP Olympiad & Testing Master 1.0.9\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/wp-olympiad\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-18T12:46:40+00:00\n"
+"POT-Creation-Date: 2026-10-18T13:49:47+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: wp-olympiad\n"
@@ -76,20 +76,20 @@ msgstr ""
 msgid "Проверка работы"
 msgstr ""
 
-#: admin/class-admin.php:136
+#: admin/class-admin.php:141
 msgid "Вы действительно хотите удалить этот элемент? Это действие необратимо."
 msgstr ""
 
-#: admin/class-admin.php:137
+#: admin/class-admin.php:142
 msgid "Изменения успешно сохранены."
 msgstr ""
 
-#: admin/class-admin.php:138
+#: admin/class-admin.php:143
 msgid "Произошла ошибка при сохранении."
 msgstr ""
 
-#: admin/class-admin.php:383
-#: admin/class-admin.php:413
+#: admin/class-admin.php:388
+#: admin/class-admin.php:418
 #: includes/class-ajax.php:180
 #: includes/class-ajax.php:456
 #: includes/class-ajax.php:520
@@ -115,7 +115,7 @@ msgstr ""
 msgid "Олимпиада не найдена."
 msgstr ""
 
-#: admin/class-admin.php:448
+#: admin/class-admin.php:453
 #: includes/class-ajax.php:249
 #: includes/class-export.php:172
 #: includes/class-rest-api.php:315
@@ -166,7 +166,7 @@ msgid "Текущий балл:"
 msgstr ""
 
 #: admin/views/attempt-review.php:113
-#: admin/views/quiz-edit.php:1201
+#: admin/views/quiz-edit.php:1256
 #: includes/class-shortcodes.php:285
 msgid "Макс. балл:"
 msgstr ""
@@ -1395,7 +1395,7 @@ msgid "Бейдж над заголовком:"
 msgstr ""
 
 #: admin/views/quiz-edit.php:161
-#: admin/views/quiz-edit.php:1187
+#: admin/views/quiz-edit.php:1242
 #: includes/class-shortcodes.php:196
 msgid "Олимпиада / Тестирование"
 msgstr ""
@@ -2152,187 +2152,271 @@ msgstr ""
 msgid "Настройте внешний вид страницы, которую видят участники: цвета, шрифт, скругления, тени, стиль кнопок и собственный CSS. Все изменения применяются только к этой олимпиаде и не затрагивают тему сайта."
 msgstr ""
 
+#: admin/views/quiz-edit.php:975
+msgid "Мои темы оформления"
+msgstr ""
+
 #: admin/views/quiz-edit.php:977
+msgid "Сохранённая тема"
+msgstr ""
+
+#: admin/views/quiz-edit.php:978
+msgid "Выберите сохранённую тему"
+msgstr ""
+
+#: admin/views/quiz-edit.php:979
+msgid "Применить тему"
+msgstr ""
+
+#: admin/views/quiz-edit.php:980
+msgid "Удалить тему"
+msgstr ""
+
+#: admin/views/quiz-edit.php:983
+msgid "Название темы"
+msgstr ""
+
+#: admin/views/quiz-edit.php:984
+msgid "Название моей темы"
+msgstr ""
+
+#: admin/views/quiz-edit.php:985
+msgid "Сохранить тему"
+msgstr ""
+
+#: admin/views/quiz-edit.php:986
+msgid "Экспорт JSON"
+msgstr ""
+
+#: admin/views/quiz-edit.php:987
+msgid "Импорт JSON"
+msgstr ""
+
+#: admin/views/quiz-edit.php:990
+msgid "Темы доступны для других олимпиад этого сайта. JSON переносит только оформление и URL фона, без вопросов/результатов/ключей; картинки не встраиваются. После применения нажмите обычное сохранение олимпиады."
+msgstr ""
+
+#: admin/views/quiz-edit.php:997
 msgid "Цветовая палитра"
 msgstr ""
 
-#: admin/views/quiz-edit.php:994
+#: admin/views/quiz-edit.php:1014
 msgid "HEX-код цвета"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1000
+#: admin/views/quiz-edit.php:1020
 msgid "Шрифт и типографика"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1003
+#: admin/views/quiz-edit.php:1023
 msgid "Шрифт страницы:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1010
+#: admin/views/quiz-edit.php:1030
 msgid "«Как в теме сайта» — шрифт наследуется от вашей WordPress-темы."
 msgstr ""
 
-#: admin/views/quiz-edit.php:1014
+#: admin/views/quiz-edit.php:1034
 msgid "Размер основного текста:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1023
+#: admin/views/quiz-edit.php:1043
 msgid "Размер заголовка:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1032
+#: admin/views/quiz-edit.php:1052
 msgid "Межстрочный интервал:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1042
+#: admin/views/quiz-edit.php:1062
 msgid "Размеры, форма и кнопки"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1045
+#: admin/views/quiz-edit.php:1065
 msgid "Ширина рабочей области:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1054
+#: admin/views/quiz-edit.php:1074
 msgid "Скругление карточек:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1063
+#: admin/views/quiz-edit.php:1083
 msgid "Внутренние отступы карточки:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1072
+#: admin/views/quiz-edit.php:1092
 msgid "Тень карточек:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1082
+#: admin/views/quiz-edit.php:1102
 msgid "Стиль основных кнопок:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1092
+#: admin/views/quiz-edit.php:1112
 msgid "Скругление кнопок:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1101
-msgid "Фон страницы (самый дальний план):"
-msgstr ""
-
-#: admin/views/quiz-edit.php:1105
-msgid "Показывать фон страницы позади карточки теста"
-msgstr ""
-
-#: admin/views/quiz-edit.php:1108
-msgid "Цвет и/или картинка выводятся на самом дальнем плане страницы тестирования — за карточкой с заданиями. Другие страницы сайта не меняются."
-msgstr ""
-
-#: admin/views/quiz-edit.php:1114
-msgid "Цвет фона (виден под картинкой и вокруг неё)"
-msgstr ""
-
-#: admin/views/quiz-edit.php:1119
-msgid "Картинка на фоне страницы"
+#: admin/views/quiz-edit.php:1121
+msgid "Непрозрачность карточек:"
 msgstr ""
 
 #: admin/views/quiz-edit.php:1123
-msgid "Выбрать из медиатеки"
+msgid "Меняет только фон карточек, не прозрачность текста и ответов."
 msgstr ""
 
-#: admin/views/quiz-edit.php:1124
-msgid "Убрать"
+#: admin/views/quiz-edit.php:1126
+msgid "Стекло / размытие под карточками:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1130
-msgid "Можно загрузить свою картинку или вставить прямую ссылку. Подойдут JPG, PNG, WebP, SVG."
+#: admin/views/quiz-edit.php:1128
+msgid "Попробовать стекло"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1129
+msgid "Эффект лучше виден с непрозрачностью ниже 100% и фоном позади карточки. В старых браузерах остаётся полупрозрачная заливка."
+msgstr ""
+
+#: admin/views/quiz-edit.php:1132
+msgid "Фон страницы (самый дальний план):"
 msgstr ""
 
 #: admin/views/quiz-edit.php:1136
-msgid "Как вписать картинку"
+msgid "Показывать фон страницы позади карточки теста"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1144
-msgid "Положение картинки"
+#: admin/views/quiz-edit.php:1139
+msgid "Цвет и/или картинка выводятся на самом дальнем плане страницы тестирования — за карточкой с заданиями. Другие страницы сайта не меняются."
 msgstr ""
 
-#: admin/views/quiz-edit.php:1154
-msgid "Затемнение фона (чтобы текст читался):"
+#: admin/views/quiz-edit.php:1145
+msgid "Цвет фона (виден под картинкой и вокруг неё)"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1161
-msgid "Фон на всю ширину экрана (от края до края), карточка остаётся по центру"
+#: admin/views/quiz-edit.php:1149
+msgid "Градиент дальнего фона:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1167
-msgid "Собственный CSS"
+#: admin/views/quiz-edit.php:1158
+msgid "Угол линейного градиента:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1160
+msgid "Градиент находится за картинкой; затемнение — поверх фона. Это дальний холст, не возвращение удалённого баннера."
+msgstr ""
+
+#: admin/views/quiz-edit.php:1165
+msgid "Картинка на фоне страницы"
 msgstr ""
 
 #: admin/views/quiz-edit.php:1169
-msgid "Дополнительные стили для тонкой настройки. Код автоматически ограничивается этой олимпиадой — другие страницы сайта не изменятся."
+msgid "Выбрать из медиатеки"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1174
-msgid "Сбросить оформление к классическому"
+#: admin/views/quiz-edit.php:1170
+msgid "Убрать"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1181
-msgid "Живой предпросмотр"
+#: admin/views/quiz-edit.php:1176
+msgid "Можно загрузить свою картинку или вставить прямую ссылку. Подойдут JPG, PNG, WebP, SVG."
 msgstr ""
 
 #: admin/views/quiz-edit.php:1182
+msgid "Как вписать картинку"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1190
+msgid "Положение картинки"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1200
+msgid "Затемнение фона (чтобы текст читался):"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1207
+msgid "Фон на всю ширину экрана (от края до края), карточка остаётся по центру"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1213
+msgid "Собственный CSS"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1215
+msgid "Дополнительные стили для тонкой настройки. Код автоматически ограничивается этой олимпиадой — другие страницы сайта не изменятся."
+msgstr ""
+
+#: admin/views/quiz-edit.php:1220
+msgid "Сбросить оформление к классическому"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1227
+msgid "Живой предпросмотр"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1228
 msgid "Обновляется при изменении настроек"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1188
+#: admin/views/quiz-edit.php:1230
+msgid "Устройство предпросмотра"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1239
+msgid "Предпросмотр оформления тестирования"
+msgstr ""
+
+#: admin/views/quiz-edit.php:1243
 msgid "Пример олимпиады"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1189
+#: admin/views/quiz-edit.php:1244
 msgid "Так будет выглядеть страница тестирования для участников."
 msgstr ""
 
-#: admin/views/quiz-edit.php:1194
+#: admin/views/quiz-edit.php:1249
 #: includes/class-shortcodes.php:263
 msgid "Время:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1195
+#: admin/views/quiz-edit.php:1250
 msgid "минут"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1207
+#: admin/views/quiz-edit.php:1262
 #: includes/class-shortcodes.php:204
 msgid "ФИО Участника:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1208
+#: admin/views/quiz-edit.php:1263
 #: includes/class-shortcodes.php:205
 msgid "Иванов Иван Иванович"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1210
+#: admin/views/quiz-edit.php:1265
 msgid "Ведётся контроль переключения вкладок"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1211
+#: admin/views/quiz-edit.php:1266
 msgid "Начать выполнение олимпиады"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1219
+#: admin/views/quiz-edit.php:1274
 msgid "Пример задания с вариантами ответа"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1221
+#: admin/views/quiz-edit.php:1276
 msgid "Вариант ответа 1"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1222
+#: admin/views/quiz-edit.php:1277
 msgid "Вариант ответа 2"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1226
+#: admin/views/quiz-edit.php:1281
 #: includes/class-shortcodes.php:412
 msgid "Назад"
 msgstr ""
 
-#: admin/views/quiz-edit.php:1227
+#: admin/views/quiz-edit.php:1282
 #: includes/class-shortcodes.php:420
 msgid "Далее"
 msgstr ""
@@ -2466,6 +2550,7 @@ msgstr ""
 #: includes/class-desktop-editor.php:59
 #: includes/class-desktop-editor.php:335
 #: includes/class-network-sync.php:316
+#: includes/class-style-themes.php:99
 msgid "Доступ запрещён."
 msgstr ""
 
@@ -3101,27 +3186,27 @@ msgstr ""
 msgid "Ошибка подготовки временных файлов выгрузки."
 msgstr ""
 
-#: includes/class-network-export.php:1515
+#: includes/class-network-export.php:1521
 #, php-format
 msgid "Некорректный путь к сетевой папке Windows (SMB): %s. Используйте формат \\\\хост\\папка\\"
 msgstr ""
 
-#: includes/class-network-export.php:1529
+#: includes/class-network-export.php:1535
 #, php-format
 msgid "✓ Сетевой ресурс смонтирован в файловую систему ОС (%s) и доступен для записи."
 msgstr ""
 
-#: includes/class-network-export.php:1539
+#: includes/class-network-export.php:1545
 #, php-format
 msgid "Для прямого подключения к Windows-папке «%s» на сервере Linux требуется утилита smbclient. Установите её командой: sudo apt install smbclient (либо смонтируйте ресурс в ОС: sudo mount -t cifs %s /mnt/share)."
 msgstr ""
 
-#: includes/class-network-export.php:1558
+#: includes/class-network-export.php:1564
 #, php-format
 msgid "Сетевой хост %s недоступен по портам SMB (445 / 139): %s (%d). Проверьте IP-адрес и доступность сервера в локальной сети."
 msgstr ""
 
-#: includes/class-network-export.php:1601
+#: includes/class-network-export.php:1607
 #, php-format
 msgid "✓ Сетевая папка Windows «%s» успешно найдена и доступна для выгрузки по протоколу SMB!"
 msgstr ""
@@ -4027,6 +4112,58 @@ msgstr ""
 
 #: includes/class-shortcodes.php:467
 msgid "Дата сдачи"
+msgstr ""
+
+#: includes/class-style-themes.php:24
+msgid "Файл оформления слишком большой (максимум 128 КБ)."
+msgstr ""
+
+#: includes/class-style-themes.php:26
+msgid "Нужен JSON оформления WP Olympiad версии 1, а не файл вопросов."
+msgstr ""
+
+#: includes/class-style-themes.php:27
+msgid "CSS в файле оформления недопустим или превышает 20 КБ."
+msgstr ""
+
+#: includes/class-style-themes.php:44
+msgid "Не удалось прочитать библиотеку тем. Существующие данные не перезаписаны."
+msgstr ""
+
+#: includes/class-style-themes.php:52
+msgid "Библиотека изменяется другим администратором. Повторите сохранение."
+msgstr ""
+
+#: includes/class-style-themes.php:58
+msgid "Укажите название темы."
+msgstr ""
+
+#: includes/class-style-themes.php:61
+msgid "Выбранная тема больше не существует."
+msgstr ""
+
+#: includes/class-style-themes.php:62
+msgid "В библиотеке максимум 20 тем. Удалите ненужную."
+msgstr ""
+
+#: includes/class-style-themes.php:63
+msgid "Тема с таким названием уже есть. Выберите её для обновления или измените название."
+msgstr ""
+
+#: includes/class-style-themes.php:73
+msgid "Тема уже удалена."
+msgstr ""
+
+#: includes/class-style-themes.php:81
+msgid "Настройки оформления превышают 128 КБ."
+msgstr ""
+
+#: includes/class-style-themes.php:82
+msgid "Некорректные настройки оформления."
+msgstr ""
+
+#: includes/class-style-themes.php:111
+msgid "Неизвестное действие оформления."
 msgstr ""
 
 #: includes/class-webhook.php:138

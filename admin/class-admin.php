@@ -124,11 +124,16 @@ final class Admin
             true
         );
 
+        if ($preview_styles) {
+            wp_enqueue_script('wp-olympiad-style-editor', WP_OLYMPIAD_URL . 'admin/js/style-editor.js', ['jquery', 'wp-olympiad-admin'], WP_OLYMPIAD_VERSION . '.' . filemtime(WP_OLYMPIAD_PATH . 'admin/js/style-editor.js'), true);
+        }
+
         wp_localize_script('wp-olympiad-admin', 'WPOlympiadAdmin', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'restRoot' => rest_url('wp-olympiad/v1/'),
             'nonce'   => wp_create_nonce('wp_olympiad_admin_nonce'),
             'styleDefaults' => Style::defaults(),
+            'stylePreviewCss' => $preview_styles ? (string)file_get_contents(WP_OLYMPIAD_PATH . 'public/css/olympiad-frontend.css') : '',
             'stylePresets'  => Style::presets(),
             'styleFonts'    => Style::fonts(),
             'styleShadows'  => Style::shadows(),
@@ -236,7 +241,7 @@ final class Admin
                     'network_auto_import_file'     => sanitize_text_field(wp_unslash($_POST['network_auto_import_file'] ?? '')),
 
                     // Appearance / Styling of the public testing page
-                    'style' => Style::sanitize_post($_POST),
+                    'style' => Style::sanitize_post($_POST, ($quiz_id > 0 && ($style_quiz = Quiz::get($quiz_id))) ? Style::get($style_quiz) : []),
                 ],
             ];
 

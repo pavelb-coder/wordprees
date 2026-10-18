@@ -225,5 +225,6 @@ CREATE TABLE {$responses_table} (
         wp_unschedule_hook(self::THRESHOLD_CLEANUP_HOOK);
         delete_option('wp_olympiad_db_version');
         delete_option('wp_olympiad_settings');
+        delete_option(StyleThemes::OPTION);
     }
 }

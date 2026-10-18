@@ -4361,6 +4361,7 @@ require __DIR__ . '/test-guest-access.php';
 require __DIR__ . '/test-settings-fields.php';
 require __DIR__ . '/test-no-pass-threshold.php';
 require __DIR__ . '/test-export-cleanup.php';
+require __DIR__ . '/test-style-tools.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);
