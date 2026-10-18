@@ -153,7 +153,7 @@ final class Admin
             $quiz_id = (int)($_POST['quiz_id'] ?? 0);
             $data = [
                 'title'       => sanitize_text_field($_POST['title'] ?? ''),
-                'slug'        => sanitize_title($_POST['slug'] ?? ''),
+                // Slug is automatic for new quizzes and stable for existing links.
                 'description' => wp_kses_post($_POST['description'] ?? ''),
                 'status'      => sanitize_key($_POST['status'] ?? 'publish'),
                 'settings'    => [
@@ -185,8 +185,8 @@ final class Admin
                     // Start / Introductory Page Settings
                     'enable_intro_page'        => !empty($_POST['enable_intro_page']) ? 1 : 0,
                     'intro_badge'              => sanitize_text_field($_POST['intro_badge'] ?? 'Олимпиада / Тестирование'),
-                    'intro_title'              => sanitize_text_field($_POST['intro_title'] ?? ''),
-                    'intro_banner_url'         => esc_url_raw($_POST['intro_banner_url'] ?? ''),
+                    // Retired title/banner controls are deliberately omitted.
+                    // Partial form saves preserve legacy settings; creates use defaults.
                     'intro_button_text'        => sanitize_text_field($_POST['intro_button_text'] ?? '🚀 Начать выполнение олимпиады'),
                     'show_meta_grid'           => !empty($_POST['show_meta_grid']) ? 1 : 0,
                     'show_time_limit'          => !empty($_POST['show_time_limit']) ? 1 : 0,

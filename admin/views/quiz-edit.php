@@ -7,7 +7,6 @@ if (!defined('ABSPATH')) {
 
 $is_new = ($quiz === null);
 $title = $is_new ? '' : $quiz->title;
-$slug = $is_new ? '' : $quiz->slug;
 $description = $is_new ? '' : $quiz->description;
 $status = $is_new ? 'publish' : $quiz->status;
 
@@ -64,8 +63,6 @@ $last_network_import = !$is_new ? $quiz->get_setting('last_network_import', []) 
 // Start / Intro Page settings
 $enable_intro_page = $is_new ? 1 : (int)$quiz->get_setting('enable_intro_page', 1);
 $intro_badge = $is_new ? 'Олимпиада / Тестирование' : (string)$quiz->get_setting('intro_badge', 'Олимпиада / Тестирование');
-$intro_title = $is_new ? '' : (string)$quiz->get_setting('intro_title', '');
-$intro_banner_url = $is_new ? '' : (string)$quiz->get_setting('intro_banner_url', '');
 $intro_button_text = $is_new ? '🚀 Начать выполнение олимпиады' : (string)$quiz->get_setting('intro_button_text', '🚀 Начать выполнение олимпиады');
 
 $show_meta_grid = $is_new ? 1 : (int)$quiz->get_setting('show_meta_grid', 1);
@@ -124,10 +121,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                         <input type="text" name="title" id="wpo-title" class="large-text" value="<?php echo esc_attr($title); ?>" required placeholder="<?php esc_attr_e('Например: Всероссийская школьная олимпиада по математике — 10 класс', 'wp-olympiad'); ?>">
                     </div>
 
-                    <div class="wpo-field">
-                        <label for="wpo-slug"><?php esc_html_e('Ярлык (URL slug):', 'wp-olympiad'); ?></label>
-                        <input type="text" name="slug" id="wpo-slug" class="regular-text" value="<?php echo esc_attr($slug); ?>" placeholder="<?php esc_attr_e('olympiad-math-10', 'wp-olympiad'); ?>">
-                    </div>
+
 
                     <div class="wpo-field">
                         <label for="wpo-description"><?php esc_html_e('Описание и инструкция для участников:', 'wp-olympiad'); ?></label>
@@ -146,7 +140,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                 <div class="wpo-card">
                     <h2>🎨 <?php esc_html_e('Редактирование начальной страницы (Start / Intro Page)', 'wp-olympiad'); ?></h2>
                     <p class="description">
-                        <?php esc_html_e('Настройте внешний вид, обложку, информационные блоки, поля анкеты регистрации и кнопку запуска на стартовом экране олимпиады.', 'wp-olympiad'); ?>
+                        <?php esc_html_e('Настройте информационные блоки, поля анкеты участника и кнопку запуска на стартовом экране олимпиады.', 'wp-olympiad'); ?>
                     </p>
 
                     <table class="form-table">
@@ -170,19 +164,8 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                 <p class="description"><?php esc_html_e('Небольшой ярлык вверху страницы (например: «Школьный этап», «Вступительный экзамен», «Тестирование по физике»).', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
-                        <tr>
-                            <th scope="row"><label for="intro_title"><?php esc_html_e('Кастомный заголовок на странице:', 'wp-olympiad'); ?></label></th>
-                            <td>
-                                <input type="text" name="intro_title" id="intro_title" value="<?php echo esc_attr($intro_title); ?>" class="large-text" placeholder="<?php esc_attr_e('Оставьте пустым, чтобы использовать название олимпиады', 'wp-olympiad'); ?>">
-                            </td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><label for="intro_banner_url"><?php esc_html_e('Баннер / Обложка олимпиады (URL):', 'wp-olympiad'); ?></label></th>
-                            <td>
-                                <input type="url" name="intro_banner_url" id="intro_banner_url" value="<?php echo esc_attr($intro_banner_url); ?>" class="large-text" placeholder="https://example.com/wp-content/uploads/banner.jpg">
-                                <p class="description"><?php esc_html_e('Изображение-баннер, отображаемое в самом верху начальной карточки теста.', 'wp-olympiad'); ?></p>
-                            </td>
-                        </tr>
+
+
                         <tr>
                             <th scope="row"><label for="intro_button_text"><?php esc_html_e('Текст кнопки запуска:', 'wp-olympiad'); ?></label></th>
                             <td>

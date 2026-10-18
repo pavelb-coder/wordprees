@@ -4358,6 +4358,7 @@ require __DIR__ . '/test-network-sync.php';
 require __DIR__ . '/test-template-package.php';
 require __DIR__ . '/test-settings-mail.php';
 require __DIR__ . '/test-guest-access.php';
+require __DIR__ . '/test-settings-fields.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);
