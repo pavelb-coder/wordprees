@@ -951,3 +951,6 @@
     .wpo-settings-form .mce-toolbar .mce-btn-group .mce-container-body { white-space:normal; }
     .wpo-settings-form .mce-toolbar .mce-btn-group { max-width:100%; }
 }
+
+/* Neutral completion is independent of the participant's score. */
+.wpo-badge-completed { background: #e0f2fe; color: #0c4a6e; }

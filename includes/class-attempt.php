@@ -28,7 +28,6 @@ final class Attempt
     public int $score = 0;
     public int $max_score = 0;
     public float $percentage = 0.00;
-    public int $passed = 0;
     public string $status = 'in_progress';
     public string $ip_address = '';
     public string $user_agent = '';
@@ -62,8 +61,7 @@ final class Attempt
             $this->score = (int)round((float)($data['score'] ?? 0));
             $this->max_score = (int)round((float)($data['max_score'] ?? 0));
             $this->percentage = (float)($data['percentage'] ?? 0.00);
-            $this->passed = (int)($data['passed'] ?? 0);
-            $this->status = (string)($data['status'] ?? 'in_progress');
+            $this->status = self::normalize_status((string)($data['status'] ?? 'in_progress'));
             $this->ip_address = (string)($data['ip_address'] ?? '');
             $this->user_agent = (string)($data['user_agent'] ?? '');
             $this->created_at = (string)($data['created_at'] ?? '');
@@ -132,12 +130,11 @@ final class Attempt
             'score'             => 0.00,
             'max_score'         => 0.00,
             'percentage'        => 0.00,
-            'passed'            => 0,
             'status'            => 'in_progress',
             'ip_address'        => $ip,
             'user_agent'        => $ua,
             'created_at'        => $now,
-        ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s']);
+        ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%s', '%s', '%s', '%s']);
 
         if (!$inserted) {
             // Fallback retry without new columns if DB schema has not yet migrated
@@ -155,12 +152,11 @@ final class Attempt
                 'score'             => 0.00,
                 'max_score'         => 0.00,
                 'percentage'        => 0.00,
-                'passed'            => 0,
                 'status'            => 'in_progress',
                 'ip_address'        => $ip,
                 'user_agent'        => $ua,
                 'created_at'        => $now,
-            ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s']);
+            ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%s', '%s', '%s', '%s']);
 
             if (!$inserted) {
                 return null;
@@ -228,58 +224,51 @@ final class Attempt
     /**
      * Mark attempt as submitted / completed
      */
-    public function complete(float|int $score, float|int $max_score, bool $passed, string $status = 'completed'): bool
+    public function complete(float|int $score, float|int $max_score, string|bool $status = 'completed', ?string $legacy_status = null): bool
     {
         global $wpdb;
-        $table = DB::attempts_table();
-
+        // A former positional boolean is accepted but never interpreted as a result.
+        $status = is_bool($status) ? ($legacy_status ?? 'completed') : $status;
         $this->submitted_at = current_time('mysql');
-        $start_ts = strtotime($this->started_at) ?: current_time('timestamp');
-        $end_ts = strtotime($this->submitted_at) ?: current_time('timestamp');
-        $this->duration_seconds = max(0, $end_ts - $start_ts);
-
+        $this->duration_seconds = max(0, (strtotime($this->submitted_at) ?: current_time('timestamp')) - (strtotime($this->started_at) ?: current_time('timestamp')));
         $this->score = max(0, (int)round((float)$score));
         $this->max_score = max(0, (int)round((float)$max_score));
-        $this->percentage = ($this->max_score > 0) ? round(($this->score / $this->max_score) * 100, 2) : 0.0;
-        $this->passed = $passed ? 1 : 0;
-        $this->status = $status;
-
-        $res = $wpdb->update($table, [
-            'submitted_at'     => $this->submitted_at,
-            'duration_seconds' => $this->duration_seconds,
-            'score'            => $this->score,
-            'max_score'        => $this->max_score,
-            'percentage'       => $this->percentage,
-            'passed'           => $this->passed,
-            'status'           => $this->status,
-        ], ['id' => $this->id], ['%s', '%d', '%d', '%d', '%f', '%d', '%s'], ['%d']);
-
-        return $res !== false;
+        $this->percentage = $this->max_score > 0 ? round($this->score / $this->max_score * 100, 2) : 0.0;
+        $this->status = self::normalize_status($status);
+        return $wpdb->update(DB::attempts_table(), [
+            'submitted_at' => $this->submitted_at, 'duration_seconds' => $this->duration_seconds,
+            'score' => $this->score, 'max_score' => $this->max_score,
+            'percentage' => $this->percentage, 'status' => $this->status,
+        ], ['id' => $this->id], ['%s', '%d', '%d', '%d', '%f', '%s'], ['%d']) !== false;
     }
 
-    /**
-     * Update scores after manual review
-     */
-    public function update_manual_review(float|int $new_score, float|int $max_score, bool $passed): bool
+    public function update_manual_review(float|int $new_score, float|int $max_score, string|bool $status = 'completed'): bool
     {
         global $wpdb;
-        $table = DB::attempts_table();
-
         $this->score = max(0, (int)round((float)$new_score));
         $this->max_score = max(0, (int)round((float)$max_score));
-        $this->percentage = ($this->max_score > 0) ? round(($this->score / $this->max_score) * 100, 2) : 0.0;
-        $this->passed = $passed ? 1 : 0;
-        $this->status = 'completed';
+        $this->percentage = $this->max_score > 0 ? round($this->score / $this->max_score * 100, 2) : 0.0;
+        $this->status = self::normalize_status(is_bool($status) ? 'completed' : $status);
+        return $wpdb->update(DB::attempts_table(), [
+            'score' => $this->score, 'max_score' => $this->max_score,
+            'percentage' => $this->percentage, 'status' => $this->status,
+        ], ['id' => $this->id], ['%d', '%d', '%f', '%s'], ['%d']) !== false;
+    }
 
-        $res = $wpdb->update($table, [
-            'score'      => $this->score,
-            'max_score'  => $this->max_score,
-            'percentage' => $this->percentage,
-            'passed'     => $this->passed,
-            'status'     => 'completed',
-        ], ['id' => $this->id], ['%d', '%d', '%f', '%d', '%s'], ['%d']);
+    public static function normalize_status(string $status): string
+    {
+        return in_array($status, ['passed', 'failed'], true) ? 'completed' : $status;
+    }
 
-        return $res !== false;
+    public function get_status_label(): string
+    {
+        return match (self::normalize_status($this->status)) {
+            'in_progress' => __('В процессе', 'wp-olympiad'),
+            'needs_review' => __('На проверке', 'wp-olympiad'),
+            'expired' => __('Истекло время', 'wp-olympiad'),
+            'disqualified' => __('Дисквалифицирован', 'wp-olympiad'),
+            default => __('Завершено', 'wp-olympiad'),
+        };
     }
 
     /**
@@ -312,11 +301,7 @@ final class Attempt
         }
         if (!empty($args['status']) && $args['status'] !== 'all') {
             $where[] = 'status = %s';
-            $params[] = sanitize_key($args['status']);
-        }
-        if (isset($args['passed'])) {
-            $where[] = 'passed = %d';
-            $params[] = !empty($args['passed']) ? 1 : 0;
+            $params[] = self::normalize_status(sanitize_key($args['status']));
         }
         if (!empty($args['user_id'])) {
             $where[] = 'user_id = %d';
@@ -361,11 +346,7 @@ final class Attempt
         }
         if (!empty($args['status']) && $args['status'] !== 'all') {
             $where[] = 'status = %s';
-            $params[] = sanitize_key($args['status']);
-        }
-        if (isset($args['passed'])) {
-            $where[] = 'passed = %d';
-            $params[] = !empty($args['passed']) ? 1 : 0;
+            $params[] = self::normalize_status(sanitize_key($args['status']));
         }
 
         $where_str = implode(' AND ', $where);
@@ -477,17 +458,14 @@ final class Attempt
 
             $max_score = $quiz ? (int)round($quiz->get_total_points()) : $attempt->max_score;
             $pct = ($max_score > 0) ? round(($total_score / $max_score) * 100, 2) : 0.0;
-            $pass_pct = $quiz ? (float)$quiz->get_setting('pass_percentage', 60.0) : 60.0;
-            $passed = ($pct >= $pass_pct) ? 1 : 0;
             $status = $has_unreviewed ? 'needs_review' : 'completed';
 
             $wpdb->update($table_attempts, [
                 'score'      => $total_score,
                 'max_score'  => $max_score,
                 'percentage' => $pct,
-                'passed'     => $passed,
                 'status'     => $status,
-            ], ['id' => $attempt_id], ['%d', '%d', '%f', '%d', '%s'], ['%d']);
+            ], ['id' => $attempt_id], ['%d', '%d', '%f', '%s'], ['%d']);
         }
 
         return true;

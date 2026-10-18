@@ -43,6 +43,14 @@ final class Quiz
                 }
             }
         }
+        $this->settings = self::without_threshold_settings($this->settings);
+    }
+
+    /** Legacy percentage thresholds/classification are no longer settings. */
+    public static function without_threshold_settings(array $settings): array
+    {
+        unset($settings['pass_percentage'], $settings['show_pass_pct'], $settings['grading_scales']);
+        return $settings;
     }
 
     public static function default_settings(): array
@@ -51,7 +59,6 @@ final class Quiz
             'time_limit'          => 45,        // Minutes (0 = unlimited)
             'start_time'          => '',        // Y-m-d H:i
             'end_time'            => '',        // Y-m-d H:i
-            'pass_percentage'     => 60.0,      // Minimum passing %
             'max_attempts'        => 1,         // 1 = strict olympiad, 0 = unlimited
             'shuffle_questions'   => 0,         // 1 = random order
             'shuffle_answers'     => 1,         // 1 = shuffle choices
@@ -107,7 +114,6 @@ final class Quiz
             'show_time_limit'          => 1,
             'show_questions_count'     => 1,
             'show_points'              => 1,
-            'show_pass_pct'            => 1,
 
             // Registration Form Fields on Start Page
             'field_name_label'         => 'ФИО Участника:',
@@ -140,32 +146,6 @@ final class Quiz
             'show_anti_cheat_notice'   => 1,
             'anti_cheat_notice_text'   => '🛡️ Внимание! Во время тестирования ведётся контроль переключения вкладок и активности окна. Пожалуйста, не закрывайте страницу до завершения.',
 
-            'grading_scales'      => [
-                [
-                    'min'     => 90,
-                    'max'     => 100,
-                    'label'   => 'Победитель олимпиады (Диплом I степени)',
-                    'message' => 'Поздравляем, %NAME%! Вы продемонстрировали выдающийся результат (%SCORE% из %MAX_SCORE% б., %PERCENTAGE%%) и стали победителем олимпиады!',
-                ],
-                [
-                    'min'     => 75,
-                    'max'     => 89,
-                    'label'   => 'Призёр олимпиады (Диплом II степени)',
-                    'message' => 'Отличная работа, %NAME%! Ваш результат: %SCORE% из %MAX_SCORE% б. (%PERCENTAGE%%). Вы награждаетесь дипломом призёра II степени!',
-                ],
-                [
-                    'min'     => 60,
-                    'max'     => 74,
-                    'label'   => 'Призёр олимпиады (Диплом III степени)',
-                    'message' => 'Хороший результат, %NAME%! Вы набрали %SCORE% из %MAX_SCORE% б. (%PERCENTAGE%%) и стали призёром III степени.',
-                ],
-                [
-                    'min'     => 0,
-                    'max'     => 59,
-                    'label'   => 'Грамота участника',
-                    'message' => 'Благодарим за участие в олимпиаде, %NAME%! Ваш результат: %SCORE% из %MAX_SCORE% б. (%PERCENTAGE%%).',
-                ],
-            ],
         ];
     }
 
@@ -181,30 +161,14 @@ final class Quiz
     }
 
     /**
-     * Get grade title and message based on percentage
+     * Legacy neutral completion label; retained for PHP integrations
      *
      * @return array{label: string, message: string}
      */
     public function get_grade_info(float $percentage): array
     {
-        $scales = (array)$this->get_setting('grading_scales', []);
-        $pct = (int)round($percentage);
-
-        foreach ($scales as $scale) {
-            $min = (int)($scale['min'] ?? 0);
-            $max = (int)($scale['max'] ?? 100);
-            if ($pct >= $min && $pct <= $max) {
-                return [
-                    'label'   => (string)($scale['label'] ?? ''),
-                    'message' => (string)($scale['message'] ?? ''),
-                ];
-            }
-        }
-
-        return [
-            'label'   => $percentage >= (float)$this->get_setting('pass_percentage', 60.0) ? __('Пройдено', 'wp-olympiad') : __('Не пройдено', 'wp-olympiad'),
-            'message' => '',
-        ];
+        // Compatibility only: no score-based threshold or rank classification.
+        return ['label' => __('Завершено', 'wp-olympiad'), 'message' => ''];
     }
 
     /**
@@ -212,7 +176,6 @@ final class Quiz
      */
     public function replace_template_tags(string $text, Attempt $attempt): string
     {
-        $grade_info = $this->get_grade_info($attempt->percentage);
         $m = floor($attempt->duration_seconds / 60);
         $s = $attempt->duration_seconds % 60;
         $timer_str = sprintf('%02d:%02d', $m, $s);
@@ -228,7 +191,7 @@ final class Quiz
             '%PERCENTAGE%'   => sprintf('%d', round($attempt->percentage)),
             '%QUIZ_NAME%'    => esc_html($this->title),
             '%TIMER%'        => $timer_str,
-            '%GRADE%'        => esc_html($grade_info['label']),
+            '%GRADE%'        => esc_html($attempt->get_status_label()),
             '%DATE%'         => $date_str,
         ];
 
@@ -479,7 +442,7 @@ final class Quiz
         $description = wp_kses_post($data['description'] ?? '');
         $status = sanitize_key($data['status'] ?? 'publish');
 
-        $settings = array_merge(self::default_settings(), $data['settings'] ?? []);
+        $settings = self::without_threshold_settings(array_merge(self::default_settings(), $data['settings'] ?? []));
         $settings_json = wp_json_encode($settings, JSON_UNESCAPED_UNICODE);
 
         $now = current_time('mysql');
@@ -526,7 +489,7 @@ final class Quiz
             $format[] = '%s';
         }
         if (isset($data['settings']) && is_array($data['settings'])) {
-            $this->settings = array_merge($this->settings, $data['settings']);
+            $this->settings = self::without_threshold_settings(array_merge($this->settings, $data['settings']));
             $fields['settings'] = wp_json_encode($this->settings, JSON_UNESCAPED_UNICODE);
             $format[] = '%s';
         }
@@ -573,6 +536,7 @@ final class Quiz
         foreach ($patch as $key => $value) {
             $settings[$key] = $value;
         }
+        $settings = self::without_threshold_settings($settings);
 
         $res = $wpdb->update(
             $table,

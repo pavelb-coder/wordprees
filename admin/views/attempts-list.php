@@ -183,15 +183,7 @@ if (!defined('ABSPATH')) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <?php if ($att->status === 'needs_review'): ?>
-                                        <span class="wpo-badge wpo-badge-review">🔍 <?php esc_html_e('Проверка', 'wp-olympiad'); ?></span>
-                                    <?php elseif ($att->status === 'disqualified'): ?>
-                                        <span class="wpo-badge wpo-badge-fail">⛔ <?php esc_html_e('Дисквал.', 'wp-olympiad'); ?></span>
-                                    <?php elseif ($att->passed): ?>
-                                        <span class="wpo-badge wpo-badge-pass">✓ <?php esc_html_e('Зачёт', 'wp-olympiad'); ?></span>
-                                    <?php else: ?>
-                                        <span class="wpo-badge wpo-badge-fail">✕ <?php esc_html_e('Не сдан', 'wp-olympiad'); ?></span>
-                                    <?php endif; ?>
+                                    <span class="wpo-badge <?php echo $att->status === 'needs_review' ? 'wpo-badge-review' : (in_array($att->status, ['expired', 'disqualified'], true) ? 'wpo-badge-fail' : 'wpo-badge-completed'); ?>"><?php echo esc_html($att->get_status_label()); ?></span>
                                 </td>
                                 <td style="text-align:right;">
                                     <div style="display:inline-flex; gap:4px; align-items:center;">

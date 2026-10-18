@@ -179,7 +179,6 @@ final class Shortcodes
 
         $time_limit = (int)$quiz->get_setting('time_limit', 0);
         $questions_count = count($quiz->get_questions(false));
-        $pass_pct = (float)$quiz->get_setting('pass_percentage', 60.0);
         $total_points = $quiz->get_total_points();
 
         // Start Page Customization Variables
@@ -289,15 +288,7 @@ final class Shortcodes
                             </div>
                         <?php endif; ?>
 
-                        <?php if ($quiz->get_setting('show_pass_pct', 1)): ?>
-                            <div class="wpo-meta-item">
-                                <span class="wpo-meta-icon">🏆</span>
-                                <div class="wpo-meta-content">
-                                    <span class="wpo-meta-label"><?php esc_html_e('Проходной балл:', 'wp-olympiad'); ?></span>
-                                    <span class="wpo-meta-val"><?php echo esc_html(sprintf('%d%%', round($pass_pct))); ?></span>
-                                </div>
-                            </div>
-                        <?php endif; ?>
+
                     </div>
                 <?php endif; ?>
 
@@ -492,9 +483,7 @@ final class Shortcodes
                                     <td><?php echo esc_html($att->submitted_at ? date_i18n('d.m.Y H:i', strtotime($att->submitted_at)) : '—'); ?></td>
                                     <td><?php echo esc_html(sprintf('%d / %d (%d%%)', round($att->score), round($att->max_score), round($att->percentage))); ?></td>
                                     <td>
-                                        <span class="wpo-badge <?php echo $att->passed ? 'wpo-badge-pass' : 'wpo-badge-fail'; ?>">
-                                            <?php echo $att->passed ? esc_html__('Зачёт', 'wp-olympiad') : esc_html__('Не сдан', 'wp-olympiad'); ?>
-                                        </span>
+                                        <span class="wpo-badge wpo-badge-completed"><?php echo esc_html($att->get_status_label()); ?></span>
                                     </td>
                                     <td><code><?php echo esc_html(sprintf('%02d:%02d', $m, $s)); ?></code></td>
                                 </tr>

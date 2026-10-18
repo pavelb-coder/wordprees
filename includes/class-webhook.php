@@ -99,7 +99,6 @@ final class Webhook
                 'score'             => (int)round($attempt->score),
                 'max_score'         => (int)round($attempt->max_score),
                 'percentage'        => $attempt->percentage,
-                'passed'            => (bool)$attempt->passed,
                 'status'            => $attempt->status,
                 'duration_seconds'  => $attempt->duration_seconds,
                 'tab_switches'      => $attempt->tab_switches,
@@ -201,6 +200,14 @@ final class Webhook
             $payload['delivery_id'] = $delivery_id;
         }
 
+        // Previously scheduled payloads must not revive retired result fields.
+        foreach (['passed', 'pass_percentage', 'show_pass_pct', 'grading_scales', 'grade_label', 'feedback_message'] as $field) {
+            unset($payload[$field]);
+            foreach (['quiz', 'attempt'] as $section) {
+                if (isset($payload[$section]) && is_array($payload[$section])) unset($payload[$section][$field]);
+            }
+        }
+        if (isset($payload['attempt']['status'])) $payload['attempt']['status'] = Attempt::normalize_status((string)$payload['attempt']['status']);
         $secret = self::ensure_secret($quiz);
         $body = wp_json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($body)) {
@@ -327,7 +334,6 @@ final class Webhook
                 'score'             => 7,
                 'max_score'         => 10,
                 'percentage'        => 70.0,
-                'passed'            => true,
                 'status'            => 'completed',
                 'duration_seconds'  => 754,
                 'tab_switches'      => 0,

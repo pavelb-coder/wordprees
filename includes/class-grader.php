@@ -22,7 +22,6 @@ final class Grader
      *     total_score: float,
      *     max_score: float,
      *     percentage: float,
-     *     passed: bool,
      *     status: string,
      *     has_essay: bool,
      *     responses: array<int, array>
@@ -63,8 +62,6 @@ final class Grader
         $max_score = max(0, $max_score);
         $percentage = ($max_score > 0) ? round(($total_score / $max_score) * 100, 2) : 0.0;
 
-        $pass_percentage = (float)$quiz->get_setting('pass_percentage', 60.0);
-        $passed = ($percentage >= $pass_percentage);
 
         $status = $has_essay ? 'needs_review' : 'completed';
 
@@ -72,7 +69,6 @@ final class Grader
             'total_score'         => $total_score,
             'max_score'           => $max_score,
             'percentage'          => $percentage,
-            'passed'              => $passed,
             'status'              => $status,
             'has_essay'           => $has_essay,
             'responses'           => $responses,
@@ -915,13 +911,13 @@ final class Grader
 
         $total_kw = count($keywords);
         $threshold = ($min_keywords > 0) ? $min_keywords : max(1, $total_kw);
-        $passed_threshold = (count($found_keywords) >= $threshold) && $length_ok;
+        $meets_keyword_criteria = (count($found_keywords) >= $threshold) && $length_ok;
 
         $max_points = (int)$q->points;
         $awarded = 0;
 
         if ($scoring_mode === 'all_or_nothing') {
-            $awarded = $passed_threshold ? $max_points : 0;
+            $awarded = $meets_keyword_criteria ? $max_points : 0;
         } else {
             // Proportional
             if ($total_kw > 0) {

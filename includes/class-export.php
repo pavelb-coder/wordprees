@@ -70,7 +70,6 @@ final class Export
             'Макс. балл',
             'Процент (%)',
             'Статус',
-            'Результат',
             'IP-адрес',
         ];
 
@@ -114,8 +113,7 @@ final class Export
             $duration_s = $att->duration_seconds % 60;
             $duration_fmt = sprintf('%02d:%02d', $duration_m, $duration_s);
 
-            $status = $status_labels[$att->status] ?? $att->status;
-            $result = $att->passed ? 'Зачёт / Пройдено' : 'Не зачёт';
+            $status = $att->get_status_label();
 
             $row = [
                 $att->id,
@@ -132,7 +130,6 @@ final class Export
                 number_format($att->max_score, 0, '.', ''),
                 number_format($att->percentage, 2, '.', ''),
                 $status,
-                $result,
                 $att->ip_address ?: '—',
             ];
 
@@ -227,7 +224,7 @@ final class Export
         fputcsv($output, ['Время решения', sprintf('%02d:%02d', $duration_m, $duration_s)], ';', '"', "\\");
         fputcsv($output, ['Переключений вкладок', $attempt->tab_switches], ';', '"', "\\");
         fputcsv($output, ['Итоговый балл', sprintf('%d из %d (%d%%)', round($attempt->score), round($attempt->max_score), round($attempt->percentage))], ';', '"', "\\");
-        fputcsv($output, ['Статус зачёта', $attempt->passed ? 'Зачёт' : 'Не зачёт'], ';', '"', "\\");
+        fputcsv($output, ['Статус работы', $attempt->get_status_label()], ';', '"', "\\");
         fputcsv($output, [], ';', '"', "\\");
 
         // Questions Table Header

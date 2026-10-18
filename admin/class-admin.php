@@ -160,7 +160,6 @@ final class Admin
                     'time_limit'        => max(0, (int)($_POST['time_limit'] ?? 0)),
                     'start_time'        => sanitize_text_field($_POST['start_time'] ?? ''),
                     'end_time'          => sanitize_text_field($_POST['end_time'] ?? ''),
-                    'pass_percentage'   => max(0.0, min(100.0, (float)($_POST['pass_percentage'] ?? 60.0))),
                     'max_attempts'      => max(0, (int)($_POST['max_attempts'] ?? 1)),
                     'shuffle_questions' => !empty($_POST['shuffle_questions']) ? 1 : 0,
                     // Retired card: absent/stale POST fields must not reset
@@ -192,7 +191,6 @@ final class Admin
                     'show_time_limit'          => !empty($_POST['show_time_limit']) ? 1 : 0,
                     'show_questions_count'     => !empty($_POST['show_questions_count']) ? 1 : 0,
                     'show_points'              => !empty($_POST['show_points']) ? 1 : 0,
-                    'show_pass_pct'            => !empty($_POST['show_pass_pct']) ? 1 : 0,
 
                     // Registration Form Fields on Start Page
                     'field_name_label'         => sanitize_text_field($_POST['field_name_label'] ?? 'ФИО Участника:'),

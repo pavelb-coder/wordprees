@@ -278,18 +278,17 @@ final class Ajax
 
         $quiz = Quiz::get($attempt->quiz_id);
         $max_score = $quiz ? $quiz->get_total_points() : $attempt->max_score;
-        $pass_pct = $quiz ? (float)$quiz->get_setting('pass_percentage', 60.0) : 60.0;
         $percentage = ($max_score > 0) ? round(($new_score / $max_score) * 100, 2) : 0.0;
-        $passed = ($percentage >= $pass_pct);
 
-        $attempt->update_manual_review($new_score, $max_score, $passed);
+        $pending = (int)$wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE attempt_id = %d AND needs_manual_review = 1", $attempt_id));
+        $attempt->update_manual_review($new_score, $max_score, $pending > 0 ? 'needs_review' : 'completed');
 
         wp_send_json_success([
             'message'    => __('Оценка и комментарии сохранены.', 'wp-olympiad'),
             'score'      => $new_score,
             'max_score'  => (int)round($max_score),
             'percentage' => $percentage,
-            'passed'     => $passed,
+            'status'     => $attempt->status,
         ]);
     }
 

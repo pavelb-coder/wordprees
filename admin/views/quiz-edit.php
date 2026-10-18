@@ -13,7 +13,6 @@ $status = $is_new ? 'publish' : $quiz->status;
 $time_limit = $is_new ? 45 : (int)$quiz->get_setting('time_limit', 45);
 $start_time = $is_new ? '' : (string)$quiz->get_setting('start_time', '');
 $end_time = $is_new ? '' : (string)$quiz->get_setting('end_time', '');
-$pass_percentage = $is_new ? 60.0 : (float)$quiz->get_setting('pass_percentage', 60.0);
 $max_attempts = $is_new ? 1 : (int)$quiz->get_setting('max_attempts', 1);
 $shuffle_questions = $is_new ? 0 : (int)$quiz->get_setting('shuffle_questions', 0);
 $allow_guest = $is_new ? 1 : (int)$quiz->get_setting('allow_guest', 1);
@@ -69,7 +68,6 @@ $show_meta_grid = $is_new ? 1 : (int)$quiz->get_setting('show_meta_grid', 1);
 $show_time_limit = $is_new ? 1 : (int)$quiz->get_setting('show_time_limit', 1);
 $show_questions_count = $is_new ? 1 : (int)$quiz->get_setting('show_questions_count', 1);
 $show_points = $is_new ? 1 : (int)$quiz->get_setting('show_points', 1);
-$show_pass_pct = $is_new ? 1 : (int)$quiz->get_setting('show_pass_pct', 1);
 
 $field_name_label = $is_new ? 'ФИО Участника:' : (string)$quiz->get_setting('field_name_label', 'ФИО Участника:');
 $field_name_placeholder = $is_new ? 'Иванов Иван Иванович' : (string)$quiz->get_setting('field_name_placeholder', 'Иванов Иван Иванович');
@@ -183,7 +181,6 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                     <label><input type="checkbox" name="show_time_limit" value="1" <?php checked($show_time_limit, 1); ?>> <?php esc_html_e('⏱ Лимит времени', 'wp-olympiad'); ?></label>
                                     <label><input type="checkbox" name="show_questions_count" value="1" <?php checked($show_questions_count, 1); ?>> <?php esc_html_e('📝 Количество вопросов', 'wp-olympiad'); ?></label>
                                     <label><input type="checkbox" name="show_points" value="1" <?php checked($show_points, 1); ?>> <?php esc_html_e('🎯 Максимальный балл', 'wp-olympiad'); ?></label>
-                                    <label><input type="checkbox" name="show_pass_pct" value="1" <?php checked($show_pass_pct, 1); ?>> <?php esc_html_e('🏆 Проходной балл', 'wp-olympiad'); ?></label>
                                 </div>
                             </td>
                         </tr>
@@ -334,13 +331,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                 <p class="description"><?php esc_html_e('После этого времени приём новых попыток прекращается.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
-                        <tr>
-                            <th scope="row"><label for="pass_percentage"><?php esc_html_e('Проходной процент (%):', 'wp-olympiad'); ?></label></th>
-                            <td>
-                                <input type="number" name="pass_percentage" id="pass_percentage" value="<?php echo esc_attr((string)$pass_percentage); ?>" min="0" max="100" step="1" class="small-text"> %
-                                <p class="description"><?php esc_html_e('Процент набранных баллов для статуса «Зачёт / Пройдено».', 'wp-olympiad'); ?></p>
-                            </td>
-                        </tr>
+
                         <tr>
                             <th scope="row"><label for="max_attempts"><?php esc_html_e('Лимит попыток на участника:', 'wp-olympiad'); ?></label></th>
                             <td>

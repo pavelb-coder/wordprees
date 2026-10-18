@@ -75,9 +75,7 @@ foreach ($questions as $q) {
                 <span class="description"><?php esc_html_e('Текущий балл:', 'wp-olympiad'); ?></span>
                 <h4 id="wpo-current-score-display">
                     <?php echo esc_html(sprintf('%d / %d (%d%%)', round($attempt->score), round($attempt->max_score), round($attempt->percentage))); ?>
-                    <span class="wpo-badge <?php echo $attempt->passed ? 'wpo-badge-pass' : 'wpo-badge-fail'; ?>">
-                        <?php echo $attempt->passed ? esc_html__('Зачёт', 'wp-olympiad') : esc_html__('Не сдан', 'wp-olympiad'); ?>
-                    </span>
+                    <span class="wpo-badge wpo-badge-completed"><?php echo esc_html($attempt->get_status_label()); ?></span>
                 </h4>
             </div>
         </div>

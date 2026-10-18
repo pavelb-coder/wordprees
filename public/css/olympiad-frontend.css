@@ -802,17 +802,12 @@
     margin: 16px 0;
 }
 
-.wpo-score-badge.pass {
-    background: var(--wpo-success-bg);
-    color: var(--wpo-success-text);
-    border: 2px solid var(--wpo-success-border);
+.wpo-score-badge.completed {
+    background: var(--wpo-surface);
+    color: var(--wpo-primary);
+    border: 2px solid var(--wpo-border);
 }
-
-.wpo-score-badge.fail {
-    background: var(--wpo-danger-bg);
-    color: var(--wpo-danger-text);
-    border: 2px solid var(--wpo-danger-border);
-}
+.wpo-badge-completed { background: #e0f2fe; color: #0c4a6e; }
 
 .wpo-result-stats-grid {
     display: grid;

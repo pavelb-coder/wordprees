@@ -90,7 +90,6 @@ $it("Создание олимпиады с параметрами", function ()
         'status'      => 'publish',
         'settings'    => [
             'time_limit'        => 30, // 30 минут
-            'pass_percentage'   => 70.0,
             'max_attempts'      => 1,
             'shuffle_questions' => 0,
             'shuffle_answers'   => 0,
@@ -401,7 +400,6 @@ $it("Полная проверка попытки (Grader::grade) и сохра�
     $attempt1->complete(
         $grading['total_score'],
         $grading['max_score'],
-        $grading['passed'],
         $grading['status']
     );
 
@@ -438,7 +436,7 @@ $it("Ручная проверка жюри (Admin manual review): начисл�
     ));
 
     $attempt1->update_manual_review($new_score, 13, true);
-    return $attempt1->score === 12 && $attempt1->passed === 1 && $attempt1->status === 'completed';
+    return $attempt1->score === 12 && !property_exists($attempt1, 'passed') && $attempt1->status === 'completed';
 });
 
 // 25. Shortcode Rendering
@@ -623,7 +621,7 @@ $it("Шаблонизатор тегов (replace_template_tags): подстан
     return str_contains($result, $attempt1->participant_name) &&
            str_contains($result, '12') &&
            str_contains($result, 'из 13 б.') &&
-           str_contains($result, 'Победитель олимпиады');
+           str_contains($result, 'Завершено');
 });
 
 // 37. The legacy mail entry point is retained but never dispatches notifications.
@@ -1168,7 +1166,7 @@ $it("Удаление ответов и попыток: одиночное, ма
         $del_q2_id => '100',  // +3 pts
     ]);
     Grader::save_responses($att_recalc->id, $grading_recalc['responses']);
-    $att_recalc->complete($grading_recalc['total_score'], $grading_recalc['max_score'], $grading_recalc['passed'], $grading_recalc['status']);
+    $att_recalc->complete($grading_recalc['total_score'], $grading_recalc['max_score'], $grading_recalc['status']);
 
     $att_recalc = Attempt::get($att_recalc->id);
     if ($att_recalc->score !== 8) return false;
@@ -4359,6 +4357,7 @@ require __DIR__ . '/test-template-package.php';
 require __DIR__ . '/test-settings-mail.php';
 require __DIR__ . '/test-guest-access.php';
 require __DIR__ . '/test-settings-fields.php';
+require __DIR__ . '/test-no-pass-threshold.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

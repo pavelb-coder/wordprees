@@ -1389,8 +1389,7 @@
                 return;
             }
 
-            const isPass = !!data.passed;
-            const icon = isPass ? '🎉' : '📋';
+            const icon = '📋';
             const m = Math.floor((data.duration_seconds || 0) / 60);
             const s = (data.duration_seconds || 0) % 60;
             const timeStr = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
@@ -1398,14 +1397,12 @@
             let html = `
                 <div class="wpo-result-summary">
                     <div class="wpo-result-icon">${icon}</div>
-                    <h2>${isPass ? 'Тестирование успешно пройдено!' : 'Тестирование завершено'}</h2>
+                    <h2>Тестирование завершено</h2>
 
-                    <div class="wpo-score-badge ${isPass ? 'pass' : 'fail'}">
+                    <div class="wpo-score-badge completed">
                         ${Math.round(data.score)} / ${Math.round(data.max_score)} (${Math.round(data.percentage)}%)
                     </div>
 
-                    ${data.grade_label ? `<div style="font-size:18px; font-weight:700; color:#1e3a8a; margin-bottom:12px;">🏅 ${this.escapeHtml(data.grade_label)}</div>` : ''}
-                    ${data.feedback_message ? `<div style="font-size:15px; color:#475569; max-width:600px; margin:0 auto 20px auto;">${this.escapeHtml(data.feedback_message)}</div>` : ''}
 
                     <div class="wpo-result-stats-grid">
                         <div class="wpo-stat-card">
@@ -1417,7 +1414,7 @@
                             <div class="lbl">Переключений вкладок</div>
                         </div>
                         <div class="wpo-stat-card">
-                            <div class="val">${data.status === 'needs_review' ? 'На проверке' : (isPass ? 'Зачёт' : 'Не зачёт')}</div>
+                            <div class="val">${data.status === 'needs_review' ? 'На проверке' : 'Завершено'}</div>
                             <div class="lbl">Итоговый статус</div>
                         </div>
                     </div>

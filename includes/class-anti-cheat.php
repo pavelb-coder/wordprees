@@ -68,7 +68,7 @@ final class AntiCheat
 
         if ($max_switches > 0 && $switches > $max_switches) {
             $disqualified = true;
-            $attempt->complete(0.0, $quiz->get_total_points(), false, 'disqualified');
+            $attempt->complete(0.0, $quiz->get_total_points(), 'disqualified');
             $message = sprintf(
                 __('Превышено допустимое количество переключений вкладок (%d). Попытка аннулирована.', 'wp-olympiad'),
                 $max_switches

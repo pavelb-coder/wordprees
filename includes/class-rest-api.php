@@ -327,7 +327,7 @@ final class RestApi
         // Validate time and window
         $time_val = AntiCheat::validate_submission_time($attempt, $quiz);
         if (!$time_val['valid']) {
-            $attempt->complete(0.0, $quiz->get_total_points(), false, 'expired');
+            $attempt->complete(0.0, $quiz->get_total_points(), 'expired');
             return new WP_Error('time_expired', $time_val['error'], ['status' => 400]);
         }
 
@@ -396,7 +396,6 @@ final class RestApi
             $attempt->complete(
                 $grading['total_score'],
                 $grading['max_score'],
-                $grading['passed'],
                 $grading['status']
             );
 
@@ -444,8 +443,6 @@ final class RestApi
             ], 200);
         }
 
-        $grade_info = $quiz->get_grade_info($grading['percentage']);
-        $personalized_msg = !empty($grade_info['message']) ? $quiz->replace_template_tags($grade_info['message'], $attempt) : '';
 
         $response_data = [
             'success'          => true,
@@ -453,9 +450,6 @@ final class RestApi
             'score'            => (int)round($grading['total_score']),
             'max_score'        => (int)round($grading['max_score']),
             'percentage'       => $grading['percentage'],
-            'passed'           => $grading['passed'],
-            'grade_label'      => $grade_info['label'],
-            'feedback_message' => $personalized_msg,
             'duration_seconds' => $attempt->duration_seconds,
             'tab_switches'     => $attempt->tab_switches,
             'mode'             => $mode,
@@ -598,7 +592,6 @@ final class RestApi
             'questions_count'      => count($quiz->get_questions(false)),
             'total_points'         => (int)round($quiz->get_total_points()),
             'time_limit'           => (int)$quiz->get_setting('time_limit', 0),
-            'pass_percentage'      => (float)$quiz->get_setting('pass_percentage', 60.0),
             'start_time'           => (string)$quiz->get_setting('start_time', ''),
             'end_time'             => (string)$quiz->get_setting('end_time', ''),
             'max_attempts'         => (int)$quiz->get_setting('max_attempts', 1),
@@ -704,7 +697,6 @@ final class RestApi
                 'city'    => ['show' => (bool)$quiz->get_setting('show_city', 0), 'required' => (bool)$quiz->get_setting('require_city', 0)],
                 'agreement' => ['show' => (bool)$quiz->get_setting('require_agreement', 0), 'required' => (bool)$quiz->get_setting('require_agreement', 0)],
             ],
-            'grading_scales'       => (array)$quiz->get_setting('grading_scales', []),
             'shared_texts'         => self::shared_texts_dict($quiz),
             'questions'            => self::public_questions($quiz),
             'links'                => [
@@ -855,7 +847,6 @@ final class RestApi
             ];
         }
 
-        $grade = $quiz->get_grade_info((float)$attempt->percentage);
 
         return new WP_REST_Response([
             'success'   => true,
@@ -872,8 +863,6 @@ final class RestApi
                 'score'             => (int)$attempt->score,
                 'max_score'         => (int)$attempt->max_score,
                 'percentage'        => (float)$attempt->percentage,
-                'passed'            => (bool)$attempt->passed,
-                'grade_label'       => (string)$grade['label'],
                 'duration_seconds'  => (int)$attempt->duration_seconds,
                 'tab_switches'      => (int)$attempt->tab_switches,
                 'started_at'        => $attempt->started_at,
@@ -905,6 +894,10 @@ final class RestApi
         $offset = max(0, (int)$request->get_param('offset'));
         $status = sanitize_key((string)($request->get_param('status') ?? 'all'));
 
+        if (in_array($status, ['passed', 'failed'], true)) {
+            return new WP_Error('wpo_retired_result_filter', __('Фильтр зачёта удалён. Используйте рабочий статус completed или needs_review.', 'wp-olympiad'), ['status' => 400]);
+        }
+
         $args = [
             'quiz_id' => $quiz->id,
             'status'  => $status !== '' ? $status : 'all',
@@ -926,7 +919,6 @@ final class RestApi
                 'score'             => (int)$attempt->score,
                 'max_score'         => (int)$attempt->max_score,
                 'percentage'        => (float)$attempt->percentage,
-                'passed'            => (bool)$attempt->passed,
                 'duration_seconds'  => (int)$attempt->duration_seconds,
                 'started_at'        => $attempt->started_at,
                 'submitted_at'      => $attempt->submitted_at,

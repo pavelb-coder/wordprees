@@ -793,8 +793,6 @@ final class NetworkExport
         $completed_attempts = Attempt::count(['quiz_id' => $quiz->id, 'status' => 'completed'])
             + Attempt::count(['quiz_id' => $quiz->id, 'status' => 'graded'])
             + Attempt::count(['quiz_id' => $quiz->id, 'status' => 'needs_review']);
-        $passed_attempts = Attempt::count(['quiz_id' => $quiz->id, 'passed' => 1]);
-        $pass_rate = $completed_attempts > 0 ? round(($passed_attempts / $completed_attempts) * 100, 1) : 0.0;
         $slug = !empty($safe_slug) ? $safe_slug : self::build_safe_slug($quiz);
 
         $lines = [
@@ -809,7 +807,6 @@ final class NetworkExport
             '------------------------------------------------------------------------',
             'Всего участников:     ' . $total_attempts,
             'Завершили тест:       ' . $completed_attempts,
-            'Успешно сдали (зачёт):' . $passed_attempts . ' (' . $pass_rate . '%)',
             '',
             'СОДЕРЖИМОЕ ВЫГРУЗКИ ПО ПАПКАМ:',
             '------------------------------------------------------------------------',
