@@ -1,0 +1,6 @@
+# Bundled editor assets are verified by exact size and SHA-256 in the plugin.
+# Never normalize their line endings, even when cloning on Windows.
+/import/* -text
+/templates/*.xlsx -text
+/templates/*.xlsm -text
+/templates/*.csv -text

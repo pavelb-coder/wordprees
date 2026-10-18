@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
                 <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=export_csv&quiz_id=' . $quiz_id)); ?>" class="button button-primary">
                     📥 <?php esc_html_e('Экспорт в Excel / CSV', 'wp-olympiad'); ?>
                 </a>
-                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=export_network&quiz_id=' . $quiz_id), 'wpo_export_network_' . $quiz_id)); ?>" class="button button-secondary" title="<?php esc_attr_e('Экспортировать ответы в локальную сетевую папку', 'wp-olympiad'); ?>">
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=export_network&quiz_id=' . $quiz_id), 'wpo_export_network_' . $quiz_id)); ?>" class="button button-secondary" title="<?php esc_attr_e('Подключение к сетевой папке', 'wp-olympiad'); ?>">
                     📁 <?php esc_html_e('В сетевую папку', 'wp-olympiad'); ?>
                 </a>
                 <?php if (!empty($attempts)): ?>
@@ -29,20 +29,40 @@ if (!defined('ABSPATH')) {
 
     <?php if (isset($_GET['network_exported'])): ?>
         <?php $last_net = get_transient('wpo_last_network_export_' . $quiz_id); ?>
-        <div class="notice notice-success is-dismissible" style="margin-bottom:15px;">
-            <p>
-                <strong>📁 <?php esc_html_e('Успешный экспорт в сетевую папку!', 'wp-olympiad'); ?></strong>
-                <?php if ($last_net && !empty($last_net['destination'])): ?>
-                    <br><code><?php echo esc_html($last_net['destination']); ?></code>
-                <?php endif; ?>
+        <div class="notice notice-success is-dismissible" style="margin-bottom:15px; padding:12px 16px; border-left-color:#16a34a;">
+            <p style="margin:0 0 6px; font-size:14px;">
+                <strong>📁 <?php esc_html_e('Файлы протокола успешно выгружены в сетевую папку!', 'wp-olympiad'); ?></strong>
             </p>
+            <?php if ($last_net && !empty($last_net['destination'])): ?>
+                <p style="margin:0 0 6px; font-size:13px;">
+                    <?php esc_html_e('Сетевая директория:', 'wp-olympiad'); ?>
+                    <code style="background:#f1f5f9; padding:2px 6px; border-radius:3px;"><?php echo esc_html($last_net['destination']); ?></code>
+                </p>
+                <?php if (!empty($last_net['primary_file'])): ?>
+                    <p style="margin:0 0 8px; font-size:13px;">
+                        <?php esc_html_e('Основной файл выгрузки:', 'wp-olympiad'); ?>
+                        <strong><code><?php echo esc_html($last_net['primary_file']); ?></code></strong>
+                        <span style="color:#64748b; font-size:12px;">(<?php echo esc_html(sprintf('%.1f КБ', ($last_net['size'] ?? 0) / 1024)); ?>)</span>
+                    </p>
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:8px;">
+                        <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=download_network_file&quiz_id=' . $quiz_id . '&file=' . urlencode($last_net['primary_file'])), 'wpo_download_network_' . $quiz_id)); ?>" class="button button-primary">
+                            📥 <?php esc_html_e('Скачать файл протокола на компьютер', 'wp-olympiad'); ?>
+                        </a>
+                        <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=download_network_file&quiz_id=' . $quiz_id . '&file=all'), 'wpo_download_network_' . $quiz_id)); ?>" class="button button-secondary">
+                            📦 <?php esc_html_e('Скачать комплект файлов (ZIP)', 'wp-olympiad'); ?>
+                        </a>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
         </div>
     <?php elseif (isset($_GET['network_error'])): ?>
-        <div class="notice notice-error is-dismissible" style="margin-bottom:15px;">
-            <p>
+        <div class="notice notice-error is-dismissible" style="margin-bottom:15px; padding:12px 16px;">
+            <p style="margin:0 0 6px;">
                 <strong>✕ <?php esc_html_e('Ошибка экспорта в сетевую папку:', 'wp-olympiad'); ?></strong>
                 <?php echo esc_html(urldecode($_GET['network_error'])); ?>
-                <br><a href="<?php echo esc_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . '#wpo-network-export-card')); ?>">⚙️ <?php esc_html_e('Проверить настройки сетевой папки в редактировании олимпиады', 'wp-olympiad'); ?></a>
+            </p>
+            <p style="margin:0;">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . '#wpo-network-export-card')); ?>">⚙️ <?php esc_html_e('Проверить настройки сетевой папки в редактировании олимпиады →', 'wp-olympiad'); ?></a>
             </p>
         </div>
     <?php endif; ?>
@@ -137,8 +157,16 @@ if (!defined('ABSPATH')) {
                                     <?php if ($att->participant_email): ?>
                                         <div class="description"><?php echo esc_html($att->participant_email); ?></div>
                                     <?php endif; ?>
+                                    <?php if ($att->participant_phone): ?>
+                                        <div class="description" style="color:#0284c7;">📞 <?php echo esc_html($att->participant_phone); ?></div>
+                                    <?php endif; ?>
                                 </td>
-                                <td><?php echo esc_html($att->participant_org ?: '—'); ?></td>
+                                <td>
+                                    <div><?php echo esc_html($att->participant_org ?: '—'); ?></div>
+                                    <?php if ($att->participant_city): ?>
+                                        <div class="description" style="color:#64748b;">📍 <?php echo esc_html($att->participant_city); ?></div>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo esc_html(date_i18n('d.m.Y H:i', strtotime($att->started_at))); ?></td>
                                 <td><code><?php echo esc_html(sprintf('%02d:%02d', $m, $s)); ?></code></td>
                                 <td>

@@ -54,11 +54,13 @@ final class Export
         // Write UTF-8 BOM for Microsoft Excel compatibility
         fwrite($output, "\xEF\xBB\xBF");
 
-        // Header Row with Metadata and Question Columns
+        // Header Row with Complete Participant Survey Metadata and Question Columns
         $headers = [
             'ID попытки',
             'ФИО Участника',
             'Email',
+            'Телефон',
+            'Город / Населённый пункт',
             'Организация / Класс',
             'Дата старта',
             'Дата сдачи',
@@ -69,6 +71,7 @@ final class Export
             'Процент (%)',
             'Статус',
             'Результат',
+            'IP-адрес',
         ];
 
         foreach ($questions as $idx => $q) {
@@ -118,7 +121,9 @@ final class Export
                 $att->id,
                 $att->participant_name,
                 $att->participant_email,
-                $att->participant_org,
+                $att->participant_phone ?: '—',
+                $att->participant_city ?: '—',
+                $att->participant_org ?: '—',
                 $att->started_at,
                 $att->submitted_at ?: '—',
                 $duration_fmt,
@@ -128,6 +133,7 @@ final class Export
                 number_format($att->percentage, 2, '.', ''),
                 $status,
                 $result,
+                $att->ip_address ?: '—',
             ];
 
             foreach ($questions as $q) {
@@ -205,12 +211,15 @@ final class Export
         // Write UTF-8 BOM for Microsoft Excel compatibility
         fwrite($output, "\xEF\xBB\xBF");
 
-        // Metadata Header Section
+        // Metadata Header Section with full participant survey data
         fputcsv($output, ['ПРОТОКОЛ ПРОВЕРКИ РАБОТЫ УЧАСТНИКА'], ';', '"', "\\");
         fputcsv($output, ['Олимпиада', $quiz->title], ';', '"', "\\");
         fputcsv($output, ['Участник', $attempt->participant_name], ';', '"', "\\");
         fputcsv($output, ['Email', $attempt->participant_email], ';', '"', "\\");
+        fputcsv($output, ['Телефон', $attempt->participant_phone ?: '—'], ';', '"', "\\");
+        fputcsv($output, ['Город / Населённый пункт', $attempt->participant_city ?: '—'], ';', '"', "\\");
         fputcsv($output, ['Организация / Класс', $attempt->participant_org ?: '—'], ';', '"', "\\");
+        fputcsv($output, ['IP-адрес', $attempt->ip_address ?: '—'], ';', '"', "\\");
         fputcsv($output, ['Дата старта', $attempt->started_at], ';', '"', "\\");
         fputcsv($output, ['Дата сдачи', $attempt->submitted_at ?: '—'], ';', '"', "\\");
         $duration_m = floor($attempt->duration_seconds / 60);
@@ -387,6 +396,28 @@ final class Export
                 }
                 return $raw;
 
+            case 'word_scramble':
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $assembled = '';
+                    foreach ($decoded as $val) {
+                        $assembled .= is_array($val) ? ($val['char'] ?? '') : (string)$val;
+                    }
+                    return $assembled ?: $raw;
+                }
+                return $raw;
+
+            case 'dictation':
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $lines = [];
+                    foreach ($decoded as $gid => $val) {
+                        $lines[] = "{$gid}: {$val}";
+                    }
+                    return implode(', ', $lines);
+                }
+                return $raw;
+
             case 'slider':
             case 'numeric':
             case 'short_text':
@@ -394,5 +425,270 @@ final class Export
             default:
                 return $raw;
         }
+    }
+
+    /**
+     * Export quiz questions as standard CSV (compatible with NetworkImport)
+     */
+    public static function export_quiz_questions_csv(Quiz $quiz, bool $do_exit = true): ?string
+    {
+        if ($do_exit && !current_user_can('manage_options')) {
+            wp_die(esc_html__('У вас недостаточно прав для выполнения этой операции.', 'wp-olympiad'));
+        }
+
+        $questions = $quiz->get_questions(false);
+        $filename = sprintf('questions-%s-%s.csv', sanitize_title($quiz->title) ?: 'quiz', date('Y-m-d'));
+
+        if ($do_exit) {
+            header('Content-Type: text/csv; charset=UTF-8');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Pragma: no-cache');
+            header('Expires: 0');
+            $output = fopen('php://output', 'w');
+        } else {
+            $output = fopen('php://temp', 'r+');
+        }
+
+        if ($output === false) {
+            return null;
+        }
+
+        fwrite($output, "\xEF\xBB\xBF"); // UTF-8 BOM
+
+        // Headers
+        fputcsv($output, [
+            'type',
+            'title',
+            'points',
+            'penalty',
+            'group_name',
+            'choices',
+            'correct',
+            'target_value',
+            'tolerance',
+            'answers',
+            'explanation',
+            'is_required',
+            'shared_text_id',
+            'template',
+            'extra',
+        ], ';', '"', "\\");
+
+        foreach ($questions as $q) {
+            $type = $q->question_type;
+            $opts = $q->options;
+
+            $choices_str = '';
+            $correct_str = '';
+            $target_value = '';
+            $tolerance = '';
+            $answers_str = '';
+            $template_str = '';
+            $extra_parts = [];
+
+            switch ($type) {
+                case 'single':
+                case 'multi':
+                case 'dropdown':
+                    $choices = (array)($opts['choices'] ?? []);
+                    $parts = [];
+                    $correct_parts = [];
+                    foreach ($choices as $idx => $c) {
+                        $is_corr = !empty($c['is_correct']);
+                        $text = (string)($c['text'] ?? '');
+                        if ($is_corr) {
+                            $parts[] = '*' . $text;
+                            $correct_parts[] = (string)($idx + 1);
+                        } else {
+                            $parts[] = $text;
+                        }
+                    }
+                    $choices_str = implode('|', $parts);
+                    $correct_str = implode(',', $correct_parts);
+                    break;
+
+                case 'boolean':
+                    $choices = (array)($opts['choices'] ?? []);
+                    $is_true_correct = false;
+                    foreach ($choices as $c) {
+                        if (($c['id'] ?? '') === 'true' && !empty($c['is_correct'])) {
+                            $is_true_correct = true;
+                        }
+                    }
+                    $correct_str = $is_true_correct ? 'верно' : 'неверно';
+                    break;
+
+                case 'number':
+                case 'numeric':
+                    $target_value = (string)($opts['target_value'] ?? '');
+                    $tolerance = (string)($opts['tolerance'] ?? '0');
+                    break;
+
+                case 'text':
+                case 'short_text':
+                    $synonyms = (array)($opts['answers'] ?? []);
+                    if (empty($synonyms)) {
+                        $synonyms = (array)($opts['synonyms'] ?? []);
+                        if (!empty($opts['correct_answer'])) {
+                            array_unshift($synonyms, $opts['correct_answer']);
+                        }
+                    }
+                    $answers_str = implode('|', array_values(array_unique(array_filter(array_map('strval', $synonyms)))));
+                    $extra_parts[] = 'match=' . (string)($opts['match_mode'] ?? 'fuzzy');
+                    $extra_parts[] = 'typo=' . (int)($opts['typo_tolerance'] ?? 1);
+                    $extra_parts[] = 'case_sensitive=' . (int)($opts['case_sensitive'] ?? 0);
+                    break;
+
+                case 'matching':
+                    $pairs = (array)($opts['pairs'] ?? []);
+                    $pair_strs = [];
+                    foreach ($pairs as $p) {
+                        $pair_strs[] = ($p['left'] ?? '') . '=>' . ($p['right'] ?? '');
+                    }
+                    $choices_str = implode('|', $pair_strs);
+                    break;
+
+                case 'ordering':
+                    $items = (array)($opts['items'] ?? []);
+                    $order_strs = [];
+                    foreach ($items as $item) {
+                        $order_strs[] = (string)($item['text'] ?? $item);
+                    }
+                    $choices_str = implode('|', $order_strs);
+                    break;
+
+                case 'fill_blank':
+                    $template_str = (string)($opts['template'] ?? $q->content);
+                    $choices_str = $template_str;
+                    $blanks = (array)($opts['blanks'] ?? []);
+                    $b_parts = [];
+                    foreach ($blanks as $b) {
+                        $accepted = (array)($b['accepted'] ?? ($b['answers'] ?? []));
+                        $b_parts[] = implode('/', array_filter(array_map('strval', $accepted)));
+                    }
+                    $correct_str = implode('|', $b_parts);
+                    $extra_parts[] = 'mode=' . (string)($opts['choice_mode'] ?? 'input');
+                    $extra_parts[] = 'distractors=' . (string)($opts['distractors'] ?? '');
+                    $extra_parts[] = 'case_sensitive=' . (int)($opts['case_sensitive'] ?? 0);
+                    break;
+
+                case 'slider':
+                    $target_value = (string)($opts['target_value'] ?? '');
+                    $tolerance = (string)($opts['tolerance'] ?? '0');
+                    $choices_str = ($opts['min'] ?? 0) . '..' . ($opts['max'] ?? 100);
+                    $extra_parts[] = 'min=' . (string)($opts['min'] ?? 0);
+                    $extra_parts[] = 'max=' . (string)($opts['max'] ?? 100);
+                    $extra_parts[] = 'step=' . (string)($opts['step'] ?? 1);
+                    break;
+
+                case 'word_scramble':
+                    $correct_str = (string)($opts['target_word'] ?? '');
+                    if (!empty($opts['extra_letters'])) {
+                        $extra_parts[] = 'extra_letters=' . (string)$opts['extra_letters'];
+                    }
+                    break;
+
+                case 'dictation':
+                    $template_str = (string)($opts['text_with_gaps'] ?? ($opts['template'] ?? ''));
+                    $choices_str = $template_str;
+                    $extra_parts[] = 'scoring=' . (string)($opts['scoring_mode'] ?? 'proportional');
+                    $extra_parts[] = 'mistakes=' . (int)($opts['allowed_mistakes'] ?? 0);
+                    if (!empty($opts['audio_url'])) {
+                        $extra_parts[] = 'audio_url=' . (string)$opts['audio_url'];
+                    }
+                    break;
+
+                case 'essay':
+                    $answers_str = implode('|', array_filter(array_map('strval', (array)($opts['keywords'] ?? []))));
+                    $extra_parts[] = 'min_words=' . (int)($opts['min_words'] ?? 0);
+                    $extra_parts[] = 'max_words=' . (int)($opts['max_words'] ?? 0);
+                    $extra_parts[] = 'keywords=' . implode(',', array_filter(array_map('strval', (array)($opts['keywords'] ?? []))));
+                    $extra_parts[] = 'min_keywords=' . (int)($opts['min_keywords'] ?? 0);
+                    $extra_parts[] = 'scoring=' . (string)($opts['scoring_mode'] ?? 'proportional');
+                    break;
+            }
+
+            // «extra» — строка «ключ=значение;…»: точка с запятой внутри значений недопустима
+            $extra_str = '';
+            foreach ($extra_parts as $part) {
+                $part = str_replace([';', "\n", "\r"], [',', ' ', ' '], (string)$part);
+                if (!str_ends_with($part, '=')) {
+                    $extra_str .= ($extra_str === '' ? '' : ';') . $part;
+                }
+            }
+
+            fputcsv($output, [
+                $type,
+                $q->title,
+                $q->points,
+                $q->penalty,
+                $opts['group_name'] ?? '',
+                $choices_str,
+                $correct_str,
+                $target_value,
+                $tolerance,
+                $answers_str,
+                $opts['explanation'] ?? '',
+                $q->is_required() ? '1' : '0',
+                $opts['shared_text_id'] ?? '',
+                $template_str,
+                $extra_str,
+            ], ';', '"', "\\");
+        }
+
+        if ($do_exit) {
+            fclose($output);
+            exit;
+        }
+
+        rewind($output);
+        $content = stream_get_contents($output);
+        fclose($output);
+        return is_string($content) ? $content : '';
+    }
+
+    /**
+     * Export quiz questions as JSON (compatible with NetworkImport)
+     */
+    public static function export_quiz_questions_json(Quiz $quiz, bool $do_exit = true): ?string
+    {
+        if ($do_exit && !current_user_can('manage_options')) {
+            wp_die(esc_html__('У вас недостаточно прав для выполнения этой операции.', 'wp-olympiad'));
+        }
+
+        $questions = $quiz->get_questions(false);
+        $data = [
+            'quiz' => [
+                'title'       => $quiz->title,
+                'description' => $quiz->description,
+            ],
+            'questions' => [],
+        ];
+
+        foreach ($questions as $q) {
+            $data['questions'][] = [
+                'type'           => $q->question_type,
+                'title'          => $q->title,
+                'content'        => $q->content,
+                'points'         => $q->points,
+                'penalty'        => $q->penalty,
+                'sort_order'     => $q->sort_order,
+                'options'        => $q->options,
+            ];
+        }
+
+        $json = (string)wp_json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        $filename = sprintf('questions-%s-%s.json', sanitize_title($quiz->title) ?: 'quiz', date('Y-m-d'));
+
+        if ($do_exit) {
+            header('Content-Type: application/json; charset=UTF-8');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Pragma: no-cache');
+            header('Expires: 0');
+            echo $json;
+            exit;
+        }
+
+        return $json;
     }
 }

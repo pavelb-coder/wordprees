@@ -91,6 +91,14 @@ final class Question
                 'label'       => __('Шкала / Ползунок (Slider / Scale)', 'wp-olympiad'),
                 'description' => __('Выбор числового значения на шкале с проверкой диапазона допуска', 'wp-olympiad'),
             ],
+            'word_scramble' => [
+                'label'       => __('Составление слова из букв (Анаграмма)', 'wp-olympiad'),
+                'description' => __('Сборка слова из перемешанных буквенных плиток с проверкой', 'wp-olympiad'),
+            ],
+            'dictation' => [
+                'label'       => __('Интерактивный диктант', 'wp-olympiad'),
+                'description' => __('Текст с орфограммами/пунктограммами вида {=верно|ошибка} и аудированием', 'wp-olympiad'),
+            ],
             'essay' => [
                 'label'       => __('Развёрнутый ответ / Решение (Эссе)', 'wp-olympiad'),
                 'description' => __('Текстовое решение или эссе, оцениваемое жюри/преподавателем вручную', 'wp-olympiad'),
@@ -310,6 +318,15 @@ final class Question
     {
         $clean = [];
         $clean['explanation'] = wp_kses_post($options['explanation'] ?? '');
+        $clean['image_url'] = esc_url_raw($options['image_url'] ?? '');
+        $clean['image_caption'] = sanitize_text_field($options['image_caption'] ?? '');
+        $clean['image_alt'] = sanitize_text_field($options['image_alt'] ?? '');
+        $clean['image_position'] = in_array($options['image_position'] ?? '', ['above', 'below'], true) ? $options['image_position'] : 'above';
+        $clean['is_required'] = !empty($options['is_required']) ? 1 : 0;
+        $clean['shuffle_answers'] = isset($options['shuffle_answers']) ? (!empty($options['shuffle_answers']) ? 1 : 0) : 1;
+        $clean['group_name'] = sanitize_text_field($options['group_name'] ?? '');
+        $clean['show_points'] = isset($options['show_points']) && $options['show_points'] !== '' ? (!empty($options['show_points']) ? 1 : 0) : null;
+        $clean['shared_text_id'] = sanitize_key($options['shared_text_id'] ?? '');
 
         switch ($type) {
             case 'single':
@@ -347,15 +364,32 @@ final class Question
             case 'text':
                 $raw_answers = $options['answers'] ?? [];
                 if (is_string($raw_answers)) {
-                    $raw_answers = array_map('trim', explode(',', $raw_answers));
+                    $raw_answers = preg_split('/[\r\n,]+/u', $raw_answers, -1, PREG_SPLIT_NO_EMPTY);
                 }
-                $clean['answers'] = array_values(array_filter(array_map('sanitize_text_field', (array)$raw_answers)));
+                $clean['answers'] = array_values(array_filter(array_map('trim', array_map('sanitize_text_field', (array)$raw_answers))));
+                $valid_modes = ['exact', 'contains_any', 'contains_all', 'fuzzy', 'regex'];
+                $match_mode = sanitize_key($options['match_mode'] ?? 'exact');
+                $clean['match_mode'] = in_array($match_mode, $valid_modes, true) ? $match_mode : 'exact';
                 $clean['case_sensitive'] = !empty($options['case_sensitive']) ? 1 : 0;
+                $clean['ignore_punct'] = isset($options['ignore_punct']) ? (!empty($options['ignore_punct']) ? 1 : 0) : 1;
+                $clean['ignore_whitespace'] = isset($options['ignore_whitespace']) ? (!empty($options['ignore_whitespace']) ? 1 : 0) : 1;
+                $clean['typo_tolerance'] = max(0, min(10, (int)($options['typo_tolerance'] ?? 1)));
                 break;
 
             case 'essay':
                 $clean['min_words'] = isset($options['min_words']) ? max(0, (int)$options['min_words']) : 0;
                 $clean['max_words'] = isset($options['max_words']) ? max(0, (int)$options['max_words']) : 0;
+                $clean['auto_check'] = !empty($options['auto_check']) ? 1 : 0;
+                $raw_kw = $options['keywords'] ?? [];
+                if (is_string($raw_kw)) {
+                    $raw_kw = preg_split('/[\r\n,]+/u', $raw_kw, -1, PREG_SPLIT_NO_EMPTY);
+                }
+                $clean['keywords'] = array_values(array_filter(array_map('trim', array_map('sanitize_text_field', (array)$raw_kw))));
+                $clean['min_keywords'] = max(0, (int)($options['min_keywords'] ?? 0));
+                $clean['scoring_mode'] = ($options['scoring_mode'] ?? 'proportional') === 'all_or_nothing' ? 'all_or_nothing' : 'proportional';
+                $clean['case_sensitive'] = !empty($options['case_sensitive']) ? 1 : 0;
+                $clean['ignore_punct'] = isset($options['ignore_punct']) ? (!empty($options['ignore_punct']) ? 1 : 0) : 1;
+                $clean['auto_pass'] = !empty($options['auto_pass']) ? 1 : 0;
                 break;
 
             case 'matching':
@@ -408,17 +442,54 @@ final class Question
                 $template = wp_kses_post($options['template'] ?? '');
                 $clean['template'] = $template;
                 $clean['case_sensitive'] = !empty($options['case_sensitive']) ? 1 : 0;
+                $choice_mode = sanitize_key($options['choice_mode'] ?? 'input');
+                $clean['choice_mode'] = in_array($choice_mode, ['input', 'dropdown', 'word_bank'], true) ? $choice_mode : 'input';
 
-                // Extract blanks from template: {answer1|synonym}
+                $raw_distractors = $options['distractors'] ?? '';
+                if (is_array($raw_distractors)) {
+                    $raw_distractors = implode(', ', $raw_distractors);
+                }
+                $clean['distractors'] = sanitize_text_field($raw_distractors);
+
+                // Extract blanks from template: {=answer1|option2|option3} or {answer1|synonym}
                 $blanks = [];
                 if (preg_match_all('/\{([^}]+)\}/u', $template, $matches, PREG_OFFSET_CAPTURE)) {
                     foreach ($matches[1] as $b_idx => $match) {
                         $bid = 'blank_' . ($b_idx + 1);
                         $raw_ans = explode('|', $match[0]);
-                        $answers = array_values(array_filter(array_map('trim', array_map('sanitize_text_field', $raw_ans))));
+                        $answers = [];
+                        $options_list = [];
+                        $has_explicit_correct = false;
+
+                        foreach ($raw_ans as $opt_idx => $opt_raw) {
+                            $opt_clean = trim(sanitize_text_field($opt_raw));
+                            if ($opt_clean === '') continue;
+
+                            if (str_starts_with($opt_clean, '=') || str_starts_with($opt_clean, '*')) {
+                                $val = ltrim($opt_clean, '=*');
+                                $answers[] = $val;
+                                $options_list[] = $val;
+                                $has_explicit_correct = true;
+                            } else {
+                                $options_list[] = $opt_clean;
+                                if ($clean['choice_mode'] === 'input') {
+                                    $answers[] = $opt_clean;
+                                } else {
+                                    if ($opt_idx === 0 && !$has_explicit_correct) {
+                                        $answers[] = $opt_clean;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (empty($answers) && !empty($options_list)) {
+                            $answers = [$options_list[0]];
+                        }
+
                         $blanks[] = [
-                            'id'      => $bid,
-                            'answers' => $answers,
+                            'id'           => $bid,
+                            'answers'      => array_values(array_unique($answers)),
+                            'options_list' => array_values(array_unique($options_list)),
                         ];
                     }
                 }
@@ -432,9 +503,79 @@ final class Question
                 $clean['target_value'] = isset($options['target_value']) ? (float)$options['target_value'] : 50.0;
                 $clean['tolerance'] = isset($options['tolerance']) ? max(0.0, (float)$options['tolerance']) : 0.0;
                 break;
+
+            case 'word_scramble':
+                $raw_words = $options['words'] ?? ($options['target_word'] ?? []);
+                if (is_string($raw_words)) {
+                    $raw_words = preg_split('/[\r\n,]+/u', $raw_words, -1, PREG_SPLIT_NO_EMPTY);
+                }
+                $words = array_values(array_filter(array_map('trim', array_map('sanitize_text_field', (array)$raw_words))));
+                $clean['words'] = $words;
+                $clean['target_word'] = $words[0] ?? '';
+
+                $raw_extra = $options['extra_letters'] ?? '';
+                if (is_array($raw_extra)) {
+                    $raw_extra = implode('', $raw_extra);
+                }
+                $clean_extra = (string)preg_replace('/[^\p{L}\p{N}]/u', '', (string)$raw_extra);
+                $clean['extra_letters'] = $clean_extra;
+                $clean['case_sensitive'] = !empty($options['case_sensitive']) ? 1 : 0;
+                break;
+
+            case 'dictation':
+                $template = wp_kses_post($options['template'] ?? '');
+                $clean['template'] = $template;
+                $clean['audio_url'] = esc_url_raw($options['audio_url'] ?? '');
+                $clean['scoring_mode'] = ($options['scoring_mode'] ?? 'proportional') === 'all_or_nothing' ? 'all_or_nothing' : 'proportional';
+                $clean['allowed_mistakes'] = max(0, (int)($options['allowed_mistakes'] ?? 0));
+
+                $gaps = [];
+                if (preg_match_all('/\{([^}]+)\}/u', $template, $matches, PREG_OFFSET_CAPTURE)) {
+                    foreach ($matches[1] as $idx => $match) {
+                        $raw = $match[0];
+                        $gid = 'd_' . ($idx + 1);
+                        $parts = array_map('trim', explode('|', $raw));
+                        $correct = '';
+                        $parsed_options = [];
+
+                        foreach ($parts as $p_idx => $p) {
+                            if (str_starts_with($p, '=') || str_starts_with($p, '*')) {
+                                $clean_p = ltrim($p, '=*');
+                                $correct = $clean_p;
+                                $parsed_options[] = $clean_p;
+                            } else {
+                                if ($p_idx === 0 && $correct === '') {
+                                    $correct = $p;
+                                }
+                                $parsed_options[] = $p;
+                            }
+                        }
+                        $parsed_options = array_values(array_unique($parsed_options));
+                        $gaps[$gid] = [
+                            'id'      => $gid,
+                            'correct' => $correct,
+                            'options' => $parsed_options,
+                        ];
+                    }
+                }
+                $clean['gaps'] = $gaps;
+                break;
         }
 
         return $clean;
+    }
+
+    public function is_required(): bool
+    {
+        return !empty($this->options['is_required']);
+    }
+
+    public function should_shuffle(bool $quiz_default = true): bool
+    {
+        if (isset($this->options['shuffle_answers'])) {
+            return !empty($this->options['shuffle_answers']);
+        }
+        return $quiz_default;
     }
 
     /**
@@ -443,15 +584,44 @@ final class Question
      */
     public function get_public_data(bool $shuffle_answers = false): array
     {
+        $effective_shuffle = $this->should_shuffle($shuffle_answers);
+
         $data = [
-            'id'            => $this->id,
-            'question_type' => $this->question_type,
-            'title'         => $this->title,
-            'content'       => $this->content,
-            'points'        => $this->points,
-            'penalty'       => $this->penalty,
-            'sort_order'    => $this->sort_order,
+            'id'              => $this->id,
+            'question_type'   => $this->question_type,
+            'title'           => $this->title,
+            'content'         => $this->content,
+            'points'          => $this->points,
+            'penalty'         => $this->penalty,
+            'sort_order'      => $this->sort_order,
+            'is_required'     => $this->is_required(),
+            'shuffle_answers' => $effective_shuffle,
+            'group_name'      => sanitize_text_field($this->options['group_name'] ?? ''),
+            'show_points'     => isset($this->options['show_points']) ? (bool)$this->options['show_points'] : null,
+            'shared_text_id'  => sanitize_key($this->options['shared_text_id'] ?? ''),
         ];
+
+        $st_id = sanitize_key($this->options['shared_text_id'] ?? '');
+        if ($st_id !== '') {
+            $quiz = Quiz::get($this->quiz_id);
+            if ($quiz) {
+                $st = $quiz->get_shared_text($st_id);
+                if ($st) {
+                    $data['shared_text'] = [
+                        'id'      => $st['id'],
+                        'title'   => sanitize_text_field($st['title'] ?? ''),
+                        'content' => wp_kses_post($st['content'] ?? ''),
+                    ];
+                }
+            }
+        }
+
+        if (!empty($this->options['image_url'])) {
+            $data['image_url'] = esc_url_raw($this->options['image_url']);
+            $data['image_caption'] = sanitize_text_field($this->options['image_caption'] ?? '');
+            $data['image_alt'] = sanitize_text_field($this->options['image_alt'] ?? '');
+            $data['image_position'] = $this->options['image_position'] ?? 'above';
+        }
 
         switch ($this->question_type) {
             case 'single':
@@ -465,7 +635,7 @@ final class Question
                         'text' => $choice['text'],
                     ];
                 }
-                if ($shuffle_answers && count($choices) > 1 && $this->question_type !== 'boolean') {
+                if ($effective_shuffle && count($choices) > 1 && $this->question_type !== 'boolean') {
                     shuffle($choices);
                 }
                 $data['choices'] = $choices;
@@ -500,8 +670,9 @@ final class Question
                     }
                 }
                 $right_options = array_values(array_unique($right_options));
-                // Always shuffle the right choices so position doesn't reveal answers
-                shuffle($right_options);
+                if ($effective_shuffle && count($right_options) > 1) {
+                    shuffle($right_options);
+                }
 
                 $data['left_items'] = $left_items;
                 $data['right_options'] = $right_options;
@@ -525,15 +696,64 @@ final class Question
 
             case 'fill_blank':
                 $template = $this->options['template'] ?? '';
+                $choice_mode = $this->options['choice_mode'] ?? 'input';
+                $blanks = (array)($this->options['blanks'] ?? []);
                 $count = 0;
-                // Replace {answer|synonym} with [[blank:blank_N]] so student cannot see solutions
-                $sanitized_template = preg_replace_callback('/\{([^}]+)\}/u', function () use (&$count) {
+
+                // Parse distractors
+                $raw_dist = trim((string)($this->options['distractors'] ?? ''));
+                $distractor_list = [];
+                if ($raw_dist !== '') {
+                    $distractor_list = array_values(array_filter(array_map('trim', explode(',', $raw_dist))));
+                }
+
+                // Global list of options across all blanks
+                $all_blank_answers = [];
+                foreach ($blanks as $b) {
+                    foreach ((array)($b['options_list'] ?? ($b['answers'] ?? [])) as $ans) {
+                        if ($ans !== '') {
+                            $all_blank_answers[] = $ans;
+                        }
+                    }
+                }
+                $all_options_pool = array_values(array_unique(array_merge($all_blank_answers, $distractor_list)));
+
+                $blank_options = [];
+                $sanitized_template = (string)preg_replace_callback('/\{([^}]+)\}/u', function () use (&$count, $blanks, $choice_mode, $all_options_pool, &$blank_options, $effective_shuffle) {
                     $count++;
-                    return '[[blank:blank_' . $count . ']]';
+                    $bid = 'blank_' . $count;
+                    if ($choice_mode === 'dropdown') {
+                        $b_info = $blanks[$count - 1] ?? null;
+                        $specific_opts = (array)($b_info['options_list'] ?? []);
+                        $opts_for_this = (count($specific_opts) > 1) ? $specific_opts : $all_options_pool;
+                        if ($effective_shuffle && count($opts_for_this) > 1) {
+                            shuffle($opts_for_this);
+                        }
+                        $blank_options[$bid] = array_values(array_unique($opts_for_this));
+                    }
+                    return '[[blank:' . $bid . ']]';
                 }, $template);
 
                 $data['template'] = $sanitized_template;
                 $data['blanks_count'] = $count;
+                $data['choice_mode'] = $choice_mode;
+
+                if ($choice_mode === 'dropdown') {
+                    $data['blank_options'] = $blank_options;
+                } elseif ($choice_mode === 'word_bank') {
+                    $bank = $all_options_pool;
+                    if ($effective_shuffle && count($bank) > 1) {
+                        shuffle($bank);
+                    }
+                    $bank_items = [];
+                    foreach ($bank as $idx => $word) {
+                        $bank_items[] = [
+                            'id'   => 'wb_' . ($idx + 1),
+                            'text' => $word,
+                        ];
+                    }
+                    $data['word_bank'] = $bank_items;
+                }
                 break;
 
             case 'slider':
@@ -544,6 +764,61 @@ final class Question
                 $data['max'] = $max;
                 $data['step'] = $step;
                 $data['default_value'] = round(($min + $max) / 2, 2);
+                break;
+
+            case 'word_scramble':
+                $target = trim((string)($this->options['target_word'] ?? ($this->options['words'][0] ?? '')));
+                $extra = trim((string)($this->options['extra_letters'] ?? ''));
+
+                $chars = preg_split('//u', $target, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+                $extra_chars = preg_split('//u', $extra, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+                $all_letters = array_merge($chars, $extra_chars);
+                if (empty($this->options['case_sensitive'])) {
+                    $all_letters = array_map(static fn($c) => mb_strtoupper($c, 'UTF-8'), $all_letters);
+                }
+
+                shuffle($all_letters);
+
+                $tiles = [];
+                foreach ($all_letters as $idx => $char) {
+                    $tiles[] = [
+                        'id'   => 'tile_' . ($idx + 1),
+                        'char' => $char,
+                    ];
+                }
+
+                $data['tiles'] = $tiles;
+                $data['word_length'] = mb_strlen($target, 'UTF-8');
+                $data['has_extra'] = !empty($extra_chars);
+                $data['placeholder'] = __('Составьте слово, выбирая буквы...', 'wp-olympiad');
+                break;
+
+            case 'dictation':
+                $template = (string)($this->options['template'] ?? '');
+                $gaps = (array)($this->options['gaps'] ?? []);
+                $public_gaps = [];
+                $count = 0;
+
+                $public_template = (string)preg_replace_callback('/\{([^}]+)\}/u', function() use (&$count, $gaps, &$public_gaps) {
+                    $count++;
+                    $gid = 'd_' . $count;
+                    $gap_data = $gaps[$gid] ?? null;
+                    $opts = $gap_data['options'] ?? [];
+                    if (count($opts) > 1) {
+                        shuffle($opts);
+                    }
+                    $public_gaps[$gid] = [
+                        'id'      => $gid,
+                        'options' => $opts,
+                    ];
+                    return '[[dict:' . $gid . ']]';
+                }, $template);
+
+                $data['template'] = $public_template;
+                $data['dict_gaps'] = $public_gaps;
+                $data['audio_url'] = esc_url_raw($this->options['audio_url'] ?? '');
+                $data['total_gaps'] = $count;
                 break;
         }
 

@@ -3,7 +3,7 @@
  * Plugin Name: WP Olympiad & Testing Master
  * Plugin URI: https://github.com/wp-olympiad/wp-olympiad
  * Description: Современный высокопроизводительный плагин для проведения олимпиад, экзаменов, контрольных работ и тренировочных тестов на WordPress с защитой от списывания, серверным таймером, рейтинговой таблицей и экспортом протоколов.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: WP Olympiad Team
  * Author URI: https://arena.ai
  * License: GPL-2.0-or-later
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WP_OLYMPIAD_VERSION', '1.0.0');
+define('WP_OLYMPIAD_VERSION', '1.0.1');
 define('WP_OLYMPIAD_FILE', __FILE__);
 define('WP_OLYMPIAD_PATH', plugin_dir_path(__FILE__));
 define('WP_OLYMPIAD_URL', plugin_dir_url(__FILE__));
@@ -47,9 +47,14 @@ spl_autoload_register(function (string $class): void {
         'AntiCheat'     => 'includes/class-anti-cheat.php',
         'Export'        => 'includes/class-export.php',
         'NetworkExport' => 'includes/class-network-export.php',
-        'Certificate'   => 'includes/class-certificate.php',
+        'NetworkImport' => 'includes/class-network-import.php',
+        'NetworkSync' => 'includes/class-network-sync.php',
+        'ImportTemplate' => 'includes/class-import-template.php',
+        'DesktopEditor' => 'includes/class-desktop-editor.php',
         'Mailer'        => 'includes/class-mailer.php',
         'RestApi'      => 'includes/class-rest-api.php',
+        'Api'          => 'includes/class-api.php',
+        'Webhook'      => 'includes/class-webhook.php',
         'Ajax'         => 'includes/class-ajax.php',
         'Shortcodes'   => 'includes/class-shortcodes.php',
         'Admin\\Admin' => 'admin/class-admin.php',
@@ -98,7 +103,10 @@ final class Plugin
         // Components
         Shortcodes::init();
         RestApi::init();
+        Webhook::init();
         Ajax::init();
+        NetworkImport::init();
+        DesktopEditor::init();
 
         if (is_admin()) {
             Admin\Admin::init();
@@ -123,11 +131,13 @@ final class Plugin
     {
         DB::install();
         update_option('wp_olympiad_db_version', WP_OLYMPIAD_VERSION);
+        NetworkImport::schedule_cron();
         flush_rewrite_rules();
     }
 
     public static function deactivate(): void
     {
+        NetworkImport::clear_cron();
         flush_rewrite_rules();
     }
 }

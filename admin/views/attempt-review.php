@@ -22,6 +22,9 @@ foreach ($questions as $q) {
                 </h1>
             </div>
             <div style="display:flex; gap:8px; align-items:center;">
+                <button type="button" class="button button-secondary" id="wpo-btn-auto-grade-all-text">
+                    ⚡ <?php esc_html_e('Автопроверить все текстовые ответы', 'wp-olympiad'); ?>
+                </button>
                 <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=export_attempt_csv&attempt_id=' . $attempt->id)); ?>" class="button button-primary">
                     📥 <?php esc_html_e('Экспорт ответов (CSV)', 'wp-olympiad'); ?>
                 </a>
@@ -40,9 +43,24 @@ foreach ($questions as $q) {
                 <h4><?php echo esc_html($quiz ? $quiz->title : ('#' . $attempt->quiz_id)); ?></h4>
             </div>
             <div>
-                <span class="description"><?php esc_html_e('Участник / Организация:', 'wp-olympiad'); ?></span>
-                <h4><?php echo esc_html($attempt->participant_name); ?> (<?php echo esc_html($attempt->participant_org ?: '—'); ?>)</h4>
-                <div class="description"><?php echo esc_html($attempt->participant_email); ?></div>
+                <span class="description"><?php esc_html_e('Анкета участника:', 'wp-olympiad'); ?></span>
+                <h4 style="margin:2px 0;"><?php echo esc_html($attempt->participant_name); ?></h4>
+                <div class="description" style="margin-top:2px;">
+                    <?php if ($attempt->participant_email): ?>
+                        <span>📧 <?php echo esc_html($attempt->participant_email); ?></span>
+                    <?php endif; ?>
+                    <?php if ($attempt->participant_phone): ?>
+                        <span style="margin-left:8px; color:#0284c7;">📞 <?php echo esc_html($attempt->participant_phone); ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="description" style="margin-top:2px;">
+                    <?php if ($attempt->participant_org): ?>
+                        <span>🏫 <?php echo esc_html($attempt->participant_org); ?></span>
+                    <?php endif; ?>
+                    <?php if ($attempt->participant_city): ?>
+                        <span style="margin-left:8px; color:#64748b;">📍 <?php echo esc_html($attempt->participant_city); ?></span>
+                    <?php endif; ?>
+                </div>
             </div>
             <div>
                 <span class="description"><?php esc_html_e('Время сдачи и нарушения:', 'wp-olympiad'); ?></span>
@@ -109,6 +127,38 @@ foreach ($questions as $q) {
                 <?php if ($q && !empty($q->options['explanation'])): ?>
                     <div class="description" style="margin-bottom:10px;">
                         💡 <strong><?php esc_html_e('Правильное решение / пояснение:', 'wp-olympiad'); ?></strong> <?php echo esc_html($q->options['explanation']); ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($type === 'text' || $type === 'essay' || $type === 'word_scramble' || $type === 'dictation'): ?>
+                    <div class="wpo-auto-grade-panel" style="margin-bottom:10px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; background:#f0fdf4; border:1px solid #bbf7d0; padding:8px 12px; border-radius:6px;">
+                        <button type="button" class="button button-secondary button-small wpo-btn-auto-grade-single" data-resp-id="<?php echo esc_attr((string)$r['id']); ?>">
+                            ⚡ <?php esc_html_e('Автопроверить ответ', 'wp-olympiad'); ?>
+                        </button>
+                        <?php if ($type === 'text' && !empty($q->options['answers'])): ?>
+                            <span class="description" style="color:#166534;">
+                                <?php esc_html_e('Ключи:', 'wp-olympiad'); ?> <strong><?php echo esc_html(implode(', ', (array)$q->options['answers'])); ?></strong>
+                                (<?php echo esc_html($q->options['match_mode'] ?? 'exact'); ?>)
+                            </span>
+                        <?php elseif ($type === 'word_scramble' && (!empty($q->options['words']) || !empty($q->options['target_word']))): ?>
+                            <span class="description" style="color:#166534;">
+                                <?php esc_html_e('Целевое слово:', 'wp-olympiad'); ?> <strong><?php echo esc_html(implode(', ', (array)($q->options['words'] ?? [$q->options['target_word']]))); ?></strong>
+                            </span>
+                        <?php elseif ($type === 'dictation' && !empty($q->options['gaps'])): ?>
+                            <span class="description" style="color:#166534;">
+                                <?php esc_html_e('Орфограмм в диктанте:', 'wp-olympiad'); ?> <strong><?php echo esc_html((string)count($q->options['gaps'])); ?></strong>
+                            </span>
+                        <?php elseif ($type === 'fill_blank' && !empty($q->options['blanks'])): ?>
+                            <span class="description" style="color:#166534;">
+                                <?php esc_html_e('Пропусков в тексте:', 'wp-olympiad'); ?> <strong><?php echo esc_html((string)count($q->options['blanks'])); ?></strong>
+                                (<?php echo esc_html($q->options['choice_mode'] ?? 'input'); ?>)
+                            </span>
+                        <?php elseif ($type === 'essay' && !empty($q->options['keywords'])): ?>
+                            <span class="description" style="color:#166534;">
+                                <?php esc_html_e('Ключевые понятия:', 'wp-olympiad'); ?> <strong><?php echo esc_html(implode(', ', (array)$q->options['keywords'])); ?></strong>
+                            </span>
+                        <?php endif; ?>
+                        <span class="wpo-auto-grade-status" data-resp-id="<?php echo esc_attr((string)$r['id']); ?>" style="font-size:12px; font-weight:600; margin-left:auto;"></span>
                     </div>
                 <?php endif; ?>
 

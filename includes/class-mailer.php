@@ -19,7 +19,6 @@ final class Mailer
     {
         $headers = ['Content-Type: text/html; charset=UTF-8'];
         $grade_info = $quiz->get_grade_info($attempt->percentage);
-        $cert_url = Certificate::get_url($attempt->token);
 
         // 1. Participant Email
         $send_participant = (bool)$quiz->get_setting('email_participant', 1);
@@ -41,16 +40,6 @@ final class Mailer
             if (!empty($grade_info['message'])) {
                 $personalized = $quiz->replace_template_tags($grade_info['message'], $attempt);
                 $message .= '<p style="font-style:italic; color:#334155;">' . wp_kses_post($personalized) . '</p>';
-            }
-
-            if ($quiz->get_setting('enable_certificate', 1)) {
-                $message .= '
-                    <div style="margin:25px 0; text-align:center;">
-                        <a href="' . esc_url($cert_url) . '" style="background:#2563eb; color:#fff; padding:12px 24px; text-decoration:none; border-radius:6px; font-weight:bold; display:inline-block;">
-                            🏅 Посмотреть и распечатать диплом
-                        </a>
-                    </div>
-                ';
             }
 
             $message .= '

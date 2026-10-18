@@ -17,4 +17,16 @@ $delete_data = $settings['delete_data_on_uninstall'] ?? false;
 
 if ($delete_data) {
     \WPOlympiad\DB::drop_tables();
+    global $wpdb;
+    $editor_options = $wpdb->get_col($wpdb->prepare(
+        "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+        $wpdb->esc_like(\WPOlympiad\DesktopEditor::STATE_PREFIX) . '%'
+    ));
+    foreach ($editor_options as $editor_option) { delete_option($editor_option); }
+    $sync_options = $wpdb->get_col($wpdb->prepare(
+        "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+        $wpdb->esc_like(\WPOlympiad\NetworkSync::PREFIX) . '%'
+    ));
+    foreach ($sync_options as $sync_option) { delete_option($sync_option); }
+    // Never remove externally deployed editor files, questions or drafts.
 }

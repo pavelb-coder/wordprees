@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-15T08:30:08+00:00\n"
+"POT-Creation-Date: 2026-10-17T14:41:01+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: wp-olympiad\n"
@@ -39,158 +39,201 @@ msgstr ""
 msgid "https://arena.ai"
 msgstr ""
 
-#: admin/class-admin.php:33
+#: admin/class-admin.php:35
 msgid "Олимпиады и тесты"
 msgstr ""
 
-#: admin/class-admin.php:34
+#: admin/class-admin.php:36
 msgid "WP Olympiad"
 msgstr ""
 
-#: admin/class-admin.php:44
-#: admin/class-admin.php:45
+#: admin/class-admin.php:46
+#: admin/class-admin.php:47
 msgid "Все олимпиады"
 msgstr ""
 
-#: admin/class-admin.php:53
+#: admin/class-admin.php:55
 msgid "Добавить олимпиаду"
 msgstr ""
 
-#: admin/class-admin.php:54
+#: admin/class-admin.php:56
 msgid "Добавить новую"
 msgstr ""
 
-#: admin/class-admin.php:62
+#: admin/class-admin.php:64
 msgid "Конструктор вопросов"
 msgstr ""
 
-#: admin/class-admin.php:71
+#: admin/class-admin.php:73
 msgid "Протоколы и попытки"
 msgstr ""
 
-#: admin/class-admin.php:72
+#: admin/class-admin.php:74
 msgid "Протоколы / Попытки"
 msgstr ""
 
-#: admin/class-admin.php:80
+#: admin/class-admin.php:82
 msgid "Проверка работы"
 msgstr ""
 
-#: admin/class-admin.php:89
-msgid "Лидерборд и рейтинг"
-msgstr ""
-
-#: admin/class-admin.php:90
-msgid "Рейтинг участников"
-msgstr ""
-
-#: admin/class-admin.php:98
-msgid "Аналитика и статистика"
-msgstr ""
-
-#: admin/class-admin.php:99
-msgid "Аналитика / Статистика"
-msgstr ""
-
-#: admin/class-admin.php:131
+#: admin/class-admin.php:134
 msgid "Вы действительно хотите удалить этот элемент? Это действие необратимо."
 msgstr ""
 
-#: admin/class-admin.php:132
+#: admin/class-admin.php:135
 msgid "Изменения успешно сохранены."
 msgstr ""
 
-#: admin/class-admin.php:133
+#: admin/class-admin.php:136
 msgid "Произошла ошибка при сохранении."
 msgstr ""
 
-#: admin/class-admin.php:274
-#: includes/class-certificate.php:32
+#: admin/class-admin.php:364
+#: admin/class-admin.php:394
+#: includes/class-ajax.php:176
+#: includes/class-ajax.php:453
+#: includes/class-ajax.php:508
+#: includes/class-ajax.php:536
+#: includes/class-ajax.php:608
+#: includes/class-ajax.php:669
 #: includes/class-export.php:26
-#: includes/class-export.php:117
-#: includes/class-leaderboard.php:102
-#: includes/class-rest-api.php:79
-#: includes/class-rest-api.php:182
-#: includes/class-rest-api.php:206
-#: includes/class-shortcodes.php:47
+#: includes/class-export.php:180
+#: includes/class-network-export.php:90
+#: includes/class-network-export.php:572
+#: includes/class-network-import.php:1546
+#: includes/class-network-import.php:1784
+#: includes/class-rest-api.php:72
+#: includes/class-rest-api.php:211
+#: includes/class-rest-api.php:235
+#: includes/class-shortcodes.php:43
 #: includes/class-shortcodes.php:142
 msgid "Олимпиада не найдена."
 msgstr ""
 
-#: admin/class-admin.php:307
-#: includes/class-ajax.php:185
-#: includes/class-rest-api.php:197
+#: admin/class-admin.php:439
+#: includes/class-ajax.php:245
+#: includes/class-export.php:175
+#: includes/class-rest-api.php:226
 msgid "Попытка не найдена."
 msgstr ""
 
-#: admin/views/attempt-review.php:17
+#: admin/views/attempt-review.php:18
 msgid "К списку попыток"
 msgstr ""
 
-#: admin/views/attempt-review.php:20
+#: admin/views/attempt-review.php:21
 #, php-format
 msgid "Проверка попытки #%1$d: %2$s"
 msgstr ""
 
+#: admin/views/attempt-review.php:26
+msgid "Автопроверить все текстовые ответы"
+msgstr ""
+
 #: admin/views/attempt-review.php:29
-#: admin/views/attempts-list.php:27
+msgid "Экспорт ответов (CSV)"
+msgstr ""
+
+#: admin/views/attempt-review.php:31
+msgid "Вы уверены, что хотите удалить эту попытку и все её ответы? Это действие необратимо."
+msgstr ""
+
+#: admin/views/attempt-review.php:32
+msgid "Удалить попытку и ответы"
+msgstr ""
+
+#: admin/views/attempt-review.php:42
+#: admin/views/attempts-list.php:83
 msgid "Олимпиада:"
 msgstr ""
 
-#: admin/views/attempt-review.php:33
-msgid "Участник / Организация:"
+#: admin/views/attempt-review.php:46
+msgid "Анкета участника:"
 msgstr ""
 
-#: admin/views/attempt-review.php:38
+#: admin/views/attempt-review.php:66
 msgid "Время сдачи и нарушения:"
 msgstr ""
 
-#: admin/views/attempt-review.php:47
+#: admin/views/attempt-review.php:75
 msgid "Текущий балл:"
 msgstr ""
 
-#: admin/views/attempt-review.php:51
-#: admin/views/attempts-list.php:102
-#: includes/class-shortcodes.php:471
+#: admin/views/attempt-review.php:79
+#: admin/views/attempts-list.php:191
+#: includes/class-shortcodes.php:487
 msgid "Зачёт"
 msgstr ""
 
-#: admin/views/attempt-review.php:51
-#: admin/views/attempts-list.php:104
-#: includes/class-shortcodes.php:471
+#: admin/views/attempt-review.php:79
+#: admin/views/attempts-list.php:193
+#: includes/class-shortcodes.php:487
 msgid "Не сдан"
 msgstr ""
 
-#: admin/views/attempt-review.php:87
-#: includes/class-shortcodes.php:248
+#: admin/views/attempt-review.php:115
+#: admin/views/quiz-edit.php:935
+#: includes/class-shortcodes.php:277
 msgid "Макс. балл:"
 msgstr ""
 
-#: admin/views/attempt-review.php:92
+#: admin/views/attempt-review.php:116
+msgid "Удалить этот ответ"
+msgstr ""
+
+#: admin/views/attempt-review.php:117
+msgid "Удалить ответ"
+msgstr ""
+
+#: admin/views/attempt-review.php:123
 msgid "Ответ участника:"
 msgstr ""
 
-#: admin/views/attempt-review.php:98
+#: admin/views/attempt-review.php:129
 msgid "Правильное решение / пояснение:"
 msgstr ""
 
-#: admin/views/attempt-review.php:104
+#: admin/views/attempt-review.php:136
+msgid "Автопроверить ответ"
+msgstr ""
+
+#: admin/views/attempt-review.php:140
+msgid "Ключи:"
+msgstr ""
+
+#: admin/views/attempt-review.php:145
+msgid "Целевое слово:"
+msgstr ""
+
+#: admin/views/attempt-review.php:149
+msgid "Орфограмм в диктанте:"
+msgstr ""
+
+#: admin/views/attempt-review.php:153
+msgid "Пропусков в тексте:"
+msgstr ""
+
+#: admin/views/attempt-review.php:158
+msgid "Ключевые понятия:"
+msgstr ""
+
+#: admin/views/attempt-review.php:167
 msgid "Начислено баллов:"
 msgstr ""
 
-#: admin/views/attempt-review.php:109
+#: admin/views/attempt-review.php:172
 msgid "Комментарий проверяющего (жюри):"
 msgstr ""
 
-#: admin/views/attempt-review.php:110
+#: admin/views/attempt-review.php:173
 msgid "Например: Выкладки верные, допущена арифметическая ошибка в последнем действии."
 msgstr ""
 
-#: admin/views/attempt-review.php:116
+#: admin/views/attempt-review.php:179
 msgid "Засчитать как верный"
 msgstr ""
 
-#: admin/views/attempt-review.php:125
+#: admin/views/attempt-review.php:188
 msgid "Сохранить оценки и утвердить результат"
 msgstr ""
 
@@ -199,137 +242,192 @@ msgid "Протоколы и результаты попыток"
 msgstr ""
 
 #: admin/views/attempts-list.php:16
-msgid "Экспорт протокола в Excel / CSV"
+msgid "Экспорт в Excel / CSV"
 msgstr ""
 
-#: admin/views/attempts-list.php:29
-msgid "— Все олимпиады —"
+#: admin/views/attempts-list.php:18
+#: admin/views/quiz-edit.php:442
+msgid "Подключение к сетевой папке"
 msgstr ""
 
-#: admin/views/attempts-list.php:35
-#: admin/views/quiz-edit.php:403
-msgid "Статус:"
+#: admin/views/attempts-list.php:19
+msgid "В сетевую папку"
 msgstr ""
 
-#: admin/views/attempts-list.php:37
-msgid "— Все статусы —"
+#: admin/views/attempts-list.php:22
+msgid "ВНИМАНИЕ! Вы действительно хотите удалить ВСЕ ответы и попытки участников по данной олимпиаде? Это действие необратимо."
+msgstr ""
+
+#: admin/views/attempts-list.php:23
+msgid "Очистить все ответы"
+msgstr ""
+
+#: admin/views/attempts-list.php:34
+msgid "Файлы протокола успешно выгружены в сетевую папку!"
 msgstr ""
 
 #: admin/views/attempts-list.php:38
-msgid "Завершено"
+msgid "Сетевая директория:"
 msgstr ""
 
-#: admin/views/attempts-list.php:39
-msgid "Требует проверки жюри"
+#: admin/views/attempts-list.php:43
+msgid "Основной файл выгрузки:"
 msgstr ""
 
-#: admin/views/attempts-list.php:40
-msgid "В процессе"
+#: admin/views/attempts-list.php:49
+msgid "Скачать файл протокола на компьютер"
 msgstr ""
 
-#: admin/views/attempts-list.php:41
-msgid "Дисквалифицирован"
-msgstr ""
-
-#: admin/views/attempts-list.php:44
-msgid "Применить"
-msgstr ""
-
-#: admin/views/attempts-list.php:50
-msgid "Попыток не найдено."
-msgstr ""
-
-#: admin/views/attempts-list.php:56
-#: admin/views/leaderboard-view.php:41
-#: admin/views/quiz-stats.php:108
-#: includes/class-leaderboard.php:130
-msgid "Участник"
-msgstr ""
-
-#: admin/views/attempts-list.php:57
-#: admin/views/leaderboard-view.php:42
-#: includes/class-leaderboard.php:131
-msgid "Организация / Класс"
-msgstr ""
-
-#: admin/views/attempts-list.php:58
-msgid "Дата старта"
-msgstr ""
-
-#: admin/views/attempts-list.php:59
-#: admin/views/leaderboard-view.php:44
-#: admin/views/quiz-stats.php:111
-#: includes/class-leaderboard.php:133
-#: includes/class-shortcodes.php:454
-msgid "Время"
-msgstr ""
-
-#: admin/views/attempts-list.php:60
-#: admin/views/leaderboard-view.php:43
-#: admin/views/quiz-stats.php:109
-#: includes/class-leaderboard.php:132
-#: includes/class-shortcodes.php:452
-msgid "Баллы"
+#: admin/views/attempts-list.php:52
+msgid "Скачать комплект файлов (ZIP)"
 msgstr ""
 
 #: admin/views/attempts-list.php:61
-#: admin/views/leaderboard-view.php:45
+msgid "Ошибка экспорта в сетевую папку:"
+msgstr ""
+
+#: admin/views/attempts-list.php:65
+msgid "Проверить настройки сетевой папки в редактировании олимпиады →"
+msgstr ""
+
+#: admin/views/attempts-list.php:71
+msgid "Попытка и все ответы участника успешно удалены."
+msgstr ""
+
+#: admin/views/attempts-list.php:73
+#, php-format
+msgid "Успешно удалено выбранных попыток/ответов: %d."
+msgstr ""
+
+#: admin/views/attempts-list.php:75
+#, php-format
+msgid "Все ответы и результаты олимпиады успешно очищены (удалено: %d)."
+msgstr ""
+
+#: admin/views/attempts-list.php:85
+msgid "— Все олимпиады —"
+msgstr ""
+
+#: admin/views/attempts-list.php:91
+#: admin/views/quiz-edit.php:626
+msgid "Статус:"
+msgstr ""
+
+#: admin/views/attempts-list.php:93
+msgid "— Все статусы —"
+msgstr ""
+
+#: admin/views/attempts-list.php:94
+msgid "Завершено"
+msgstr ""
+
+#: admin/views/attempts-list.php:95
+msgid "Требует проверки жюри"
+msgstr ""
+
+#: admin/views/attempts-list.php:96
+msgid "В процессе"
+msgstr ""
+
+#: admin/views/attempts-list.php:97
+msgid "Дисквалифицирован"
+msgstr ""
+
+#: admin/views/attempts-list.php:100
+#: admin/views/attempts-list.php:120
+msgid "Применить"
+msgstr ""
+
+#: admin/views/attempts-list.php:106
+msgid "Попыток не найдено."
+msgstr ""
+
+#: admin/views/attempts-list.php:117
+msgid "Массовые действия"
+msgstr ""
+
+#: admin/views/attempts-list.php:118
+msgid "Удалить выбранные"
+msgstr ""
+
+#: admin/views/attempts-list.php:123
+#, php-format
+msgid "Всего попыток: %d"
+msgstr ""
+
+#: admin/views/attempts-list.php:134
+#: includes/class-rest-api.php:124
+msgid "Участник"
+msgstr ""
+
+#: admin/views/attempts-list.php:135
+msgid "Организация / Класс"
+msgstr ""
+
+#: admin/views/attempts-list.php:136
+msgid "Дата старта"
+msgstr ""
+
+#: admin/views/attempts-list.php:137
+#: includes/class-shortcodes.php:470
+msgid "Время"
+msgstr ""
+
+#: admin/views/attempts-list.php:138
+#: admin/views/question-item-card.php:240
+#: admin/views/question-item-card.php:355
+#: admin/views/question-item-card.php:385
+#: includes/class-shortcodes.php:468
+msgid "Баллы"
+msgstr ""
+
+#: admin/views/attempts-list.php:139
 msgid "Вкладки"
 msgstr ""
 
-#: admin/views/attempts-list.php:62
+#: admin/views/attempts-list.php:140
 msgid "Статус"
 msgstr ""
 
-#: admin/views/attempts-list.php:63
+#: admin/views/attempts-list.php:141
 #: admin/views/quizzes-list.php:44
 msgid "Действия"
 msgstr ""
 
-#: admin/views/attempts-list.php:89
+#: admin/views/attempts-list.php:178
 msgid "Количество уходов с вкладки теста"
 msgstr ""
 
-#: admin/views/attempts-list.php:98
+#: admin/views/attempts-list.php:187
 msgid "Проверка"
 msgstr ""
 
-#: admin/views/attempts-list.php:100
+#: admin/views/attempts-list.php:189
 msgid "Дисквал."
 msgstr ""
 
-#: admin/views/attempts-list.php:109
+#: admin/views/attempts-list.php:198
+msgid "Просмотр и проверка ответов"
+msgstr ""
+
+#: admin/views/attempts-list.php:199
 msgid "Проверить"
 msgstr ""
 
-#: admin/views/attempts-list.php:109
-#: admin/views/leaderboard-view.php:46
+#: admin/views/attempts-list.php:199
 msgid "Детали"
 msgstr ""
 
-#: admin/views/leaderboard-view.php:11
-msgid "Рейтинговые таблицы олимпиад"
+#: admin/views/attempts-list.php:201
+msgid "Экспорт ответов участника в CSV"
 msgstr ""
 
-#: admin/views/leaderboard-view.php:15
-msgid "Шорткод для вставки рейтинга на сайт"
+#: admin/views/attempts-list.php:204
+msgid "Удалить эту попытку и все ответы участника"
 msgstr ""
 
-#: admin/views/leaderboard-view.php:24
-msgid "Выберите олимпиаду:"
-msgstr ""
-
-#: admin/views/leaderboard-view.php:35
-msgid "В этой олимпиаде пока нет завершённых попыток для формирования рейтинга."
-msgstr ""
-
-#: admin/views/leaderboard-view.php:40
-#: includes/class-leaderboard.php:129
-msgid "Место"
-msgstr ""
-
-#: admin/views/leaderboard-view.php:83
-msgid "Просмотр"
+#: admin/views/attempts-list.php:204
+msgid "Вы уверены, что хотите удалить эту попытку и все ответы участника? Это действие необратимо."
 msgstr ""
 
 #: admin/views/question-item-card.php:15
@@ -340,826 +438,1622 @@ msgstr ""
 msgid "Новый вопрос"
 msgstr ""
 
-#: admin/views/question-item-card.php:21
+#: admin/views/question-item-card.php:19
+#: admin/views/question-item-card.php:159
+msgid "Обязательный вопрос"
+msgstr ""
+
+#: admin/views/question-item-card.php:29
+msgid "Общий текст"
+msgstr ""
+
+#: admin/views/question-item-card.php:33
 #, php-format
-msgid "%.1f б."
-msgstr ""
-
-#: admin/views/question-item-card.php:23
-msgid "Удалить вопрос"
-msgstr ""
-
-#: admin/views/question-item-card.php:34
-msgid "Текст задания / Вопрос:"
+msgid "%d б."
 msgstr ""
 
 #: admin/views/question-item-card.php:35
-msgid "Сформулируйте условие задачи или вопрос..."
-msgstr ""
-
-#: admin/views/question-item-card.php:39
-msgid "Тип задания:"
+msgid "Удалить вопрос"
 msgstr ""
 
 #: admin/views/question-item-card.php:47
-msgid "Баллы за верный ответ:"
+msgid "Текст задания / Вопрос:"
 msgstr ""
 
-#: admin/views/question-item-card.php:51
-msgid "Штраф за ошибку:"
+#: admin/views/question-item-card.php:48
+msgid "Поддерживается форматирование и формулы"
+msgstr ""
+
+#: admin/views/question-item-card.php:54
+msgid "Жирный (Bold)"
+msgstr ""
+
+#: admin/views/question-item-card.php:55
+msgid "Курсив (Italic)"
+msgstr ""
+
+#: admin/views/question-item-card.php:56
+msgid "Подчёркнутый (Underline)"
+msgstr ""
+
+#: admin/views/question-item-card.php:57
+msgid "Зачёркнутый (Strikethrough)"
+msgstr ""
+
+#: admin/views/question-item-card.php:58
+msgid "Маркер / Выделение"
 msgstr ""
 
 #: admin/views/question-item-card.php:61
-msgid "Варианты ответов:"
+msgid "Верхний индекс / Степень (x²)"
 msgstr ""
 
 #: admin/views/question-item-card.php:62
-msgid "Отметьте правильный вариант (или несколько для множественного выбора)."
+msgid "Нижний индекс / Формула (x₂)"
 msgstr ""
 
-#: admin/views/question-item-card.php:77
-msgid "Отметить как правильный"
+#: admin/views/question-item-card.php:63
+msgid "Инлайн-код / Формула"
 msgstr ""
 
-#: admin/views/question-item-card.php:79
-msgid "Текст варианта ответа..."
+#: admin/views/question-item-card.php:64
+msgid "Цитата / Врезка"
 msgstr ""
 
-#: admin/views/question-item-card.php:80
-msgid "Удалить вариант"
+#: admin/views/question-item-card.php:67
+msgid "Маркированный список"
 msgstr ""
 
-#: admin/views/question-item-card.php:85
-msgid "Добавить вариант"
+#: admin/views/question-item-card.php:68
+msgid "Нумерованный список"
+msgstr ""
+
+#: admin/views/question-item-card.php:69
+msgid "Вставить ссылку"
+msgstr ""
+
+#: admin/views/question-item-card.php:70
+msgid "Вставить изображение в текст"
+msgstr ""
+
+#: admin/views/question-item-card.php:71
+msgid "Предпросмотр форматирования"
+msgstr ""
+
+#: admin/views/question-item-card.php:75
+msgid "Сформулируйте условие задачи или вопрос..."
+msgstr ""
+
+#: admin/views/question-item-card.php:81
+msgid "Скрыть подробное описание задачи"
+msgstr ""
+
+#: admin/views/question-item-card.php:81
+msgid "+ Добавить подробное условие / текст / формулы задачи"
+msgstr ""
+
+#: admin/views/question-item-card.php:86
+msgid "Жирный"
+msgstr ""
+
+#: admin/views/question-item-card.php:87
+msgid "Курсив"
+msgstr ""
+
+#: admin/views/question-item-card.php:88
+msgid "Подчёркнутый"
+msgstr ""
+
+#: admin/views/question-item-card.php:89
+msgid "Маркер"
+msgstr ""
+
+#: admin/views/question-item-card.php:90
+msgid "Степень (x²)"
 msgstr ""
 
 #: admin/views/question-item-card.php:91
-msgid "Правильный ответ утверждения:"
+msgid "Индекс (x₂)"
 msgstr ""
 
-#: admin/views/question-item-card.php:104
-msgid "Верно (Да)"
+#: admin/views/question-item-card.php:92
+msgid "Код / Формула"
+msgstr ""
+
+#: admin/views/question-item-card.php:93
+msgid "Блок кода"
+msgstr ""
+
+#: admin/views/question-item-card.php:94
+msgid "Цитата"
+msgstr ""
+
+#: admin/views/question-item-card.php:95
+msgid "Список"
+msgstr ""
+
+#: admin/views/question-item-card.php:96
+msgid "Ссылка"
+msgstr ""
+
+#: admin/views/question-item-card.php:97
+msgid "Картинка"
+msgstr ""
+
+#: admin/views/question-item-card.php:98
+#: admin/views/questions-builder.php:159
+msgid "Предпросмотр"
+msgstr ""
+
+#: admin/views/question-item-card.php:101
+msgid "Дополнительное подробное условие, текст задачи, формулы, список или вводная часть..."
 msgstr ""
 
 #: admin/views/question-item-card.php:108
-msgid "Неверно (Нет)"
+msgid "Тип задания:"
 msgstr ""
 
-#: admin/views/question-item-card.php:117
-msgid "Правильное числовое значение:"
+#: admin/views/question-item-card.php:116
+msgid "Баллы за верный ответ:"
 msgstr ""
 
-#: admin/views/question-item-card.php:121
-#: admin/views/question-item-card.php:240
-msgid "Допустимая погрешность (± delta):"
+#: admin/views/question-item-card.php:120
+msgid "Штраф за ошибку:"
 msgstr ""
 
-#: admin/views/question-item-card.php:123
-msgid "Например: 0.05 (ответ 3.14 будет принят в диапазоне от 3.09 до 3.19)."
+#: admin/views/question-item-card.php:124
+msgid "Раздел / Группа заданий (опционально):"
 msgstr ""
 
-#: admin/views/question-item-card.php:131
-msgid "Правильный ответ (синонимы через запятую):"
+#: admin/views/question-item-card.php:125
+msgid "Например: Раздел 1. Теория, Блок А, Часть 1..."
+msgstr ""
+
+#: admin/views/question-item-card.php:132
+msgid "Общий текст / Контекст к вопросу:"
+msgstr ""
+
+#: admin/views/question-item-card.php:134
+msgid "Открыть редактор общих текстов"
 msgstr ""
 
 #: admin/views/question-item-card.php:135
-msgid "например: Париж, Paris"
+msgid "Управление текстами"
 msgstr ""
 
 #: admin/views/question-item-card.php:140
-msgid "Учитывать регистр букв (строчные / заглавные)"
-msgstr ""
-
-#: admin/views/question-item-card.php:147
-msgid "Пары для сопоставления (Левая колонка — Правая колонка):"
+msgid "— Без общего текста —"
 msgstr ""
 
 #: admin/views/question-item-card.php:148
-msgid "Участнику будет предложено для каждого элемента слева выбрать правильное соответствие справа (варианты справа перемешиваются)."
+msgid "Создать новый общий текст..."
 msgstr ""
 
-#: admin/views/question-item-card.php:162
-msgid "Элемент слева (понятие)..."
+#: admin/views/question-item-card.php:150
+msgid "Быстрый просмотр общего текста"
+msgstr ""
+
+#: admin/views/question-item-card.php:151
+msgid "Просмотр"
 msgstr ""
 
 #: admin/views/question-item-card.php:164
-msgid "Соответствие справа (определение)..."
+#: admin/views/quiz-edit.php:704
+msgid "Перемешивать варианты ответов"
 msgstr ""
 
-#: admin/views/question-item-card.php:165
-msgid "Удалить пару"
+#: admin/views/question-item-card.php:169
+msgid "Скрыть баллы за этот вопрос в тесте"
 msgstr ""
 
-#: admin/views/question-item-card.php:170
-msgid "Добавить пару соответствия"
+#: admin/views/question-item-card.php:178
+msgid "Изображение / Иллюстрация к вопросу:"
 msgstr ""
 
-#: admin/views/question-item-card.php:176
-msgid "Элементы в ПРАВИЛЬНОМ порядке:"
+#: admin/views/question-item-card.php:179
+msgid "Схема, карта, график, фото или рисунок (кликните «Медиатека WP» или укажите URL)"
 msgstr ""
 
-#: admin/views/question-item-card.php:177
-msgid "Задайте элементы в верной последовательности (1, 2, 3...). Участнику они будут показаны в случайном порядке, и он должен будет выстроить их правильно."
+#: admin/views/question-item-card.php:190
+msgid "https://... или нажмите кнопку «Медиатека WP»"
+msgstr ""
+
+#: admin/views/question-item-card.php:191
+msgid "Выбрать или загрузить картинку в медиатеку"
 msgstr ""
 
 #: admin/views/question-item-card.php:192
-msgid "Текст этапа или элемента последовательности..."
+msgid "Медиатека WP"
 msgstr ""
 
-#: admin/views/question-item-card.php:193
-msgid "Удалить элемент"
+#: admin/views/question-item-card.php:194
+msgid "Удалить изображение"
 msgstr ""
 
-#: admin/views/question-item-card.php:198
-msgid "Добавить элемент последовательности"
+#: admin/views/question-item-card.php:195
+#: admin/views/quizzes-list.php:70
+msgid "Удалить"
 msgstr ""
 
-#: admin/views/question-item-card.php:205
-msgid "Текст задания с пропусками:"
+#: admin/views/question-item-card.php:201
+msgid "Подпись к иллюстрации (например: Рис. 1. Карта древнего мира)..."
+msgstr ""
+
+#: admin/views/question-item-card.php:204
+msgid "Расположение:"
 msgstr ""
 
 #: admin/views/question-item-card.php:207
-msgid "Выделяйте пропуски фигурными скобками: {правильный_ответ}. Если есть синонимы, разделяйте их чертой: {ответ1|синоним2}. Пример: «В году {12} месяцев, а в неделе {7} дней»."
+msgid "Над текстом задания"
 msgstr ""
 
-#: admin/views/question-item-card.php:209
+#: admin/views/question-item-card.php:208
+msgid "Под текстом задания"
+msgstr ""
+
+#: admin/views/question-item-card.php:220
+msgid "Варианты ответов:"
+msgstr ""
+
+#: admin/views/question-item-card.php:221
+msgid "Отметьте правильный вариант (или несколько). В поле «Баллы» можно задать персональный балл за каждый пункт (при заполнении вопрос суммирует баллы выбранных ответов)."
+msgstr ""
+
+#: admin/views/question-item-card.php:237
+msgid "Отметить как правильный"
+msgstr ""
+
+#: admin/views/question-item-card.php:239
+msgid "Текст варианта ответа..."
+msgstr ""
+
+#: admin/views/question-item-card.php:240
+msgid "Индивидуальный балл за данный вариант ответа (целое число)"
+msgstr ""
+
+#: admin/views/question-item-card.php:241
+msgid "Удалить вариант"
+msgstr ""
+
+#: admin/views/question-item-card.php:246
+msgid "Добавить вариант"
+msgstr ""
+
+#: admin/views/question-item-card.php:252
+msgid "Правильный ответ утверждения:"
+msgstr ""
+
+#: admin/views/question-item-card.php:265
+msgid "Верно (Да)"
+msgstr ""
+
+#: admin/views/question-item-card.php:269
+msgid "Неверно (Нет)"
+msgstr ""
+
+#: admin/views/question-item-card.php:278
+msgid "Правильное числовое значение:"
+msgstr ""
+
+#: admin/views/question-item-card.php:282
+#: admin/views/question-item-card.php:450
+msgid "Допустимая погрешность (± delta):"
+msgstr ""
+
+#: admin/views/question-item-card.php:284
+msgid "Например: 0.05 (ответ 3.14 будет принят в диапазоне от 3.09 до 3.19)."
+msgstr ""
+
+#: admin/views/question-item-card.php:293
+msgid "Режим автоматической проверки текста:"
+msgstr ""
+
+#: admin/views/question-item-card.php:296
+msgid "Точное совпадение (с эталоном или синонимами)"
+msgstr ""
+
+#: admin/views/question-item-card.php:297
+msgid "Содержит хотя бы одно ключевое слово / фразу"
+msgstr ""
+
+#: admin/views/question-item-card.php:298
+msgid "Содержит ВСЕ перечисленные ключевые слова"
+msgstr ""
+
+#: admin/views/question-item-card.php:299
+msgid "Нечёткое совпадение (с допуском опечаток / Левенштейн)"
+msgstr ""
+
+#: admin/views/question-item-card.php:300
+msgid "Регулярное выражение (RegEx)"
+msgstr ""
+
+#: admin/views/question-item-card.php:304
+msgid "Допустимое число опечаток (символов):"
+msgstr ""
+
+#: admin/views/question-item-card.php:306
+msgid "Например: 1 («Масква» засчитается как «Москва»)"
+msgstr ""
+
+#: admin/views/question-item-card.php:311
+msgid "Правильные ответы / синонимы / шаблоны (через запятую):"
+msgstr ""
+
+#: admin/views/question-item-card.php:315
+msgid "например: Париж, Paris"
+msgstr ""
+
+#: admin/views/question-item-card.php:321
+#: admin/views/question-item-card.php:475
+msgid "Учитывать регистр букв (строчные / заглавные)"
+msgstr ""
+
+#: admin/views/question-item-card.php:325
+msgid "Игнорировать знаки препинания и кавычки"
+msgstr ""
+
+#: admin/views/question-item-card.php:329
+msgid "Нормализовать пробелы и переносы"
+msgstr ""
+
+#: admin/views/question-item-card.php:336
+msgid "Пары для сопоставления (Левая колонка — Правая колонка):"
+msgstr ""
+
+#: admin/views/question-item-card.php:337
+msgid "Участнику будет предложено для каждого элемента слева выбрать соответствие справа. Можно указать индивидуальный балл за каждую верно сопоставленную пару."
+msgstr ""
+
+#: admin/views/question-item-card.php:352
+msgid "Элемент слева (понятие)..."
+msgstr ""
+
+#: admin/views/question-item-card.php:354
+msgid "Соответствие справа (определение)..."
+msgstr ""
+
+#: admin/views/question-item-card.php:355
+msgid "Баллы за правильное сопоставление этой пары (целое число)"
+msgstr ""
+
+#: admin/views/question-item-card.php:356
+msgid "Удалить пару"
+msgstr ""
+
+#: admin/views/question-item-card.php:361
+msgid "Добавить пару соответствия"
+msgstr ""
+
+#: admin/views/question-item-card.php:367
+msgid "Элементы в ПРАВИЛЬНОМ порядке:"
+msgstr ""
+
+#: admin/views/question-item-card.php:368
+msgid "Задайте элементы в верной последовательности. Можно указать индивидуальный балл за правильное положение каждого элемента."
+msgstr ""
+
+#: admin/views/question-item-card.php:384
+msgid "Текст этапа или элемента последовательности..."
+msgstr ""
+
+#: admin/views/question-item-card.php:385
+msgid "Баллы за правильное место этого элемента (целое число)"
+msgstr ""
+
+#: admin/views/question-item-card.php:386
+msgid "Удалить элемент"
+msgstr ""
+
+#: admin/views/question-item-card.php:391
+msgid "Добавить элемент последовательности"
+msgstr ""
+
+#: admin/views/question-item-card.php:398
+msgid "Текст задания с пропусками:"
+msgstr ""
+
+#: admin/views/question-item-card.php:400
+msgid "Выделяйте пропуски фигурными скобками: {правильный_ответ}. Если есть варианты выбора, разделяйте их чертой: {=правильно|вариант2|вариант3}. Пример: «Столица Франции — {=Париж|Лондон|Рим}»."
+msgstr ""
+
+#: admin/views/question-item-card.php:402
 msgid "Введите текст с {пропусками}..."
 msgstr ""
 
-#: admin/views/question-item-card.php:214
-msgid "Учитывать регистр букв при проверке пропусков"
+#: admin/views/question-item-card.php:407
+msgid "Формат заполнения пропусков:"
 msgstr ""
 
-#: admin/views/question-item-card.php:223
+#: admin/views/question-item-card.php:410
+msgid "Текстовое поле ввода (ручной ввод)"
+msgstr ""
+
+#: admin/views/question-item-card.php:411
+msgid "Выпадающий список вариантов в каждом пропуске"
+msgstr ""
+
+#: admin/views/question-item-card.php:412
+msgid "Банк слов / интерактивные плашки под текстом"
+msgstr ""
+
+#: admin/views/question-item-card.php:416
+msgid "Дополнительные варианты (дистракторы):"
+msgstr ""
+
+#: admin/views/question-item-card.php:417
+msgid "например: Рим, Мадрид, Берлин"
+msgstr ""
+
+#: admin/views/question-item-card.php:418
+msgid "Через запятую. Добавляются к списку вариантов для усложнения."
+msgstr ""
+
+#: admin/views/question-item-card.php:423
+msgid "Учитывать регистр букв при проверке"
+msgstr ""
+
+#: admin/views/question-item-card.php:433
 msgid "Минимум шкалы (Min):"
 msgstr ""
 
-#: admin/views/question-item-card.php:227
+#: admin/views/question-item-card.php:437
 msgid "Максимум шкалы (Max):"
 msgstr ""
 
-#: admin/views/question-item-card.php:231
+#: admin/views/question-item-card.php:441
 msgid "Шаг ползунка (Step):"
 msgstr ""
 
-#: admin/views/question-item-card.php:235
+#: admin/views/question-item-card.php:445
 msgid "Правильное значение:"
 msgstr ""
 
-#: admin/views/question-item-card.php:248
-msgid "Этот тип заданий предназначен для решений с выкладками или эссе. Ответ проверяется преподавателем/жюри вручную в разделе «Протоколы»."
+#: admin/views/question-item-card.php:458
+msgid "Целевое слово (или варианты через запятую):"
 msgstr ""
 
-#: admin/views/question-item-card.php:255
+#: admin/views/question-item-card.php:462
+msgid "например: АЛГОРИТМ или ПАРИЖ, PARIS"
+msgstr ""
+
+#: admin/views/question-item-card.php:463
+msgid "Буквы этого слова будут автоматически перемешаны и представлены участнику в виде интерактивных плиток."
+msgstr ""
+
+#: admin/views/question-item-card.php:468
+msgid "Дополнительные (лишние) буквы для усложнения:"
+msgstr ""
+
+#: admin/views/question-item-card.php:469
+msgid "например: О, П, С или ОПС"
+msgstr ""
+
+#: admin/views/question-item-card.php:470
+msgid "Опционально. Эти буквы будут добавлены к набору плиток, чтобы усложнить составление слова."
+msgstr ""
+
+#: admin/views/question-item-card.php:484
+msgid "Текст диктанта с орфограммами / пунктограммами:"
+msgstr ""
+
+#: admin/views/question-item-card.php:486
+msgid "Заключайте варианты выбора в фигурные скобки через знак | (верный вариант помечайте знаком = или ставьте первым):"
+msgstr ""
+
+#: admin/views/question-item-card.php:490
+msgid "Текст диктанта с разметкой {=верно|ошибка}..."
+msgstr ""
+
+#: admin/views/question-item-card.php:495
+msgid "URL аудиозаписи диктанта (для аудирования):"
+msgstr ""
+
+#: admin/views/question-item-card.php:497
+msgid "Опционально. Ссылка на MP3/WAV аудиозапись для прослушивания."
+msgstr ""
+
+#: admin/views/question-item-card.php:500
+#: admin/views/question-item-card.php:542
+msgid "Режим начисления баллов:"
+msgstr ""
+
+#: admin/views/question-item-card.php:503
+msgid "Пропорционально верным орфограммам"
+msgstr ""
+
+#: admin/views/question-item-card.php:504
+msgid "Всё или ничего (без ошибок)"
+msgstr ""
+
+#: admin/views/question-item-card.php:508
+msgid "Допустимо ошибок (без снижения):"
+msgstr ""
+
+#: admin/views/question-item-card.php:510
+msgid "0 — строгая оценка."
+msgstr ""
+
+#: admin/views/question-item-card.php:520
+msgid "Включить автоматическую проверку по ключевым понятиям/критериям"
+msgstr ""
+
+#: admin/views/question-item-card.php:522
+msgid "Позволяет автоматически проверять наличие обязательных терминов и формулировок в тексте ответа."
+msgstr ""
+
+#: admin/views/question-item-card.php:527
+msgid "Обязательные ключевые термины / понятия (через запятую):"
+msgstr ""
+
+#: admin/views/question-item-card.php:531
+msgid "например: фотосинтез, хлорофилл, световая фаза, углекислый газ"
+msgstr ""
+
+#: admin/views/question-item-card.php:532
+msgid "Участник должен упомянуть эти понятия или термины в решении / сочинении."
+msgstr ""
+
+#: admin/views/question-item-card.php:537
+msgid "Мин. число понятий:"
+msgstr ""
+
+#: admin/views/question-item-card.php:539
+msgid "0 — требовать все указанные термины."
+msgstr ""
+
+#: admin/views/question-item-card.php:545
+msgid "Пропорционально найденным терминам"
+msgstr ""
+
+#: admin/views/question-item-card.php:546
+msgid "Всё или ничего (по достижению порога)"
+msgstr ""
+
+#: admin/views/question-item-card.php:550
+msgid "Минимум слов в ответе:"
+msgstr ""
+
+#: admin/views/question-item-card.php:552
+msgid "0 — без ограничений по длине."
+msgstr ""
+
+#: admin/views/question-item-card.php:559
+msgid "Автоматически завершать проверку (без обязательного ручного утверждения жюри)"
+msgstr ""
+
+#: admin/views/question-item-card.php:563
+msgid "Учитывать регистр ключевых слов"
+msgstr ""
+
+#: admin/views/question-item-card.php:569
+msgid "При ручной проверке в разделе «Протоколы» эксперту доступна кнопка «⚡ Автопроверить», которая покажет найденные ключевые понятия и рассчитает балл."
+msgstr ""
+
+#: admin/views/question-item-card.php:576
 msgid "Пояснение к решению (показывается после завершения тестирования):"
 msgstr ""
 
-#: admin/views/question-item-card.php:256
+#: admin/views/question-item-card.php:577
 msgid "Подробное решение или правильный ответ с объяснением..."
 msgstr ""
 
-#: admin/views/question-item-card.php:261
+#: admin/views/question-item-card.php:582
 msgid "Сохранить задание"
 msgstr ""
 
-#: admin/views/questions-builder.php:14
+#: admin/views/questions-builder.php:24
 msgid "Ко всем олимпиадам"
 msgstr ""
 
-#: admin/views/questions-builder.php:17
+#: admin/views/questions-builder.php:27
 #, php-format
 msgid "Конструктор заданий: %s"
 msgstr ""
 
-#: admin/views/questions-builder.php:22
-msgid "Добавить задание"
-msgstr ""
-
-#: admin/views/questions-builder.php:28
-msgid "Олимпиада создана! Теперь добавьте задания."
+#: admin/views/questions-builder.php:32
+msgid "Импорт заданий"
 msgstr ""
 
 #: admin/views/questions-builder.php:35
+msgid "Экспорт заданий"
+msgstr ""
+
+#: admin/views/questions-builder.php:38
+msgid "Общие тексты к заданиям"
+msgstr ""
+
+#: admin/views/questions-builder.php:41
+msgid "Добавить задание"
+msgstr ""
+
+#: admin/views/questions-builder.php:47
+msgid "Олимпиада создана! Теперь добавьте задания."
+msgstr ""
+
+#: admin/views/questions-builder.php:53
+msgid "Разделы олимпиады:"
+msgstr ""
+
+#: admin/views/questions-builder.php:55
+msgid "Все задания"
+msgstr ""
+
+#: admin/views/questions-builder.php:79
 msgid "В этой олимпиаде пока нет заданий"
 msgstr ""
 
-#: admin/views/questions-builder.php:36
+#: admin/views/questions-builder.php:80
 msgid "Нажмите кнопку «Добавить задание», чтобы создать первый вопрос."
 msgstr ""
 
-#: admin/views/quiz-edit.php:81
+#: admin/views/questions-builder.php:118
+msgid "Общие тексты к заданиям олимпиады"
+msgstr ""
+
+#: admin/views/questions-builder.php:127
+msgid "Создать общий текст"
+msgstr ""
+
+#: admin/views/questions-builder.php:139
+msgid "Выберите общий текст слева или создайте новый"
+msgstr ""
+
+#: admin/views/questions-builder.php:140
+msgid "Общий текст (кейс, фрагмент произведения, условие задачи) может быть привязан к нескольким вопросам олимпиады."
+msgstr ""
+
+#: admin/views/questions-builder.php:148
+msgid "Название / Заголовок общего текста:"
+msgstr ""
+
+#: admin/views/questions-builder.php:150
+msgid "Например: Текст к заданиям 1–4: «О природе электричества»"
+msgstr ""
+
+#: admin/views/questions-builder.php:156
+msgid "Содержимое общего текста (чтение / кейс / фрагмент):"
+msgstr ""
+
+#: admin/views/questions-builder.php:180
+msgid "Вставьте или напишите текст для чтения, условие задачи, кейс или исторический документ..."
+msgstr ""
+
+#: admin/views/questions-builder.php:187
+msgid "Привязать этот текст к заданиям:"
+msgstr ""
+
+#: admin/views/questions-builder.php:201
+msgid "Удалить этот общий текст"
+msgstr ""
+
+#: admin/views/questions-builder.php:203
+msgid "Привязанные вопросы открепятся автоматически"
+msgstr ""
+
+#: admin/views/questions-builder.php:211
+#: admin/views/questions-builder.php:396
+msgid "Закрыть"
+msgstr ""
+
+#: admin/views/questions-builder.php:214
+msgid "Сохранить общие тексты"
+msgstr ""
+
+#: admin/views/questions-builder.php:224
+msgid "Импорт заданий (Excel, CSV, JSON)"
+msgstr ""
+
+#: admin/views/questions-builder.php:231
+msgid "Шаблоны для заполнения вопросов:"
+msgstr ""
+
+#: admin/views/questions-builder.php:232
+msgid "Все 13 типов заданий: выбор, соответствия, последовательность, пропуски, шкала, анаграмма, диктант, эссе и др. Заголовки можно писать по-русски."
+msgstr ""
+
+#: admin/views/questions-builder.php:235
+msgid "Excel с макросами валидации и экспорта"
+msgstr ""
+
+#: admin/views/questions-builder.php:238
+msgid "Стандартный файл Excel с выпадающими списками"
+msgstr ""
+
+#: admin/views/questions-builder.php:253
+msgid "Загрузить с компьютера"
+msgstr ""
+
+#: admin/views/questions-builder.php:256
+msgid "Из сетевой папки"
+msgstr ""
+
+#: admin/views/questions-builder.php:265
+msgid "Выбрать файл (.xlsm, .xlsx, .csv, .json)"
+msgstr ""
+
+#: admin/views/questions-builder.php:269
+msgid "Файл не выбран. Нажмите кнопку выше для выбора файла."
+msgstr ""
+
+#: admin/views/questions-builder.php:272
+msgid "Автоматически распознаются все листы книги Excel и кодировка Windows-1251 / UTF-8."
+msgstr ""
+
+#: admin/views/questions-builder.php:282
+msgid "Сетевая папка источника (хранилище):"
+msgstr ""
+
+#: admin/views/questions-builder.php:288
+msgid "\\\\server\\share\\ или /mnt/share"
+msgstr ""
+
+#: admin/views/questions-builder.php:289
+msgid "Найти файлы в сетевой папке"
+msgstr ""
+
+#: admin/views/questions-builder.php:290
+msgid "Сканировать"
+msgstr ""
+
+#: admin/views/questions-builder.php:292
+msgid "Поместить шаблоны для импорта вопросов в сетевую папку"
+msgstr ""
+
+#: admin/views/questions-builder.php:293
+msgid "Поместить шаблон в папку"
+msgstr ""
+
+#: admin/views/questions-builder.php:297
+msgid "Файлы ищутся в корне папки, а также внутри подкаталогов import/ и questions/."
+msgstr ""
+
+#: admin/views/questions-builder.php:304
+msgid "Файл шаблона с вопросами в сетевой папке:"
+msgstr ""
+
+#: admin/views/questions-builder.php:308
+msgid "— Поиск файлов в сетевой папке... —"
+msgstr ""
+
+#: admin/views/questions-builder.php:312
+msgid "Или введите относительный путь: questions.csv, questions_template_macros.xlsm..."
+msgstr ""
+
+#: admin/views/questions-builder.php:320
+msgid "Режим импорта:"
+msgstr ""
+
+#: admin/views/questions-builder.php:325
+msgid "Добавить к существующим вопросам"
+msgstr ""
+
+#: admin/views/questions-builder.php:329
+msgid "Заменить все текущие вопросы"
+msgstr ""
+
+#: admin/views/questions-builder.php:340
+msgid "Отмена"
+msgstr ""
+
+#: admin/views/questions-builder.php:342
+msgid "Проверить файл и показать отчёт по строкам без импорта"
+msgstr ""
+
+#: admin/views/questions-builder.php:343
+msgid "Проверить файл"
+msgstr ""
+
+#: admin/views/questions-builder.php:346
+msgid "Запустить импорт заданий"
+msgstr ""
+
+#: admin/views/questions-builder.php:357
+msgid "Экспорт заданий олимпиады"
+msgstr ""
+
+#: admin/views/questions-builder.php:362
+msgid "Выгрузите все задания этой олимпиады в сетевую папку или скачайте файл в нужном формате для резервного копирования или переноса в другие тесты."
+msgstr ""
+
+#: admin/views/questions-builder.php:368
+msgid "Сохранение в подключенную сетевую папку:"
+msgstr ""
+
+#: admin/views/questions-builder.php:371
+msgid "Файлы questions.csv, questions.json и спецификация с ключами ответов будут сохранены в подкаталог «вопросы/»."
+msgstr ""
+
+#: admin/views/questions-builder.php:374
+msgid "Сохранить в сетевую папку (вопросы/)"
+msgstr ""
+
+#: admin/views/questions-builder.php:382
+msgid "Скачать файл с заданиями на компьютер:"
+msgstr ""
+
+#: admin/views/questions-builder.php:386
+msgid "Скачать CSV (для импорта)"
+msgstr ""
+
+#: admin/views/questions-builder.php:389
+msgid "Скачать JSON"
+msgstr ""
+
+#: admin/views/quiz-edit.php:100
 msgid "Создание новой олимпиады / теста"
 msgstr ""
 
-#: admin/views/quiz-edit.php:81
+#: admin/views/quiz-edit.php:100
 #, php-format
 msgid "Параметры: %s"
 msgstr ""
 
-#: admin/views/quiz-edit.php:93
+#: admin/views/quiz-edit.php:112
 msgid "Основные сведения"
 msgstr ""
 
-#: admin/views/quiz-edit.php:96
+#: admin/views/quiz-edit.php:115
 msgid "Название олимпиады / теста:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:97
+#: admin/views/quiz-edit.php:116
 msgid "Например: Всероссийская школьная олимпиада по математике — 10 класс"
 msgstr ""
 
-#: admin/views/quiz-edit.php:101
+#: admin/views/quiz-edit.php:120
 msgid "Ярлык (URL slug):"
 msgstr ""
 
-#: admin/views/quiz-edit.php:102
+#: admin/views/quiz-edit.php:121
 msgid "olympiad-math-10"
 msgstr ""
 
-#: admin/views/quiz-edit.php:106
+#: admin/views/quiz-edit.php:125
 msgid "Описание и инструкция для участников:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:120
+#: admin/views/quiz-edit.php:139
 msgid "Редактирование начальной страницы (Start / Intro Page)"
 msgstr ""
 
-#: admin/views/quiz-edit.php:122
+#: admin/views/quiz-edit.php:141
 msgid "Настройте внешний вид, обложку, информационные блоки, поля анкеты регистрации и кнопку запуска на стартовом экране олимпиады."
 msgstr ""
 
-#: admin/views/quiz-edit.php:127
-msgid "Бейдж над заголовком:"
+#: admin/views/quiz-edit.php:146
+msgid "Стартовая страница:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:129
-#: includes/class-shortcodes.php:160
-msgid "Олимпиада / Тестирование"
-msgstr ""
-
-#: admin/views/quiz-edit.php:130
-msgid "Небольшой ярлык вверху страницы (например: «Школьный этап», «Вступительный экзамен», «Тестирование по физике»)."
-msgstr ""
-
-#: admin/views/quiz-edit.php:134
-msgid "Кастомный заголовок на странице:"
-msgstr ""
-
-#: admin/views/quiz-edit.php:136
-msgid "Оставьте пустым, чтобы использовать название олимпиады"
-msgstr ""
-
-#: admin/views/quiz-edit.php:140
-msgid "Баннер / Обложка олимпиады (URL):"
-msgstr ""
-
-#: admin/views/quiz-edit.php:143
-msgid "Изображение-баннер, отображаемое в самом верху начальной карточки теста."
-msgstr ""
-
-#: admin/views/quiz-edit.php:147
-msgid "Текст кнопки запуска:"
+#: admin/views/quiz-edit.php:150
+msgid "Включить стартовую страницу (описание, метаданные и анкета участника)"
 msgstr ""
 
 #: admin/views/quiz-edit.php:153
-msgid "Информационные плашки регламента:"
+msgid "Если флажок снят, вступительный экран отключается — тестирование запускается сразу при открытии олимпиады без заполнения анкеты."
 msgstr ""
 
-#: admin/views/quiz-edit.php:157
-msgid "Отображать блок параметров регламента (карточки)"
-msgstr ""
-
-#: admin/views/quiz-edit.php:160
-msgid "⏱ Лимит времени"
+#: admin/views/quiz-edit.php:159
+msgid "Бейдж над заголовком:"
 msgstr ""
 
 #: admin/views/quiz-edit.php:161
-msgid "📝 Количество вопросов"
+#: admin/views/quiz-edit.php:921
+#: includes/class-shortcodes.php:188
+msgid "Олимпиада / Тестирование"
 msgstr ""
 
 #: admin/views/quiz-edit.php:162
-msgid "🎯 Максимальный балл"
+msgid "Небольшой ярлык вверху страницы (например: «Школьный этап», «Вступительный экзамен», «Тестирование по физике»)."
 msgstr ""
 
-#: admin/views/quiz-edit.php:163
-msgid "🏆 Проходной балл"
+#: admin/views/quiz-edit.php:166
+msgid "Кастомный заголовок на странице:"
 msgstr ""
 
 #: admin/views/quiz-edit.php:168
+msgid "Оставьте пустым, чтобы использовать название олимпиады"
+msgstr ""
+
+#: admin/views/quiz-edit.php:172
+msgid "Баннер / Обложка олимпиады (URL):"
+msgstr ""
+
+#: admin/views/quiz-edit.php:175
+msgid "Изображение-баннер, отображаемое в самом верху начальной карточки теста."
+msgstr ""
+
+#: admin/views/quiz-edit.php:179
+msgid "Текст кнопки запуска:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:185
+msgid "Информационные плашки регламента:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:189
+msgid "Отображать блок параметров регламента (карточки)"
+msgstr ""
+
+#: admin/views/quiz-edit.php:192
+msgid "⏱ Лимит времени"
+msgstr ""
+
+#: admin/views/quiz-edit.php:193
+msgid "📝 Количество вопросов"
+msgstr ""
+
+#: admin/views/quiz-edit.php:194
+msgid "🎯 Максимальный балл"
+msgstr ""
+
+#: admin/views/quiz-edit.php:195
+msgid "🏆 Проходной балл"
+msgstr ""
+
+#: admin/views/quiz-edit.php:200
 msgid "Поля анкеты регистрации участника:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:173
+#: admin/views/quiz-edit.php:205
 msgid "ФИО Участника"
 msgstr ""
 
-#: admin/views/quiz-edit.php:178
+#: admin/views/quiz-edit.php:210
 msgid "Обязательно"
 msgstr ""
 
-#: admin/views/quiz-edit.php:188
+#: admin/views/quiz-edit.php:220
 msgid "Организация / Школа / Класс / ВУЗ"
 msgstr ""
 
-#: admin/views/quiz-edit.php:191
-#: admin/views/quiz-edit.php:208
-#: admin/views/quiz-edit.php:225
-#: admin/views/quiz-edit.php:242
+#: admin/views/quiz-edit.php:223
+#: admin/views/quiz-edit.php:240
+#: admin/views/quiz-edit.php:257
+#: admin/views/quiz-edit.php:274
 msgid "Обязательно к заполнению"
 msgstr ""
 
-#: admin/views/quiz-edit.php:205
+#: admin/views/quiz-edit.php:237
 msgid "Электронная почта (E-mail)"
 msgstr ""
 
-#: admin/views/quiz-edit.php:222
+#: admin/views/quiz-edit.php:254
 msgid "Номер телефона / Контакт"
 msgstr ""
 
-#: admin/views/quiz-edit.php:239
+#: admin/views/quiz-edit.php:271
 msgid "Город / Населённый пункт"
 msgstr ""
 
-#: admin/views/quiz-edit.php:256
+#: admin/views/quiz-edit.php:288
 msgid "Требовать согласие с правилами / обработкой данных"
 msgstr ""
 
-#: admin/views/quiz-edit.php:259
+#: admin/views/quiz-edit.php:291
 msgid "Текст пользовательского соглашения..."
 msgstr ""
 
-#: admin/views/quiz-edit.php:265
+#: admin/views/quiz-edit.php:297
 msgid "Предупреждение Anti-Cheat:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:269
+#: admin/views/quiz-edit.php:301
 msgid "Показывать предупреждение о контроле вкладок перед стартом"
 msgstr ""
 
-#: admin/views/quiz-edit.php:278
+#: admin/views/quiz-edit.php:311
 msgid "Регламент и расписание олимпиады"
 msgstr ""
 
-#: admin/views/quiz-edit.php:281
+#: admin/views/quiz-edit.php:314
 msgid "Лимит времени (минут):"
 msgstr ""
 
-#: admin/views/quiz-edit.php:284
+#: admin/views/quiz-edit.php:317
 msgid "Время на выполнение после нажатия «Начать». Укажите 0 для неограниченного теста."
 msgstr ""
 
-#: admin/views/quiz-edit.php:288
+#: admin/views/quiz-edit.php:321
 msgid "Начало олимпиады (МСК):"
 msgstr ""
 
-#: admin/views/quiz-edit.php:291
+#: admin/views/quiz-edit.php:324
 msgid "Формат: ГГГГ-ММ-ДД ЧЧ:ММ (до этого времени вход будет заблокирован). Оставьте пустым для мгновенного доступа."
 msgstr ""
 
-#: admin/views/quiz-edit.php:295
+#: admin/views/quiz-edit.php:328
 msgid "Окончание олимпиады (МСК):"
 msgstr ""
 
-#: admin/views/quiz-edit.php:298
+#: admin/views/quiz-edit.php:331
 msgid "После этого времени приём новых попыток прекращается."
 msgstr ""
 
-#: admin/views/quiz-edit.php:302
+#: admin/views/quiz-edit.php:335
 msgid "Проходной процент (%):"
 msgstr ""
 
-#: admin/views/quiz-edit.php:305
+#: admin/views/quiz-edit.php:338
 msgid "Процент набранных баллов для статуса «Зачёт / Пройдено»."
 msgstr ""
 
-#: admin/views/quiz-edit.php:309
+#: admin/views/quiz-edit.php:342
 msgid "Лимит попыток на участника:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:312
+#: admin/views/quiz-edit.php:345
 msgid "1 — для строгих олимпиад и экзаменов. 0 — неограниченно."
 msgstr ""
 
-#: admin/views/quiz-edit.php:319
+#: admin/views/quiz-edit.php:352
 msgid "Защита от списывания (Anti-Cheat)"
 msgstr ""
 
-#: admin/views/quiz-edit.php:322
+#: admin/views/quiz-edit.php:355
 msgid "Контроль вкладок браузера:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:326
+#: admin/views/quiz-edit.php:359
 msgid "Фиксировать потерю фокуса и переключение вкладок участником"
 msgstr ""
 
-#: admin/views/quiz-edit.php:331
+#: admin/views/quiz-edit.php:364
 msgid "Максимум переключений вкладок:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:334
+#: admin/views/quiz-edit.php:367
 msgid "При превышении лимита попытка автоматически дисквалифицируется. 0 — только протоколировать без дисквалификации."
 msgstr ""
 
-#: admin/views/quiz-edit.php:338
+#: admin/views/quiz-edit.php:371
 msgid "Запрет копирования:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:342
+#: admin/views/quiz-edit.php:375
 msgid "Запретить выделение текста, копирование и контекстное меню на странице теста"
 msgstr ""
 
-#: admin/views/quiz-edit.php:351
+#: admin/views/quiz-edit.php:380
+msgid "Всплывающие уведомления:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:384
+msgid "Показывать всплывающие предупреждения (Toast & Модальные окна) при попытке копирования, правого клика или переключения окна"
+msgstr ""
+
+#: admin/views/quiz-edit.php:386
+msgid "Мгновенно информирует участника о регламенте честной игры и оставшихся попытках переключения."
+msgstr ""
+
+#: admin/views/quiz-edit.php:394
 msgid "Внешнее подключение и интеграция"
 msgstr ""
 
-#: admin/views/quiz-edit.php:353
+#: admin/views/quiz-edit.php:396
 msgid "Ссылки и инструменты для запуска олимпиады вне страниц WordPress (в соцсетях, мессенджерах, сторонних сайтах, LMS и CRM)."
 msgstr ""
 
-#: admin/views/quiz-edit.php:359
+#: admin/views/quiz-edit.php:402
 msgid "Прямая внешняя ссылка:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:364
+#: admin/views/quiz-edit.php:407
 msgid "Открыть"
 msgstr ""
 
-#: admin/views/quiz-edit.php:367
+#: admin/views/quiz-edit.php:410
 msgid "Прямая ссылка на полноэкранное прохождение без шапки и подвала сайта. Отправляйте участникам в Telegram, VK или по email."
 msgstr ""
 
-#: admin/views/quiz-edit.php:371
+#: admin/views/quiz-edit.php:414
 msgid "Код для вставки на внешний сайт (iframe):"
 msgstr ""
 
-#: admin/views/quiz-edit.php:374
+#: admin/views/quiz-edit.php:417
 msgid "Вставьте этот HTML-код на любой внешний сайт, в Tilda, Moodle, Stepik, Notion или школьный портал для бесшовного встраивания тестирования."
 msgstr ""
 
-#: admin/views/quiz-edit.php:379
+#: admin/views/quiz-edit.php:422
 msgid "Разрешить внешний iframe:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:383
+#: admin/views/quiz-edit.php:426
 msgid "Разрешить встраивание олимпиады через iframe на сторонних доменах (CSP frame-ancestors *)"
 msgstr ""
 
-#: admin/views/quiz-edit.php:388
+#: admin/views/quiz-edit.php:431
 msgid "URL внешнего Webhook:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:391
+#: admin/views/quiz-edit.php:434
 msgid "При каждой завершённой попытке плагин автоматически отправит POST JSON с баллами, ФИО, школой и временем на этот адрес (для интеграции с Telegram-ботом, CRM, Google Таблицами или внешней LMS)."
 msgstr ""
 
-#: admin/views/quiz-edit.php:401
-msgid "Публикация"
+#: admin/views/quiz-edit.php:444
+msgid "Автоматическая или ручная прямая выгрузка официальных протоколов (CSV), ответов участников и ключей заданий в сетевую папку (без архивации)."
 msgstr ""
 
-#: admin/views/quiz-edit.php:405
-msgid "Опубликовано"
+#: admin/views/quiz-edit.php:449
+msgid "Включить экспорт в сеть:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:406
-msgid "Черновик"
+#: admin/views/quiz-edit.php:453
+msgid "Активировать возможность выгрузки ответов в сетевую папку"
 msgstr ""
 
-#: admin/views/quiz-edit.php:412
-msgid "Сохранить олимпиаду"
+#: admin/views/quiz-edit.php:458
+msgid "Тип сетевого подключения:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:418
-msgid "Показ результатов"
+#: admin/views/quiz-edit.php:461
+msgid "Автоопределение по пути/протоколу"
 msgstr ""
 
-#: admin/views/quiz-edit.php:422
-msgid "Сразу показать всё"
+#: admin/views/quiz-edit.php:462
+msgid "Локальный путь / Примонтированная папка (NFS / CIFS / D:\\Share)"
 msgstr ""
 
-#: admin/views/quiz-edit.php:424
-msgid "Баллы, ошибки, правильные ответы и пояснения (для тренировок)."
+#: admin/views/quiz-edit.php:463
+msgid "WebDAV / Облачное сетевое хранилище (Nextcloud, Synology, QNAP)"
 msgstr ""
 
-#: admin/views/quiz-edit.php:428
-msgid "Только итоговый балл"
-msgstr ""
-
-#: admin/views/quiz-edit.php:430
-msgid "Скрыть правильные ответы, чтобы их не сливали другим участникам."
-msgstr ""
-
-#: admin/views/quiz-edit.php:434
-msgid "После окончания тура"
-msgstr ""
-
-#: admin/views/quiz-edit.php:436
-msgid "Публикация решений только после даты окончания олимпиады."
-msgstr ""
-
-#: admin/views/quiz-edit.php:440
-msgid "Ручная проверка жюри"
-msgstr ""
-
-#: admin/views/quiz-edit.php:442
-msgid "Для олимпиад с открытыми задачами/эссе."
-msgstr ""
-
-#: admin/views/quiz-edit.php:447
-msgid "Дипломы и Email-оповещения"
-msgstr ""
-
-#: admin/views/quiz-edit.php:451
-msgid "Генерировать диплом / грамоту"
-msgstr ""
-
-#: admin/views/quiz-edit.php:454
-msgid "Участник сможет распечатать или скачать диплом со своим результатом и печатью."
-msgstr ""
-
-#: admin/views/quiz-edit.php:459
-msgid "Отправлять итоги на email участника"
+#: admin/views/quiz-edit.php:464
+msgid "FTP / FTPS сервер"
 msgstr ""
 
 #: admin/views/quiz-edit.php:465
-msgid "Уведомлять организатора о сдачах"
+msgid "SMB / Windows Share (через прямой UNC путь или smbclient)"
 msgstr ""
 
-#: admin/views/quiz-edit.php:469
-msgid "Email организатора:"
+#: admin/views/quiz-edit.php:470
+msgid "Путь к папке или URL хранилища:"
 msgstr ""
 
-#: admin/views/quiz-edit.php:475
-msgid "Рандомизация и поля"
-msgstr ""
-
-#: admin/views/quiz-edit.php:476
-msgid "Перемешивать порядок вопросов"
-msgstr ""
-
-#: admin/views/quiz-edit.php:477
-msgid "Перемешивать варианты ответов"
+#: admin/views/quiz-edit.php:474
+msgid "По умолчанию используется готовая папка в директории загрузок WordPress. Также поддерживаются пути: <code>/mnt/shares/olympiad</code>, <code>\\\\192.168.1.100\\Olympiad\\Results</code>, <code>https://nas.myschool.local/remote.php/webdav/results/</code>, <code>ftp://192.168.1.50/shares/olympiad/</code>"
 msgstr ""
 
 #: admin/views/quiz-edit.php:479
+msgid "Пользователь / Логин сети:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:482
+msgid "Укажите логин для доступа к сетевой папке WebDAV, FTP или SMB (если для папки настроена авторизация)."
+msgstr ""
+
+#: admin/views/quiz-edit.php:486
+msgid "Пароль к сетевой папке:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:490
+msgid "Показать / скрыть пароль"
+msgstr ""
+
+#: admin/views/quiz-edit.php:492
+msgid "Пароль учетной записи сетевой папки (хранится безопасно в БД WordPress)."
+msgstr ""
+
+#: admin/views/quiz-edit.php:496
+msgid "Автоматический экспорт:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:500
+msgid "Автоматически выгружать файлы протоколов (CSV) напрямую в сетевую папку при каждом завершении тестирования участником"
+msgstr ""
+
+#: admin/views/quiz-edit.php:505
+msgid "Автоматический импорт вопросов:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:509
+msgid "Автоматически импортировать задания из сетевой папки"
+msgstr ""
+
+#: admin/views/quiz-edit.php:512
+msgid "Плагин будет автоматически проверять сетевую папку (подкаталог import/ или корень) на наличие обновлённых файлов заданий (Excel .xlsm/.xlsx, .csv, .json) и синхронизировать вопросы олимпиады."
+msgstr ""
+
+#: admin/views/quiz-edit.php:517
+msgid "Режим импорта заданий:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:520
+msgid "Добавлять к существующим вопросам (Append)"
+msgstr ""
+
+#: admin/views/quiz-edit.php:521
+msgid "Заменять все вопросы олимпиады (Replace)"
+msgstr ""
+
+#: admin/views/quiz-edit.php:523
+msgid "При режиме «Заменять» перед импортом все старые вопросы удаляются, и список формируется заново из файла."
+msgstr ""
+
+#: admin/views/quiz-edit.php:527
+msgid "Периодичность проверки папки:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:530
+msgid "⏱️ Каждую минуту (1 минута / WP-Cron)"
+msgstr ""
+
+#: admin/views/quiz-edit.php:531
+msgid "Каждый час (WP-Cron)"
+msgstr ""
+
+#: admin/views/quiz-edit.php:532
+msgid "Дважды в день (WP-Cron)"
+msgstr ""
+
+#: admin/views/quiz-edit.php:533
+msgid "Раз в день (WP-Cron)"
+msgstr ""
+
+#: admin/views/quiz-edit.php:534
+msgid "При каждом сохранении / входе в конструктор заданий"
+msgstr ""
+
+#: admin/views/quiz-edit.php:536
+msgid "Синхронизация происходит только если файл в сетевой папке изменился (по содержимому или хэшу)."
+msgstr ""
+
+#: admin/views/quiz-edit.php:540
+msgid "Имя файла заданий (необязательно):"
+msgstr ""
+
+#: admin/views/quiz-edit.php:543
+msgid "Оставьте пустым для автопоиска самого свежего файла заданий в папке (questions.csv, questions.xlsx, questions_template_macros.xlsm, questions.json и др.)."
+msgstr ""
+
+#: admin/views/quiz-edit.php:547
+msgid "Тестирование и запуск:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:551
+msgid "Проверить доступ к папке"
+msgstr ""
+
+#: admin/views/quiz-edit.php:553
+msgid "Поместить образцы заданий (.xlsm, .xlsx, .csv, .json) в сетевую папку"
+msgstr ""
+
+#: admin/views/quiz-edit.php:554
+msgid "Поместить шаблоны заданий в папку"
+msgstr ""
+
+#: admin/views/quiz-edit.php:557
+msgid "Разобрать файл заданий и показать отчёт по каждой строке, не изменяя базу"
+msgstr ""
+
+#: admin/views/quiz-edit.php:558
+msgid "Проверить файл заданий"
+msgstr ""
+
+#: admin/views/quiz-edit.php:561
+msgid "Импортировать вопросы из папки сейчас"
+msgstr ""
+
+#: admin/views/quiz-edit.php:563
+msgid "Экспортировать все задания олимпиады в сетевую папку (каталог вопросы/)"
+msgstr ""
+
+#: admin/views/quiz-edit.php:564
+msgid "Экспортировать вопросы в сетевую папку"
+msgstr ""
+
+#: admin/views/quiz-edit.php:567
+msgid "Экспортировать в сетевую папку сейчас"
+msgstr ""
+
+#: admin/views/quiz-edit.php:579
+msgid "Последний успешный экспорт:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:582
+msgid "Скачать файл"
+msgstr ""
+
+#: admin/views/quiz-edit.php:599
+msgid "Последний импорт вопросов из сети:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:601
+msgid "Успешно"
+msgstr ""
+
+#: admin/views/quiz-edit.php:601
+msgid "Ошибка"
+msgstr ""
+
+#: admin/views/quiz-edit.php:605
+msgid "Файл:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:606
+msgid "Импортировано заданий:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:607
+msgid "Всего в олимпиаде:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:608
+msgid "Режим:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:608
+msgid "Замена"
+msgstr ""
+
+#: admin/views/quiz-edit.php:608
+msgid "Добавление"
+msgstr ""
+
+#: admin/views/quiz-edit.php:624
+msgid "Публикация"
+msgstr ""
+
+#: admin/views/quiz-edit.php:628
+msgid "Опубликовано"
+msgstr ""
+
+#: admin/views/quiz-edit.php:629
+msgid "Черновик"
+msgstr ""
+
+#: admin/views/quiz-edit.php:635
+msgid "Сохранить олимпиаду"
+msgstr ""
+
+#: admin/views/quiz-edit.php:641
+msgid "Показ результатов"
+msgstr ""
+
+#: admin/views/quiz-edit.php:645
+msgid "Сразу показать всё"
+msgstr ""
+
+#: admin/views/quiz-edit.php:647
+msgid "Баллы, ошибки, правильные ответы и пояснения (для тренировок)."
+msgstr ""
+
+#: admin/views/quiz-edit.php:651
+msgid "Только итоговый балл"
+msgstr ""
+
+#: admin/views/quiz-edit.php:653
+msgid "Скрыть правильные ответы, чтобы их не сливали другим участникам."
+msgstr ""
+
+#: admin/views/quiz-edit.php:657
+msgid "После окончания тура"
+msgstr ""
+
+#: admin/views/quiz-edit.php:659
+msgid "Публикация решений только после даты окончания олимпиады."
+msgstr ""
+
+#: admin/views/quiz-edit.php:663
+msgid "Ручная проверка жюри"
+msgstr ""
+
+#: admin/views/quiz-edit.php:665
+msgid "Для олимпиад с открытыми задачами/эссе."
+msgstr ""
+
+#: admin/views/quiz-edit.php:669
+msgid "Отключить показ результатов в конце"
+msgstr ""
+
+#: admin/views/quiz-edit.php:671
+msgid "Полностью скрыть баллы, проценты и разбор заданий. Участник увидит только сообщение об успешной сдаче работы."
+msgstr ""
+
+#: admin/views/quiz-edit.php:674
+msgid "Текст сообщения после завершения:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:675
+#: includes/class-rest-api.php:346
+msgid "Спасибо за участие! Ваши ответы успешно приняты и сохранены в системе."
+msgstr ""
+
+#: admin/views/quiz-edit.php:676
+msgid "Отображается на завершающем экране, если показ результатов отключен или работа принята."
+msgstr ""
+
+#: admin/views/quiz-edit.php:682
+msgid "Email-оповещения"
+msgstr ""
+
+#: admin/views/quiz-edit.php:686
+msgid "Отправлять итоги на email участника"
+msgstr ""
+
+#: admin/views/quiz-edit.php:692
+msgid "Уведомлять организатора о сдачах"
+msgstr ""
+
+#: admin/views/quiz-edit.php:696
+msgid "Email организатора:"
+msgstr ""
+
+#: admin/views/quiz-edit.php:702
+msgid "Рандомизация и отображение"
+msgstr ""
+
+#: admin/views/quiz-edit.php:703
+msgid "Перемешивать порядок вопросов"
+msgstr ""
+
+#: admin/views/quiz-edit.php:705
+msgid "Показывать баллы за задания в тесте"
+msgstr ""
+
+#: admin/views/quiz-edit.php:706
+msgid "Если снять галочку, стоимость вопросов (баллы) скрывается от участника во время выполнения теста."
+msgstr ""
+
+#: admin/views/quiz-edit.php:708
 msgid "Требовать школу / класс / ВУЗ"
 msgstr ""
 
-#: admin/views/quiz-edit.php:480
+#: admin/views/quiz-edit.php:709
 msgid "Требовать E-mail участника"
 msgstr ""
 
-#: admin/views/quiz-edit.php:481
-msgid "Включить публичный рейтинг"
+#: admin/views/quiz-edit.php:736
+msgid "Стилистика страницы тестирования"
 msgstr ""
 
-#: admin/views/quiz-stats.php:11
-msgid "Анализ ответов и статистика олимпиады"
+#: admin/views/quiz-edit.php:738
+msgid "Настройте внешний вид страницы, которую видят участники: цвета, шрифт, скругления, тени, стиль кнопок и собственный CSS. Все изменения применяются только к этой олимпиаде и не затрагивают тему сайта."
 msgstr ""
 
-#: admin/views/quiz-stats.php:16
-msgid "Экспорт протокола (CSV)"
+#: admin/views/quiz-edit.php:763
+msgid "Цветовая палитра"
 msgstr ""
 
-#: admin/views/quiz-stats.php:19
-msgid "Экспорт сводной матрицы в Excel (CSV)"
+#: admin/views/quiz-edit.php:780
+msgid "HEX-код цвета"
 msgstr ""
 
-#: admin/views/quiz-stats.php:29
-msgid "Выберите олимпиаду для анализа:"
+#: admin/views/quiz-edit.php:786
+msgid "Шрифт и типографика"
 msgstr ""
 
-#: admin/views/quiz-stats.php:40
-msgid "По этой олимпиаде пока нет завершённых попыток для расчёта аналитики."
+#: admin/views/quiz-edit.php:789
+msgid "Шрифт страницы:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:46
-msgid "Завершённых работ:"
+#: admin/views/quiz-edit.php:796
+msgid "«Как в теме сайта» — шрифт наследуется от вашей WordPress-темы."
 msgstr ""
 
-#: admin/views/quiz-stats.php:48
-#, php-format
-msgid "Всего начато: %d"
+#: admin/views/quiz-edit.php:800
+msgid "Размер основного текста:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:52
-msgid "Процент сдачи (Pass Rate):"
+#: admin/views/quiz-edit.php:809
+msgid "Размер заголовка:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:54
-#, php-format
-msgid "Зачёт получили: %d чел."
+#: admin/views/quiz-edit.php:818
+msgid "Межстрочный интервал:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:58
-msgid "Средний балл / Медиана:"
+#: admin/views/quiz-edit.php:828
+msgid "Размеры, форма и кнопки"
 msgstr ""
 
-#: admin/views/quiz-stats.php:60
-#, php-format
-msgid "Ст. отклонение σ: %1$.2f | Макс: %2$.1f"
+#: admin/views/quiz-edit.php:831
+msgid "Ширина рабочей области:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:64
-msgid "Среднее время решения:"
+#: admin/views/quiz-edit.php:840
+msgid "Скругление карточек:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:68
-#, php-format
-msgid "Всего смен вкладок: %d"
+#: admin/views/quiz-edit.php:849
+msgid "Внутренние отступы карточки:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:75
-msgid "Сводная матрица ответов (Сводные данные)"
+#: admin/views/quiz-edit.php:858
+msgid "Тень карточек:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:78
-msgid "Анализ заданий и дистракторов (Item Analysis)"
+#: admin/views/quiz-edit.php:868
+msgid "Стиль основных кнопок:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:81
-msgid "Распределение баллов и психометрика"
+#: admin/views/quiz-edit.php:878
+msgid "Скругление кнопок:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:90
-msgid "Сводная таблица ответов участников"
+#: admin/views/quiz-edit.php:887
+msgid "Фон вокруг карточки:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:92
-msgid "Строки — участники, столбцы — вопросы олимпиады. Наведите на ячейку или кликните для просмотра точного ответа."
+#: admin/views/quiz-edit.php:891
+msgid "Показывать цветной фон страницы вокруг карточки теста"
 msgstr ""
 
-#: admin/views/quiz-stats.php:96
-#: includes/class-stats.php:377
-msgid "Верно"
+#: admin/views/quiz-edit.php:901
+msgid "Собственный CSS"
 msgstr ""
 
-#: admin/views/quiz-stats.php:97
-msgid "Частично"
+#: admin/views/quiz-edit.php:903
+msgid "Дополнительные стили для тонкой настройки. Код автоматически ограничивается этой олимпиадой — другие страницы сайта не изменятся."
 msgstr ""
 
-#: admin/views/quiz-stats.php:98
-msgid "Неверно / Штраф"
+#: admin/views/quiz-edit.php:908
+msgid "Сбросить оформление к классическому"
 msgstr ""
 
-#: admin/views/quiz-stats.php:99
-msgid "На проверке"
+#: admin/views/quiz-edit.php:915
+msgid "Живой предпросмотр"
 msgstr ""
 
-#: admin/views/quiz-stats.php:110
-msgid "%"
+#: admin/views/quiz-edit.php:916
+msgid "Обновляется при изменении настроек"
 msgstr ""
 
-#: admin/views/quiz-stats.php:195
-msgid "Решаемость / Ср. балл:"
+#: admin/views/quiz-edit.php:922
+msgid "Пример олимпиады"
 msgstr ""
 
-#: admin/views/quiz-stats.php:212
-msgid "Психометрический анализ заданий (Item Response Analysis)"
+#: admin/views/quiz-edit.php:923
+msgid "Так будет выглядеть страница тестирования для участников."
 msgstr ""
 
-#: admin/views/quiz-stats.php:214
-msgid "Оценка трудности (Difficulty Index P) и дифференцирующей способности (Discrimination Index D по методу крайних 27% групп Келли). Помогает выявить бракованные задания, формулировки с ловушками и неработающие дистракторы."
+#: admin/views/quiz-edit.php:928
+#: includes/class-shortcodes.php:255
+msgid "Время:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:221
-msgid "Задание / Вопрос"
+#: admin/views/quiz-edit.php:929
+msgid "минут"
 msgstr ""
 
-#: admin/views/quiz-stats.php:222
-msgid "Тип"
+#: admin/views/quiz-edit.php:941
+#: includes/class-shortcodes.php:196
+msgid "ФИО Участника:"
 msgstr ""
 
-#: admin/views/quiz-stats.php:223
-msgid "Макс."
+#: admin/views/quiz-edit.php:942
+#: includes/class-shortcodes.php:197
+msgid "Иванов Иван Иванович"
 msgstr ""
 
-#: admin/views/quiz-stats.php:224
-msgid "Трудность P (%)"
+#: admin/views/quiz-edit.php:944
+msgid "Ведётся контроль переключения вкладок"
 msgstr ""
 
-#: admin/views/quiz-stats.php:225
-msgid "Дискриминативность D"
+#: admin/views/quiz-edit.php:945
+msgid "Начать выполнение олимпиады"
 msgstr ""
 
-#: admin/views/quiz-stats.php:226
-msgid "Ср. балл"
+#: admin/views/quiz-edit.php:953
+msgid "Пример задания с вариантами ответа"
 msgstr ""
 
-#: admin/views/quiz-stats.php:233
-msgid "Оптимальная"
+#: admin/views/quiz-edit.php:955
+msgid "Вариант ответа 1"
 msgstr ""
 
-#: admin/views/quiz-stats.php:236
-msgid "Трудный"
+#: admin/views/quiz-edit.php:956
+msgid "Вариант ответа 2"
 msgstr ""
 
-#: admin/views/quiz-stats.php:239
-msgid "Легкий"
+#: admin/views/quiz-edit.php:960
+#: includes/class-shortcodes.php:412
+msgid "Назад"
 msgstr ""
 
-#: admin/views/quiz-stats.php:243
-msgid "Отличная"
-msgstr ""
-
-#: admin/views/quiz-stats.php:246
-msgid "Хорошая"
-msgstr ""
-
-#: admin/views/quiz-stats.php:249
-msgid "Удовл."
-msgstr ""
-
-#: admin/views/quiz-stats.php:252
-msgid "Слабая"
-msgstr ""
-
-#: admin/views/quiz-stats.php:255
-msgid "⚠️ Отрицательная"
-msgstr ""
-
-#: admin/views/quiz-stats.php:288
-msgid "Анализ дистракторов и частоты выборов ответов"
-msgstr ""
-
-#: admin/views/quiz-stats.php:290
-msgid "Распределение голосов участников по вариантам ответов. Помогает оценить привлекательность неправильных ответов (дистракторов)."
-msgstr ""
-
-#: admin/views/quiz-stats.php:305
-#, php-format
-msgid "Решаемость: %.1f%%"
-msgstr ""
-
-#: admin/views/quiz-stats.php:341
-msgid "Популярные ответы участников:"
-msgstr ""
-
-#: admin/views/quiz-stats.php:346
-msgid "Ответ участника"
-msgstr ""
-
-#: admin/views/quiz-stats.php:347
-msgid "Выбрали"
-msgstr ""
-
-#: admin/views/quiz-stats.php:348
-msgid "Доля (%)"
-msgstr ""
-
-#: admin/views/quiz-stats.php:363
-msgid "Развёрнутый или индивидуальный ответ (проверяется экспертом вручную)."
-msgstr ""
-
-#: admin/views/quiz-stats.php:375
-msgid "Гистограмма распределения результатов участников"
-msgstr ""
-
-#: admin/views/quiz-stats.php:377
-msgid "Распределение итоговых результатов олимпиады по пяти диапазонам баллов."
-msgstr ""
-
-#: admin/views/quiz-stats.php:383
-msgid "0 – 20% (Неудовлетворительно)"
-msgstr ""
-
-#: admin/views/quiz-stats.php:384
-msgid "21 – 40% (Слабый результат)"
-msgstr ""
-
-#: admin/views/quiz-stats.php:385
-msgid "41 – 60% (Удовлетворительно)"
-msgstr ""
-
-#: admin/views/quiz-stats.php:386
-msgid "61 – 80% (Хороший результат)"
-msgstr ""
-
-#: admin/views/quiz-stats.php:387
-msgid "81 – 100% (Отличный результат / Призёры)"
-msgstr ""
-
-#: admin/views/quiz-stats.php:416
-msgid "Описательные психометрические показатели генеральной совокупности"
-msgstr ""
-
-#: admin/views/quiz-stats.php:420
-msgid "Среднее арифметическое (Mean):"
-msgstr ""
-
-#: admin/views/quiz-stats.php:424
-msgid "Медианный балл (Median):"
-msgstr ""
-
-#: admin/views/quiz-stats.php:428
-msgid "Стандартное отклонение (Standard Deviation σ):"
-msgstr ""
-
-#: admin/views/quiz-stats.php:432
-msgid "Размах выборки (Min - Max):"
-msgstr ""
-
-#: admin/views/quiz-stats.php:436
-msgid "Всего успешных сдач (Pass Rate):"
+#: admin/views/quiz-edit.php:961
+#: includes/class-shortcodes.php:420
+msgid "Далее"
 msgstr ""
 
 #: admin/views/quizzes-list.php:11
@@ -1227,10 +2121,6 @@ msgstr ""
 msgid "Удалить олимпиаду и все связанные попытки?"
 msgstr ""
 
-#: admin/views/quizzes-list.php:70
-msgid "Удалить"
-msgstr ""
-
 #: admin/views/quizzes-list.php:77
 #, php-format
 msgid "%d вопр."
@@ -1273,35 +2163,120 @@ msgstr ""
 msgid "Скачать CSV"
 msgstr ""
 
-#: includes/class-ajax.php:96
-#: includes/class-ajax.php:141
-#: includes/class-ajax.php:153
-#: includes/class-ajax.php:178
+#: includes/class-ajax.php:112
+#: includes/class-ajax.php:157
+#: includes/class-ajax.php:169
+#: includes/class-ajax.php:213
+#: includes/class-ajax.php:238
+#: includes/class-ajax.php:295
+#: includes/class-ajax.php:315
+#: includes/class-ajax.php:335
+#: includes/class-ajax.php:357
+#: includes/class-ajax.php:414
+#: includes/class-ajax.php:446
+#: includes/class-ajax.php:501
+#: includes/class-ajax.php:529
+#: includes/class-ajax.php:577
+#: includes/class-ajax.php:601
+#: includes/class-ajax.php:632
+#: includes/class-ajax.php:662
 msgid "Доступ запрещён."
 msgstr ""
 
-#: includes/class-ajax.php:128
+#: includes/class-ajax.php:144
 msgid "Вопрос не найден."
 msgstr ""
 
-#: includes/class-ajax.php:131
+#: includes/class-ajax.php:147
 msgid "Вопрос успешно обновлён."
 msgstr ""
 
-#: includes/class-ajax.php:134
+#: includes/class-ajax.php:150
 msgid "Вопрос успешно добавлен."
 msgstr ""
 
-#: includes/class-ajax.php:147
+#: includes/class-ajax.php:163
 msgid "Вопрос удалён."
 msgstr ""
 
-#: includes/class-ajax.php:172
+#: includes/class-ajax.php:205
+msgid "Общие тексты успешно сохранены."
+msgstr ""
+
+#: includes/class-ajax.php:232
 msgid "Порядок сохранён."
 msgstr ""
 
-#: includes/class-ajax.php:225
+#: includes/class-ajax.php:284
 msgid "Оценка и комментарии сохранены."
+msgstr ""
+
+#: includes/class-ajax.php:301
+msgid "Неверный ID попытки."
+msgstr ""
+
+#: includes/class-ajax.php:306
+msgid "Попытка и все ответы успешно удалены."
+msgstr ""
+
+#: includes/class-ajax.php:308
+msgid "Не удалось удалить попытку."
+msgstr ""
+
+#: includes/class-ajax.php:321
+msgid "Неверный ID ответа."
+msgstr ""
+
+#: includes/class-ajax.php:326
+msgid "Ответ на задание успешно удалён."
+msgstr ""
+
+#: includes/class-ajax.php:328
+msgid "Не удалось удалить ответ."
+msgstr ""
+
+#: includes/class-ajax.php:420
+msgid "Не указан ID олимпиады."
+msgstr ""
+
+#: includes/class-ajax.php:471
+#: includes/class-network-import.php:446
+#, php-format
+msgid "Файл «%1$s»: найдено %2$d строк, готовы к импорту %3$d, предупреждений %4$d, ошибок %5$d."
+msgstr ""
+
+#: includes/class-ajax.php:491
+msgid "автоопределение"
+msgstr ""
+
+#: includes/class-ajax.php:540
+msgid "Файл не был загружен. Выберите файл для импорта на компьютере."
+msgstr ""
+
+#: includes/class-ajax.php:549
+msgid "Загруженный файл пуст или повреждён."
+msgstr ""
+
+#: includes/class-ajax.php:556
+#, php-format
+msgid "В файле «%s» не найдено распознаваемых заданий. Проверьте заголовки колонок (тип, вопрос, баллы, варианты) или скачайте готовый шаблон."
+msgstr ""
+
+#: includes/class-ajax.php:565
+#, php-format
+msgid "Успешно импортировано заданий: %d"
+msgstr ""
+
+#: includes/class-ajax.php:638
+msgid "Не указан ID ответа."
+msgstr ""
+
+#: includes/class-ajax.php:645
+msgid "Ответ не найден."
+msgstr ""
+
+#: includes/class-ajax.php:650
+msgid "Задание не найдено."
 msgstr ""
 
 #: includes/class-anti-cheat.php:28
@@ -1313,79 +2288,492 @@ msgstr ""
 msgid "Превышено допустимое количество переключений вкладок (%d). Попытка аннулирована."
 msgstr ""
 
-#: includes/class-certificate.php:27
-msgid "Сертификат не найден или работа ещё не завершена."
-msgstr ""
-
-#: includes/class-certificate.php:53
-msgid "Успешно пройдено"
-msgstr ""
-
-#: includes/class-certificate.php:53
-msgid "Сертификат участника"
-msgstr ""
-
-#: includes/class-certificate.php:222
-msgid "Диплом"
-msgstr ""
-
-#: includes/class-certificate.php:223
-msgid "Настоящим подтверждается, что"
-msgstr ""
-
-#: includes/class-certificate.php:237
-#, php-format
-msgid "Результат: %.1f из %.1f баллов (%d%%) • Время решения: %02d:%02d"
-msgstr ""
-
-#: includes/class-certificate.php:249
-msgid "Дата выдачи:"
-msgstr ""
-
-#: includes/class-certificate.php:250
-msgid "Номер документа:"
-msgstr ""
-
-#: includes/class-certificate.php:254
-msgid "Организационный комитет"
-msgstr ""
-
 #: includes/class-export.php:21
-#: includes/class-export.php:112
+#: includes/class-export.php:170
+#: includes/class-export.php:436
+#: includes/class-export.php:613
+#: includes/class-network-export.php:567
+#: includes/class-network-import.php:113
 msgid "У вас недостаточно прав для выполнения этой операции."
 msgstr ""
 
-#: includes/class-leaderboard.php:113
+#: includes/class-export.php:335
+#: includes/class-grader.php:1078
+msgid "Верно"
+msgstr ""
+
+#: includes/class-export.php:335
+msgid "Неверно"
+msgstr ""
+
+#: includes/class-grader.php:326
+#: includes/class-grader.php:879
+msgid "Ответ не предоставлен"
+msgstr ""
+
+#: includes/class-grader.php:348
+msgid "Ключ ответа не настроен"
+msgstr ""
+
+#: includes/class-grader.php:358
 #, php-format
-msgid "Рейтинговая таблица: %s"
+msgid "Точное совпадение с «%s»"
 msgstr ""
 
-#: includes/class-leaderboard.php:116
+#: includes/class-grader.php:369
 #, php-format
-msgid "Участников в рейтинге: %d"
+msgid "Найдено совпадение по фразе «%s»"
 msgstr ""
 
-#: includes/class-leaderboard.php:122
-msgid "Пока нет завершённых попыток. Станьте первым участником!"
+#: includes/class-grader.php:388
+#, php-format
+msgid "Найдены все требуемые фразы (%d из %d)"
 msgstr ""
 
-#: includes/class-mailer.php:27
+#: includes/class-grader.php:390
+#, php-format
+msgid "Найдено фраз: %d из %d"
+msgstr ""
+
+#: includes/class-grader.php:418
+#, php-format
+msgid "Совпадение с «%s» (опечаток: %d, допуск: %d)"
+msgstr ""
+
+#: includes/class-grader.php:420
+#, php-format
+msgid "Ближайший ключ: «%s» (опечаток: %d, превышает допуск %d)"
+msgstr ""
+
+#: includes/class-grader.php:438
+#, php-format
+msgid "Совпадение по регулярному выражению «%s»"
+msgstr ""
+
+#: includes/class-grader.php:459
+msgid "Неверный ответ"
+msgstr ""
+
+#: includes/class-grader.php:652
+#, php-format
+msgid "Заполнение пропусков: верных ответов %d из %d (%d%%)"
+msgstr ""
+
+#: includes/class-grader.php:734
+msgid "Слово не составлено"
+msgstr ""
+
+#: includes/class-grader.php:770
+#, php-format
+msgid "✓ Верно составлено слово: «%s»"
+msgstr ""
+
+#: includes/class-grader.php:779
+#, php-format
+msgid "Неверно составлено слово (введено: «%s», ожидалось: «%s»)"
+msgstr ""
+
+#: includes/class-grader.php:792
+msgid "В диктанте не заданы орфограммы"
+msgstr ""
+
+#: includes/class-grader.php:840
+#, php-format
+msgid "Диктант: верных орфограмм %d из %d (%d%%)"
+msgstr ""
+
+#: includes/class-grader.php:846
+msgid "Ошибки:"
+msgstr ""
+
+#: includes/class-grader.php:940
+#, php-format
+msgid "Автопроверка: найдено ключевых понятий: %d из %d"
+msgstr ""
+
+#: includes/class-grader.php:945
+#, php-format
+msgid "Встретились: «%s»"
+msgstr ""
+
+#: includes/class-grader.php:948
+#, php-format
+msgid "Не найдены: «%s»"
+msgstr ""
+
+#: includes/class-grader.php:951
+#, php-format
+msgid "Объем текста: %d слов (мин. %d)"
+msgstr ""
+
+#: includes/class-grader.php:1078
+msgid "Неверно / частично"
+msgstr ""
+
+#: includes/class-mailer.php:26
 #, php-format
 msgid "Ваш результат в олимпиаде: %s"
 msgstr ""
 
-#: includes/class-mailer.php:73
+#: includes/class-mailer.php:62
 #, php-format
 msgid "Новая сдача олимпиады: %s (%s)"
 msgstr ""
 
-#: includes/class-mailer.php:75
+#: includes/class-mailer.php:64
 #, php-format
 msgid ""
 "Участник %s (%s, %s) сдал олимпиаду «%s».\n"
 "Баллы: %.1f / %.1f (%d%%)\n"
 "Нарушений: %d\n"
 "Статус: %s"
+msgstr ""
+
+#: includes/class-network-export.php:122
+#, php-format
+msgid "Ответы олимпиады «%1$s» успешно экспортированы напрямую в сетевую папку: %2$s"
+msgstr ""
+
+#: includes/class-network-export.php:261
+#, php-format
+msgid "Папка «%s» не существует и не может быть создана веб-сервером. Создайте её вручную в ОС (mkdir -p \"%s\" && chmod 777 \"%s\") или оставьте поле пути пустым для использования папки по умолчанию."
+msgstr ""
+
+#: includes/class-network-export.php:264
+#, php-format
+msgid "Директория %s не создана."
+msgstr ""
+
+#: includes/class-network-export.php:275
+#, php-format
+msgid "Папка «%s» существует, но защищена от записи для пользователя «%s». Выполните команду: chmod -R 777 \"%s\" или chown -R %s \"%s\"."
+msgstr ""
+
+#: includes/class-network-export.php:278
+#, php-format
+msgid "Недостаточно прав на запись в %s."
+msgstr ""
+
+#: includes/class-network-export.php:307
+msgid "Ошибка записи файлов в сетевое хранилище."
+msgstr ""
+
+#: includes/class-network-export.php:310
+#, php-format
+msgid "Не удалось поместить шаблоны в сетевую папку «%s»: %s"
+msgstr ""
+
+#: includes/class-network-export.php:341
+#, php-format
+msgid "Шаблоны для импорта вопросов успешно помещены в сетевую папку (подкаталог import/): questions_template_macros.xlsm, questions_template.xlsx, questions_template.csv, questions_template.json, questions.csv и README_IMPORT.txt. Путь: %s"
+msgstr ""
+
+#: includes/class-network-export.php:348
+#, php-format
+msgid "Системная ошибка при размещении шаблонов: %s"
+msgstr ""
+
+#: includes/class-network-export.php:384
+#, php-format
+msgid "Задания олимпиады успешно сохранены в сетевую папку «вопросы/» (%d файлов)."
+msgstr ""
+
+#: includes/class-network-export.php:612
+msgid "Запрошенный файл выгрузки не найден."
+msgstr ""
+
+#: includes/class-network-export.php:812
+msgid "Ручная проверка жюри (развёрнутое решение)"
+msgstr ""
+
+#: includes/class-network-export.php:968
+#, php-format
+msgid "Не удалось создать директорию сетевой папки: %s"
+msgstr ""
+
+#: includes/class-network-export.php:977
+#, php-format
+msgid "Директория «%s» недоступна для записи. Проверьте права доступа в операционной системе."
+msgstr ""
+
+#: includes/class-network-export.php:1002
+#, php-format
+msgid "Не удалось записать файлы выгрузки в сетевую папку: %s"
+msgstr ""
+
+#: includes/class-network-export.php:1056
+msgid "Ошибка отправки файлов на WebDAV сервер."
+msgstr ""
+
+#: includes/class-network-export.php:1079
+#: includes/class-network-export.php:1261
+msgid "В PHP не установлено расширение FTP."
+msgstr ""
+
+#: includes/class-network-export.php:1092
+#, php-format
+msgid "Не удалось подключиться к FTP-серверу %s:%d"
+msgstr ""
+
+#: includes/class-network-export.php:1103
+#: includes/class-network-export.php:1284
+msgid "Неверный логин или пароль для FTP."
+msgstr ""
+
+#: includes/class-network-export.php:1138
+msgid "Ошибка загрузки файлов на FTP сервер."
+msgstr ""
+
+#: includes/class-network-export.php:1167
+#, php-format
+msgid "Папка не существует и не может быть создана: %s"
+msgstr ""
+
+#: includes/class-network-export.php:1176
+#, php-format
+msgid "Папка «%s» существует, но защищена от записи сервером."
+msgstr ""
+
+#: includes/class-network-export.php:1186
+#, php-format
+msgid "Не удалось записать тестовый файл в папку «%s»."
+msgstr ""
+
+#: includes/class-network-export.php:1194
+#, php-format
+msgid "✓ Сетевая папка «%s» найдена и полностью доступна для прямой записи файлов."
+msgstr ""
+
+#: includes/class-network-export.php:1228
+#, php-format
+msgid "Ошибка подключения к WebDAV: %s"
+msgstr ""
+
+#: includes/class-network-export.php:1236
+#, php-format
+msgid "✓ WebDAV хранилище отвечает успешно (HTTP %d)."
+msgstr ""
+
+#: includes/class-network-export.php:1243
+#, php-format
+msgid "Ошибка авторизации WebDAV (HTTP %d). Проверьте логин и пароль."
+msgstr ""
+
+#: includes/class-network-export.php:1249
+#, php-format
+msgid "WebDAV вернул статус HTTP %d"
+msgstr ""
+
+#: includes/class-network-export.php:1273
+#, php-format
+msgid "Не удалось подключиться к FTP-хосту %s:%d"
+msgstr ""
+
+#: includes/class-network-export.php:1291
+#, php-format
+msgid "✓ Успешное подключение к FTP серверу %s."
+msgstr ""
+
+#: includes/class-network-export.php:1398
+#, php-format
+msgid "Ошибка авторизации SMB (NT_STATUS_LOGON_FAILURE): неверный логин или пароль для доступа к «%s»."
+msgstr ""
+
+#: includes/class-network-export.php:1401
+#, php-format
+msgid "Доступ запрещён (NT_STATUS_ACCESS_DENIED): у пользователя нет прав на запись в сетевую папку «%s»."
+msgstr ""
+
+#: includes/class-network-export.php:1404
+#, php-format
+msgid "Сетевая папка не найдена (NT_STATUS_BAD_NETWORK_NAME): общий ресурс «%s» не существует на сервере %s."
+msgstr ""
+
+#: includes/class-network-export.php:1407
+#, php-format
+msgid "Таймаут подключения (NT_STATUS_IO_TIMEOUT): сетевой хост %s недоступен. Проверьте правильность IP-адреса и сетевое соединение."
+msgstr ""
+
+#: includes/class-network-export.php:1410
+#, php-format
+msgid "Соединение отклонено: хост %s не принимает подключения по протоколу SMB (порт 445). Проверьте работу службы общего доступа."
+msgstr ""
+
+#: includes/class-network-export.php:1413
+#, php-format
+msgid "Сетевой хост %s недостижим (NT_STATUS_HOST_UNREACHABLE)."
+msgstr ""
+
+#: includes/class-network-export.php:1417
+#, php-format
+msgid "Ошибка выгрузки в сетевую папку «%s»: %s"
+msgstr ""
+
+#: includes/class-network-export.php:1433
+#, php-format
+msgid "Некорректный путь к сетевой папке Windows (SMB): %s"
+msgstr ""
+
+#: includes/class-network-export.php:1454
+#, php-format
+msgid "Для прямой выгрузки в Windows-папку «%s» на сервере Linux требуется утилита smbclient. Установите её командой: sudo apt install smbclient (либо смонтируйте папку в файловую систему ОС: sudo mount -t cifs %s /mnt/share)."
+msgstr ""
+
+#: includes/class-network-export.php:1466
+msgid "Ошибка создания временного каталога для выгрузки SMB."
+msgstr ""
+
+#: includes/class-network-export.php:1486
+msgid "Ошибка подготовки временных файлов выгрузки."
+msgstr ""
+
+#: includes/class-network-export.php:1579
+#, php-format
+msgid "Некорректный путь к сетевой папке Windows (SMB): %s. Используйте формат \\\\хост\\папка\\"
+msgstr ""
+
+#: includes/class-network-export.php:1593
+#, php-format
+msgid "✓ Сетевой ресурс смонтирован в файловую систему ОС (%s) и доступен для записи."
+msgstr ""
+
+#: includes/class-network-export.php:1603
+#, php-format
+msgid "Для прямого подключения к Windows-папке «%s» на сервере Linux требуется утилита smbclient. Установите её командой: sudo apt install smbclient (либо смонтируйте ресурс в ОС: sudo mount -t cifs %s /mnt/share)."
+msgstr ""
+
+#: includes/class-network-export.php:1622
+#, php-format
+msgid "Сетевой хост %s недоступен по портам SMB (445 / 139): %s (%d). Проверьте IP-адрес и доступность сервера в локальной сети."
+msgstr ""
+
+#: includes/class-network-export.php:1665
+#, php-format
+msgid "✓ Сетевая папка Windows «%s» успешно найдена и доступна для выгрузки по протоколу SMB!"
+msgstr ""
+
+#: includes/class-network-import.php:41
+msgid "Каждую минуту (1 минута)"
+msgstr ""
+
+#: includes/class-network-import.php:426
+msgid "В сетевой папке не найдено файлов заданий (.xlsx, .xlsm, .csv, .json)."
+msgstr ""
+
+#: includes/class-network-import.php:436
+#, php-format
+msgid "Не удалось прочитать файл «%s»."
+msgstr ""
+
+#: includes/class-network-import.php:585
+msgid "Не заполнена колонка «title» (текст вопроса) — строка пропущена."
+msgstr ""
+
+#: includes/class-network-import.php:593
+msgid "Не удалось разобрать строку."
+msgstr ""
+
+#: includes/class-network-import.php:1033
+msgid "Элемент JSON не является объектом."
+msgstr ""
+
+#: includes/class-network-import.php:1074
+msgid "Не заполнено поле «title»."
+msgstr ""
+
+#: includes/class-network-import.php:1082
+#: includes/class-network-import.php:1212
+#, php-format
+msgid "Неизвестный тип «%s» — импортирован как «%s»."
+msgstr ""
+
+#: includes/class-network-import.php:1128
+msgid "Нужно минимум два варианта ответа в колонке «choices»."
+msgstr ""
+
+#: includes/class-network-import.php:1131
+msgid "Не отмечен правильный вариант (звёздочка * в choices или номер в correct) — правильным станет первый."
+msgstr ""
+
+#: includes/class-network-import.php:1134
+msgid "Для типа single отмечено несколько верных вариантов — участник сможет выбрать только один."
+msgstr ""
+
+#: includes/class-network-import.php:1141
+msgid "Не указано правильное число (target_value)."
+msgstr ""
+
+#: includes/class-network-import.php:1144
+msgid "Для шкалы min должен быть меньше max."
+msgstr ""
+
+#: includes/class-network-import.php:1150
+msgid "Не заданы допустимые ответы (колонка «answers»)."
+msgstr ""
+
+#: includes/class-network-import.php:1156
+msgid "Нужно минимум две пары в колонке «choices» (пример: Франция => Париж | Италия => Рим)."
+msgstr ""
+
+#: includes/class-network-import.php:1162
+msgid "Нужно минимум два элемента последовательности в колонке «choices»."
+msgstr ""
+
+#: includes/class-network-import.php:1170
+msgid "В тексте нет пропусков вида {ответ|синоним}."
+msgstr ""
+
+#: includes/class-network-import.php:1176
+msgid "Не задано слово для составления (колонка «answers»)."
+msgstr ""
+
+#: includes/class-network-import.php:1199
+msgid "Не заполнен текст вопроса."
+msgstr ""
+
+#: includes/class-network-import.php:1310
+msgid "Верно / Да"
+msgstr ""
+
+#: includes/class-network-import.php:1311
+msgid "Неверно / Нет"
+msgstr ""
+
+#: includes/class-network-import.php:1324
+msgid "Для шкалы max должен быть больше min — установлены значения 0…100."
+msgstr ""
+
+#: includes/class-network-import.php:1555
+msgid "Файл не содержит корректных заданий для импорта."
+msgstr ""
+
+#: includes/class-network-import.php:1590
+#, php-format
+msgid "Успешно импортировано %d заданий в олимпиаду «%s»."
+msgstr ""
+
+#: includes/class-network-import.php:1634
+msgid "В сетевой папке не найдено файлов для импорта заданий (.csv, .xlsx, .xlsm, .json). Поместите файл в папку или нажмите «Поместить шаблон»."
+msgstr ""
+
+#: includes/class-network-import.php:1685
+#, php-format
+msgid "Не удалось прочитать файл «%s» из сетевой папки."
+msgstr ""
+
+#: includes/class-network-import.php:1702
+#, php-format
+msgid "Файл «%s» не изменился с момента предыдущего импорта. Синхронизация не требуется."
+msgstr ""
+
+#: includes/class-network-import.php:1718
+#, php-format
+msgid "Файл «%s» прочитан, но не содержит корректных строк с заданиями."
+msgstr ""
+
+#: includes/class-network-import.php:1740
+#, php-format
+msgid "Предупреждений при разборе файла: %d (подробности в отчёте импорта)."
 msgstr ""
 
 #: includes/class-question.php:55
@@ -1469,110 +2857,140 @@ msgid "Выбор числового значения на шкале с про�
 msgstr ""
 
 #: includes/class-question.php:95
-msgid "Развёрнутый ответ / Решение (Эссе)"
+msgid "Составление слова из букв (Анаграмма)"
 msgstr ""
 
 #: includes/class-question.php:96
+msgid "Сборка слова из перемешанных буквенных плиток с проверкой"
+msgstr ""
+
+#: includes/class-question.php:99
+msgid "Интерактивный диктант"
+msgstr ""
+
+#: includes/class-question.php:100
+msgid "Текст с орфограммами/пунктограммами вида {=верно|ошибка} и аудированием"
+msgstr ""
+
+#: includes/class-question.php:103
+msgid "Развёрнутый ответ / Решение (Эссе)"
+msgstr ""
+
+#: includes/class-question.php:104
 msgid "Текстовое решение или эссе, оцениваемое жюри/преподавателем вручную"
 msgstr ""
 
-#: includes/class-question.php:403
+#: includes/class-question.php:645
 msgid "Введите числовое значение..."
 msgstr ""
 
-#: includes/class-question.php:407
+#: includes/class-question.php:649
 msgid "Введите краткий ответ..."
 msgstr ""
 
-#: includes/class-question.php:411
+#: includes/class-question.php:653
 msgid "Введите подробное решение или эссе..."
 msgstr ""
 
-#: includes/class-quiz.php:166
+#: includes/class-question.php:794
+msgid "Составьте слово, выбирая буквы..."
+msgstr ""
+
+#: includes/class-quiz.php:184
 msgid "Пройдено"
 msgstr ""
 
-#: includes/class-quiz.php:166
+#: includes/class-quiz.php:184
 msgid "Не пройдено"
 msgstr ""
 
-#: includes/class-quiz.php:309
+#: includes/class-quiz.php:287
+#, php-format
+msgid "Общий текст #%d"
+msgstr ""
+
+#: includes/class-quiz.php:377
 msgid "Новая олимпиада"
 msgstr ""
 
-#: includes/class-quiz.php:435
+#: includes/class-quiz.php:517
 msgid "Олимпиада в настоящее время не опубликована."
 msgstr ""
 
-#: includes/class-quiz.php:451
+#: includes/class-quiz.php:533
 #, php-format
 msgid "Олимпиада ещё не началась. Время начала: %s (МСК)"
 msgstr ""
 
-#: includes/class-quiz.php:468
+#: includes/class-quiz.php:550
 #, php-format
 msgid "Олимпиада завершена %s. Приём ответов закрыт."
 msgstr ""
 
-#: includes/class-quiz.php:515
+#: includes/class-quiz.php:602
 #, php-format
 msgid "Вы исчерпали лимит попыток для этой олимпиады (максимум: %d)."
 msgstr ""
 
-#: includes/class-rest-api.php:97
+#: includes/class-rest-api.php:98
 msgid "Пожалуйста, укажите ФИО участника."
 msgstr ""
 
-#: includes/class-rest-api.php:101
+#: includes/class-rest-api.php:102
 msgid "Пожалуйста, укажите ваш контактный e-mail."
 msgstr ""
 
-#: includes/class-rest-api.php:105
+#: includes/class-rest-api.php:106
 msgid "Пожалуйста, укажите вашу организацию или класс."
 msgstr ""
 
-#: includes/class-rest-api.php:109
+#: includes/class-rest-api.php:110
 msgid "Пожалуйста, укажите номер телефона."
 msgstr ""
 
-#: includes/class-rest-api.php:113
+#: includes/class-rest-api.php:114
 msgid "Пожалуйста, укажите ваш город / населённый пункт."
 msgstr ""
 
-#: includes/class-rest-api.php:117
+#: includes/class-rest-api.php:118
 msgid "Необходимо подтвердить согласие с правилами проведения тестирования."
 msgstr ""
 
-#: includes/class-rest-api.php:144
+#: includes/class-rest-api.php:158
 msgid "Не удалось начать олимпиаду. Попробуйте снова."
 msgstr ""
 
-#: includes/class-rest-api.php:177
+#: includes/class-rest-api.php:206
 msgid "Сессия олимпиады не найдена или уже завершена."
 msgstr ""
 
-#: includes/class-rest-api.php:201
+#: includes/class-rest-api.php:230
 msgid "Эта попытка уже была отправлена ранее."
 msgstr ""
 
-#: includes/class-rest-api.php:242
+#: includes/class-rest-api.php:289
+#, php-format
+msgid "Вы не ответили на обязательные вопросы: %s. Пожалуйста, дайте ответ на них перед завершением работы."
+msgstr ""
+
+#: includes/class-rest-api.php:317
 msgid "Ошибка сохранения результатов в базу данных."
 msgstr ""
 
-#: includes/class-rest-api.php:304
+#: includes/class-rest-api.php:401
 #, php-format
 msgid "Ваш ответ успешно принят! Правильные ответы и итоговые результаты будут опубликованы после окончания олимпиады: %s."
 msgstr ""
 
-#: includes/class-rest-api.php:305
+#: includes/class-rest-api.php:402
 msgid "после подведения итогов"
 msgstr ""
 
-#: includes/class-rest-api.php:308
+#: includes/class-rest-api.php:405
 msgid "Ответы приняты. В тесте присутствуют задания с развёрнутым ответом, которые проверяются жюри. Итоговая оценка появится после проверки."
 msgstr ""
 
-#: includes/class-shortcodes.php:66
+#: includes/class-shortcodes.php:65
 msgid "Олимпиада"
 msgstr ""
 
@@ -1617,132 +3035,105 @@ msgstr ""
 msgid "Штраф за ошибку: %s"
 msgstr ""
 
-#: includes/class-shortcodes.php:164
-msgid "🚀 Начать выполнение олимпиады"
-msgstr ""
-
-#: includes/class-shortcodes.php:168
-msgid "ФИО Участника:"
-msgstr ""
-
-#: includes/class-shortcodes.php:169
-msgid "Иванов Иван Иванович"
-msgstr ""
-
-#: includes/class-shortcodes.php:173
-msgid "Организация / Школа / Класс:"
-msgstr ""
-
-#: includes/class-shortcodes.php:174
-msgid "Лицей №1, 10 «А» класс"
-msgstr ""
-
-#: includes/class-shortcodes.php:178
-msgid "Контактный E-mail:"
-msgstr ""
-
-#: includes/class-shortcodes.php:183
-msgid "Номер телефона:"
-msgstr ""
-
-#: includes/class-shortcodes.php:188
-msgid "Город / Населённый пункт:"
-msgstr ""
-
-#: includes/class-shortcodes.php:189
-msgid "Москва"
+#: includes/class-shortcodes.php:158
+#, php-format
+msgid "Для участия в олимпиаде необходимо авторизоваться на сайте. Пожалуйста, <a href=\"%s\">войдите в систему</a>."
 msgstr ""
 
 #: includes/class-shortcodes.php:192
+msgid "🚀 Начать выполнение олимпиады"
+msgstr ""
+
+#: includes/class-shortcodes.php:201
+msgid "Организация / Школа / Класс:"
+msgstr ""
+
+#: includes/class-shortcodes.php:202
+msgid "Лицей №1, 10 «А» класс"
+msgstr ""
+
+#: includes/class-shortcodes.php:206
+msgid "Контактный E-mail:"
+msgstr ""
+
+#: includes/class-shortcodes.php:211
+msgid "Номер телефона:"
+msgstr ""
+
+#: includes/class-shortcodes.php:216
+msgid "Город / Населённый пункт:"
+msgstr ""
+
+#: includes/class-shortcodes.php:217
+msgid "Москва"
+msgstr ""
+
+#: includes/class-shortcodes.php:220
 msgid "Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады."
 msgstr ""
 
-#: includes/class-shortcodes.php:195
+#: includes/class-shortcodes.php:223
 msgid "🛡️ Внимание! Во время тестирования ведётся контроль переключения вкладок и активности окна. Пожалуйста, не закрывайте страницу до завершения."
 msgstr ""
 
-#: includes/class-shortcodes.php:226
-msgid "Время:"
-msgstr ""
-
-#: includes/class-shortcodes.php:228
+#: includes/class-shortcodes.php:257
 #, php-format
 msgid "%d минут"
 msgstr ""
 
-#: includes/class-shortcodes.php:228
+#: includes/class-shortcodes.php:257
 msgid "Без ограничения"
 msgstr ""
 
-#: includes/class-shortcodes.php:238
+#: includes/class-shortcodes.php:267
 msgid "Вопросов:"
 msgstr ""
 
-#: includes/class-shortcodes.php:258
+#: includes/class-shortcodes.php:287
 msgid "Проходной балл:"
 msgstr ""
 
-#: includes/class-shortcodes.php:357
+#: includes/class-shortcodes.php:382
+msgid "Загрузка заданий олимпиады..."
+msgstr ""
+
+#: includes/class-shortcodes.php:391
 msgid "Оставшееся время"
 msgstr ""
 
-#: includes/class-shortcodes.php:378
-msgid "Назад"
-msgstr ""
-
-#: includes/class-shortcodes.php:381
+#: includes/class-shortcodes.php:415
 msgid "Отметить вопрос, чтобы вернуться к нему позже"
 msgstr ""
 
-#: includes/class-shortcodes.php:382
+#: includes/class-shortcodes.php:416
 msgid "Отметить"
 msgstr ""
 
-#: includes/class-shortcodes.php:386
-msgid "Далее"
-msgstr ""
-
-#: includes/class-shortcodes.php:389
+#: includes/class-shortcodes.php:423
 msgid "Завершить олимпиаду"
 msgstr ""
 
-#: includes/class-shortcodes.php:412
-msgid "Укажите ID олимпиады: [wp_olympiad_leaderboard id=\"1\"]"
-msgstr ""
-
-#: includes/class-shortcodes.php:423
+#: includes/class-shortcodes.php:439
 #, php-format
 msgid "Пожалуйста, %1$sвойдите на сайт%2$s, чтобы посмотреть историю своих результатов."
 msgstr ""
 
-#: includes/class-shortcodes.php:442
+#: includes/class-shortcodes.php:458
 msgid "Мои результаты тестирований"
 msgstr ""
 
-#: includes/class-shortcodes.php:444
+#: includes/class-shortcodes.php:460
 msgid "Вы ещё не принимали участия в тестированиях."
 msgstr ""
 
-#: includes/class-shortcodes.php:450
+#: includes/class-shortcodes.php:466
 msgid "Олимпиада / Тест"
 msgstr ""
 
-#: includes/class-shortcodes.php:451
+#: includes/class-shortcodes.php:467
 msgid "Дата сдачи"
 msgstr ""
 
-#: includes/class-shortcodes.php:453
+#: includes/class-shortcodes.php:469
 msgid "Результат"
-msgstr ""
-
-#: includes/class-stats.php:202
-msgid "Верно / Да"
-msgstr ""
-
-#: includes/class-stats.php:203
-msgid "Неверно / Нет"
-msgstr ""
-
-#: includes/class-stats.php:377
-msgid "Неверно"
 msgstr ""

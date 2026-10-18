@@ -23,6 +23,8 @@
             this.tabSwitches = 0;
             this.isSubmitting = false;
             this.antiCheat = { copy: true, blur: true, max_tab_switches: 5 };
+            this.sharedTexts = {};
+            this.collapsedSharedTexts = new Set();
 
             this.initDOM();
             this.bindEvents();
@@ -32,6 +34,7 @@
             this.introScreen = this.wrapper.querySelector('.wpo-intro-screen');
             this.runnerScreen = this.wrapper.querySelector('.wpo-runner-screen');
             this.resultsScreen = this.wrapper.querySelector('.wpo-results-screen');
+            this.skipIntro = this.wrapper.dataset.skipIntro === '1';
 
             this.startBtn = this.wrapper.querySelector('.wpo-btn-start');
             this.navStrip = this.wrapper.querySelector('.wpo-nav-strip');
@@ -54,6 +57,11 @@
                 this.startBtn.addEventListener('click', () => this.handleStart());
             }
 
+            if (this.skipIntro) {
+                // Auto-start testing immediately without showing intro screen
+                this.handleStart();
+            }
+
             if (this.btnPrev) {
                 this.btnPrev.addEventListener('click', () => this.navigate(this.currentIndex - 1));
             }
@@ -66,13 +74,52 @@
             if (this.btnFlag) {
                 this.btnFlag.addEventListener('click', () => this.toggleFlag());
             }
+
+            if (this.runnerScreen) {
+                this.runnerScreen.addEventListener('click', (e) => {
+                    const toggleBtn = e.target.closest('.wpo-shared-passage-toggle');
+                    if (toggleBtn) {
+                        const box = toggleBtn.closest('.wpo-shared-passage-box');
+                        if (!box) return;
+                        const stId = box.dataset.stId || 'default';
+                        const body = box.querySelector('.wpo-shared-passage-body');
+                        const isCollapsed = box.classList.contains('is-collapsed');
+                        if (isCollapsed) {
+                            box.classList.remove('is-collapsed');
+                            if (body) body.style.display = 'block';
+                            const txt = toggleBtn.querySelector('.wpo-st-toggle-text');
+                            const icon = toggleBtn.querySelector('.wpo-st-toggle-icon');
+                            if (txt) txt.textContent = 'Свернуть';
+                            if (icon) icon.textContent = '▴';
+                            this.collapsedSharedTexts.delete(stId);
+                        } else {
+                            box.classList.add('is-collapsed');
+                            if (body) body.style.display = 'none';
+                            const txt = toggleBtn.querySelector('.wpo-st-toggle-text');
+                            const icon = toggleBtn.querySelector('.wpo-st-toggle-icon');
+                            if (txt) txt.textContent = 'Развернуть';
+                            if (icon) icon.textContent = '▾';
+                            this.collapsedSharedTexts.add(stId);
+                        }
+                    }
+                });
+            }
         }
 
         async handleStart() {
-            const form = this.wrapper.querySelector('.wpo-start-form');
-            if (form && !form.checkValidity()) {
-                form.reportValidity();
-                return;
+            if (!this.skipIntro) {
+                const form = this.wrapper.querySelector('.wpo-start-form');
+                if (form && !form.checkValidity()) {
+                    form.reportValidity();
+                    return;
+                }
+
+                const agreementInput = this.wrapper.querySelector('input[name="agreement"]');
+                if (agreementInput && !agreementInput.checked) {
+                    alert('Необходимо подтвердить согласие с правилами тестирования.');
+                    agreementInput.focus();
+                    return;
+                }
             }
 
             const nameInput = this.wrapper.querySelector('input[name="participant_name"]');
@@ -82,13 +129,7 @@
             const cityInput = this.wrapper.querySelector('input[name="participant_city"]');
             const agreementInput = this.wrapper.querySelector('input[name="agreement"]');
 
-            if (agreementInput && !agreementInput.checked) {
-                alert('Необходимо подтвердить согласие с правилами тестирования.');
-                agreementInput.focus();
-                return;
-            }
-
-            const origBtnText = this.startBtn.textContent;
+            const origBtnText = this.startBtn ? this.startBtn.textContent : '';
 
             const payload = {
                 quiz_id: this.quizId,
@@ -100,33 +141,52 @@
                 agreement: agreementInput ? (agreementInput.checked ? 1 : 0) : 1,
             };
 
-            this.startBtn.disabled = true;
-            this.startBtn.textContent = '⏳ Загрузка заданий...';
+            if (this.startBtn) {
+                this.startBtn.disabled = true;
+                this.startBtn.textContent = '⏳ Загрузка заданий...';
+            }
 
             try {
                 const res = await this.apiPost('/start', payload, 'wp_olympiad_start');
                 if (!res.success) {
-                    alert(res.message || (res.data && res.data.message) || 'Не удалось начать олимпиаду.');
-                    this.startBtn.disabled = false;
-                    this.startBtn.textContent = origBtnText;
+                    const msg = res.message || (res.data && res.data.message) || 'Не удалось начать олимпиаду.';
+                    if (this.skipIntro && this.runnerScreen) {
+                        this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-error" style="padding:24px; text-align:center; color:#991b1b; background:#fef2f2; border:1px solid #fecaca; border-radius:8px;"><strong>Ошибка:</strong> ${msg}</div>`;
+                    } else {
+                        alert(msg);
+                        if (this.startBtn) {
+                            this.startBtn.disabled = false;
+                            this.startBtn.textContent = origBtnText;
+                        }
+                    }
                     return;
                 }
 
                 const data = res.data || res;
                 this.token = data.token;
                 this.timeLimit = data.time_limit || 0;
+                this.showQuestionPoints = data.show_question_points !== undefined ? Boolean(data.show_question_points) : true;
                 this.questions = data.questions || [];
+                this.sharedTexts = data.shared_texts || {};
                 this.antiCheat = data.anti_cheat || this.antiCheat;
 
                 if (this.questions.length === 0) {
-                    alert('В этой олимпиаде пока нет вопросов.');
-                    this.startBtn.disabled = false;
+                    const noQMsg = 'В этой олимпиаде пока нет вопросов.';
+                    if (this.skipIntro && this.runnerScreen) {
+                        this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-info" style="padding:24px; text-align:center; color:#1e40af; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">${noQMsg}</div>`;
+                    } else {
+                        alert(noQMsg);
+                        if (this.startBtn) this.startBtn.disabled = false;
+                    }
                     return;
                 }
 
                 // Switch screen
-                this.introScreen.style.display = 'none';
-                this.runnerScreen.style.display = 'block';
+                if (this.introScreen) this.introScreen.style.display = 'none';
+                if (this.runnerScreen) this.runnerScreen.style.display = 'block';
+
+                const loadingEl = this.runnerScreen ? this.runnerScreen.querySelector('.wpo-runner-loading') : null;
+                if (loadingEl) loadingEl.style.display = 'none';
 
                 if (this.counterTotal) {
                     this.counterTotal.textContent = this.questions.length;
@@ -138,28 +198,87 @@
                 this.renderQuestion(0);
             } catch (err) {
                 console.error(err);
-                alert('Сетевая ошибка при запуске олимпиады.');
-                this.startBtn.disabled = false;
-                this.startBtn.textContent = '🚀 Начать выполнение олимпиады';
+                const errMsg = 'Сетевая ошибка при запуске олимпиады.';
+                if (this.skipIntro && this.runnerScreen) {
+                    this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-error" style="padding:24px; text-align:center; color:#991b1b; background:#fef2f2; border:1px solid #fecaca; border-radius:8px;">${errMsg}</div>`;
+                } else {
+                    alert(errMsg);
+                    if (this.startBtn) {
+                        this.startBtn.disabled = false;
+                        this.startBtn.textContent = '🚀 Начать выполнение олимпиады';
+                    }
+                }
             }
         }
 
         initAntiCheat() {
+            // Anti-cheat toast notifications & event throttling
+            this.lastToastTimes = {};
+
             if (this.antiCheat.copy) {
-                this.wrapper.addEventListener('contextmenu', (e) => e.preventDefault());
-                this.wrapper.addEventListener('copy', (e) => e.preventDefault());
-                this.wrapper.addEventListener('cut', (e) => e.preventDefault());
+                // Prevent context menu
+                this.wrapper.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    if (this.antiCheat.popup_warnings !== false) {
+                        this.showAntiCheatToast('🔒', 'Контекстное меню заблокировано', 'Использование контекстного меню запрещено регламентом олимпиады.');
+                    }
+                });
+
+                // Prevent copy & cut
+                this.wrapper.addEventListener('copy', (e) => {
+                    e.preventDefault();
+                    if (this.antiCheat.popup_warnings !== false) {
+                        this.showAntiCheatToast('🚫', 'Копирование запрещено', 'Копирование материалов и вопросов олимпиады запрещено регламентом честной игры.');
+                    }
+                });
+
+                this.wrapper.addEventListener('cut', (e) => {
+                    e.preventDefault();
+                    if (this.antiCheat.popup_warnings !== false) {
+                        this.showAntiCheatToast('✂️', 'Вырезание текста запрещено', 'Вырезание материалов теста заблокировано.');
+                    }
+                });
+
                 this.wrapper.style.userSelect = 'none';
+
+                // Prevent shortcut keys (F12, Ctrl+U, Ctrl+P, Ctrl+S, DevTools)
+                window.addEventListener('keydown', (e) => {
+                    if (this.isSubmitting || !this.token) return;
+                    const isF12 = e.key === 'F12';
+                    const isCtrlU = e.ctrlKey && (e.key === 'u' || e.key === 'U');
+                    const isCtrlP = e.ctrlKey && (e.key === 'p' || e.key === 'P');
+                    const isCtrlS = e.ctrlKey && (e.key === 's' || e.key === 'S');
+                    const isDevTools = e.ctrlKey && e.shiftKey && ['i', 'I', 'j', 'J', 'c', 'C'].includes(e.key);
+
+                    if (isF12 || isCtrlU || isCtrlP || isCtrlS || isDevTools) {
+                        e.preventDefault();
+                        if (this.antiCheat.popup_warnings !== false) {
+                            this.showAntiCheatToast('⌨️', 'Клавиша заблокирована', 'Использование служебных горячих клавиш и инструментов разработчика запрещено.');
+                        }
+                    }
+                });
             }
 
             if (this.antiCheat.blur) {
+                let lastLeaveTime = 0;
                 const onTabLeave = () => {
-                    if (this.isSubmitting) return;
+                    if (this.isSubmitting || !this.token) return;
+                    const now = Date.now();
+                    // Debounce so visibilitychange and blur together fire only once per event
+                    if (now - lastLeaveTime < 2000) return;
+                    lastLeaveTime = now;
+
                     this.tabSwitches++;
                     this.sendHeartbeat(true);
-                    this.showModalWarning(
-                        `⚠️ Внимание! Зафиксировано переключение вкладки (#${this.tabSwitches}). Это действие записано в протокол олимпиады.`
-                    );
+
+                    if (this.antiCheat.popup_warnings !== false) {
+                        const maxSwitches = parseInt(this.antiCheat.max_tab_switches, 10) || 0;
+                        this.showModalWarning(
+                            `Зафиксирован уход со страницы олимпиады (#${this.tabSwitches}). Пожалуйста, оставайтесь на вкладке теста до отправки работы.`,
+                            this.tabSwitches,
+                            maxSwitches
+                        );
+                    }
                 };
 
                 document.addEventListener('visibilitychange', () => {
@@ -189,7 +308,7 @@
 
                 const data = res.data || res;
                 if (data.disqualified) {
-                    alert(data.message || 'Вы дисквалифицированы за превышение переключений вкладок.');
+                    this.showDisqualificationModal(data.message || 'Вы дисквалифицированы за превышение переключений вкладок.');
                     this.submitAnswers(true);
                 }
             } catch (e) {
@@ -239,19 +358,48 @@
             if (!this.navStrip) return;
             this.navStrip.innerHTML = '';
 
-            this.questions.forEach((q, idx) => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'wpo-nav-btn';
-                btn.textContent = idx + 1;
-                btn.dataset.index = idx;
+            const hasGroups = this.questions.some((q) => q.group_name && q.group_name.trim());
 
-                btn.addEventListener('click', () => {
-                    this.navigate(idx);
+            if (hasGroups) {
+                let lastGroup = null;
+                let groupBtnsWrap = null;
+
+                this.questions.forEach((q, idx) => {
+                    const grp = (q.group_name && q.group_name.trim()) ? q.group_name.trim() : 'Общие задания';
+                    if (grp !== lastGroup) {
+                        lastGroup = grp;
+                        const sectionWrap = document.createElement('div');
+                        sectionWrap.className = 'wpo-nav-section-wrap';
+                        sectionWrap.innerHTML = `<div class="wpo-nav-section-title">📁 ${this.escapeHtml(grp)}</div><div class="wpo-nav-section-buttons"></div>`;
+                        this.navStrip.appendChild(sectionWrap);
+                        groupBtnsWrap = sectionWrap.querySelector('.wpo-nav-section-buttons');
+                    }
+
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'wpo-nav-btn';
+                    btn.textContent = idx + 1;
+                    btn.dataset.index = idx;
+                    btn.addEventListener('click', () => {
+                        this.navigate(idx);
+                    });
+                    groupBtnsWrap.appendChild(btn);
                 });
+            } else {
+                this.questions.forEach((q, idx) => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'wpo-nav-btn';
+                    btn.textContent = idx + 1;
+                    btn.dataset.index = idx;
 
-                this.navStrip.appendChild(btn);
-            });
+                    btn.addEventListener('click', () => {
+                        this.navigate(idx);
+                    });
+
+                    this.navStrip.appendChild(btn);
+                });
+            }
         }
 
         updateNavState() {
@@ -263,10 +411,13 @@
                 const isCurrent = idx === this.currentIndex;
                 const isAnswered = this.isQuestionAnswered(q.id);
                 const isFlagged = this.flagged.has(q.id);
+                const isReq = Boolean(q.is_required);
 
                 btn.classList.toggle('active', isCurrent);
                 btn.classList.toggle('answered', isAnswered);
                 btn.classList.toggle('flagged', isFlagged);
+                btn.classList.toggle('is-required', isReq);
+                btn.classList.toggle('req-pending', isReq && !isAnswered);
             });
 
             // Update Progress Bar
@@ -333,17 +484,86 @@
             const q = this.questions[index];
             if (!q || !this.qContainer) return;
 
+            const renderImageHtml = () => {
+                if (!q.image_url) return '';
+                const altText = this.escapeHtml(q.image_alt || q.image_caption || 'Иллюстрация к вопросу');
+                const captionHtml = q.image_caption ? `<figcaption class="wpo-question-image-caption">${this.escapeHtml(q.image_caption)}</figcaption>` : '';
+                return `
+                    <figure class="wpo-question-image-wrap">
+                        <img src="${this.escapeHtml(q.image_url)}" alt="${altText}" class="wpo-question-image" loading="lazy" data-zoomable="true" title="Нажмите для увеличения">
+                        ${captionHtml}
+                    </figure>
+                `;
+            };
+
+            const imgPos = q.image_position || 'above';
+            const imgHtml = renderImageHtml();
+            const isReq = Boolean(q.is_required);
+            const reqStar = isReq ? '<span class="wpo-required-star" title="Обязательный вопрос">*</span>' : '';
+            const reqPill = isReq ? '<span class="wpo-required-pill">Обязательный</span>' : '';
+
+            // Check if points should be displayed
+            let showPts = this.showQuestionPoints !== false;
+            if (q.show_points !== undefined && q.show_points !== null) {
+                showPts = Boolean(q.show_points);
+            }
+            const pointsPill = showPts ? `<span class="wpo-points-pill">Баллов: ${Math.round(q.points)}</span>` : '';
+            const penaltyPill = (showPts && q.penalty > 0) ? `<span class="wpo-penalty-pill">Штраф за ошибку: -${Math.round(q.penalty)}</span>` : '';
+
+            // Question group badge
+            const groupBadge = (q.group_name && q.group_name.trim()) ? `<div class="wpo-question-group-badge">📁 ${this.escapeHtml(q.group_name.trim())}</div>` : '';
+
+            // Question shared text / common passage
+            let sharedText = q.shared_text;
+            if (!sharedText && q.shared_text_id && this.sharedTexts) {
+                sharedText = this.sharedTexts[q.shared_text_id];
+            }
+            let sharedTextHtml = '';
+            if (sharedText && (sharedText.content || sharedText.title)) {
+                const stId = String(sharedText.id || q.shared_text_id || 'default');
+                const isCollapsed = this.collapsedSharedTexts.has(stId);
+                sharedTextHtml = `
+                    <div class="wpo-shared-passage-box ${isCollapsed ? 'is-collapsed' : ''}" data-st-id="${this.escapeHtml(stId)}">
+                        <div class="wpo-shared-passage-header">
+                            <div class="wpo-shared-passage-title-wrap">
+                                <span class="wpo-shared-passage-icon">📖</span>
+                                <span class="wpo-shared-passage-tag">ОБЩИЙ ТЕКСТ К ЗАДАНИЯМ</span>
+                                <strong class="wpo-shared-passage-title">${this.escapeHtml(sharedText.title || 'Текст к заданию')}</strong>
+                            </div>
+                            <button type="button" class="wpo-shared-passage-toggle" title="Свернуть или развернуть общий текст">
+                                <span class="wpo-st-toggle-text">${isCollapsed ? 'Развернуть' : 'Свернуть'}</span>
+                                <span class="wpo-st-toggle-icon">${isCollapsed ? '▾' : '▴'}</span>
+                            </button>
+                        </div>
+                        <div class="wpo-shared-passage-body" style="${isCollapsed ? 'display:none;' : ''}">
+                            <div class="wpo-shared-passage-content typography-body">${sharedText.content}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
             let html = `
                 <div class="wpo-question-card-inner" data-id="${q.id}">
-                    <div class="wpo-question-prompt">${this.escapeHtml(q.title)}</div>
+                    ${groupBadge}
+                    ${sharedTextHtml}
+                    <div class="wpo-question-prompt">${q.title} ${reqStar}</div>
                     <div class="wpo-question-meta-row">
-                        <span class="wpo-points-pill">Баллов: ${Math.round(q.points)}</span>
-                        ${q.penalty > 0 ? `<span class="wpo-penalty-pill">Штраф за ошибку: -${Math.round(q.penalty)}</span>` : ''}
+                        ${pointsPill}
+                        ${penaltyPill}
+                        ${reqPill}
                     </div>
             `;
 
+            if (imgPos === 'above' && imgHtml) {
+                html += imgHtml;
+            }
+
             if (q.content) {
                 html += `<div class="wpo-question-content" style="margin-bottom:18px;">${q.content}</div>`;
+            }
+
+            if (imgPos === 'below' && imgHtml) {
+                html += imgHtml;
             }
 
             // Input Fields
@@ -478,15 +698,60 @@
                 });
                 html += '</div>';
             } else if (q.question_type === 'fill_blank') {
+                const choiceMode = q.choice_mode || 'input';
                 const savedObj = (savedAns && typeof savedAns === 'object' && !Array.isArray(savedAns)) ? savedAns : {};
                 let tmpl = this.escapeHtml(q.template || '');
-                tmpl = tmpl.replace(/\[\[blank:(blank_\d+)\]\]/g, (match, bId) => {
-                    const currentVal = savedObj[bId] ? this.escapeHtml(savedObj[bId]) : '';
-                    return `<input type="text" class="wpo-blank-inline-input" data-blank-id="${bId}" value="${currentVal}" placeholder="введите..." style="display:inline-block; width:140px; padding:4px 8px; border:2px solid #3b82f6; border-radius:6px; font-weight:600; text-align:center; background:#eff6ff; margin:0 4px;">`;
-                });
+
+                if (choiceMode === 'dropdown') {
+                    const blankOpts = q.blank_options || {};
+                    tmpl = tmpl.replace(/\[\[blank:(blank_\d+)\]\]/g, (match, bId) => {
+                        const currentVal = savedObj[bId] !== undefined ? String(savedObj[bId]) : '';
+                        const opts = Array.isArray(blankOpts[bId]) ? blankOpts[bId] : [];
+                        let optionsHtml = '<option value="">-- выберите вариант --</option>';
+                        opts.forEach((opt) => {
+                            const optStr = String(opt);
+                            const isSel = (optStr === currentVal) ? 'selected' : '';
+                            optionsHtml += `<option value="${this.escapeHtml(optStr)}" ${isSel}>${this.escapeHtml(optStr)}</option>`;
+                        });
+                        return `<select class="wpo-blank-inline-select" data-blank-id="${bId}">${optionsHtml}</select>`;
+                    });
+                } else if (choiceMode === 'word_bank') {
+                    tmpl = tmpl.replace(/\[\[blank:(blank_\d+)\]\]/g, (match, bId) => {
+                        const currentVal = savedObj[bId] !== undefined ? String(savedObj[bId]).trim() : '';
+                        const hasWord = Boolean(currentVal);
+                        return `<span class="wpo-blank-slot ${hasWord ? 'has-word' : 'is-empty'}" data-blank-id="${bId}" tabindex="0"><span class="wpo-blank-slot-text">${hasWord ? this.escapeHtml(currentVal) : '___'}</span><button type="button" class="wpo-blank-slot-clear" title="Убрать слово" ${hasWord ? '' : 'style="display:none;"'}>×</button></span>`;
+                    });
+                } else {
+                    tmpl = tmpl.replace(/\[\[blank:(blank_\d+)\]\]/g, (match, bId) => {
+                        const currentVal = savedObj[bId] ? this.escapeHtml(savedObj[bId]) : '';
+                        return `<input type="text" class="wpo-blank-inline-input" data-blank-id="${bId}" value="${currentVal}" placeholder="введите..." autocomplete="off">`;
+                    });
+                }
+
+                let bankHtml = '';
+                if (choiceMode === 'word_bank') {
+                    const bankItems = Array.isArray(q.word_bank) ? q.word_bank : [];
+                    bankHtml = `
+                        <div class="wpo-blank-bank-panel">
+                            <div class="wpo-blank-bank-header">
+                                <span class="wpo-blank-bank-title">📦 Банк вариантов (нажмите на вариант для вставки в пропуск):</span>
+                                <button type="button" class="wpo-blank-bank-reset-btn">Сбросить все</button>
+                            </div>
+                            <div class="wpo-blank-bank-chips">
+                                ${bankItems.map((item) => {
+                                    return `<button type="button" class="wpo-blank-word-chip" data-word-id="${this.escapeHtml(item.id || '')}" data-word="${this.escapeHtml(item.text)}">${this.escapeHtml(item.text)}</button>`;
+                                }).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
                 html += `
-                    <div class="wpo-fill-blank-container" style="font-size:16px; line-height:2.2; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:16px;">
-                        ${tmpl}
+                    <div class="wpo-fill-blank-wrapper" data-choice-mode="${choiceMode}">
+                        <div class="wpo-fill-blank-container">
+                            ${tmpl}
+                        </div>
+                        ${bankHtml}
                     </div>
                 `;
             } else if (q.question_type === 'slider') {
@@ -508,6 +773,80 @@
                         </div>
                     </div>
                 `;
+            } else if (q.question_type === 'word_scramble') {
+                const tiles = q.tiles || [];
+                const wordLen = q.word_length || tiles.length;
+
+                html += `
+                    <div class="wpo-scramble-widget" data-qid="${q.id}">
+                        <div class="wpo-scramble-slots-container" style="margin-bottom:20px; text-align:center;">
+                            <div style="font-size:13px; color:#64748b; font-weight:600; margin-bottom:10px;">
+                                Собранное слово (нажимайте на буквы или вводите с клавиатуры):
+                            </div>
+                            <div class="wpo-scramble-slots">
+                                <!-- Slots populated dynamically -->
+                            </div>
+                        </div>
+
+                        <div class="wpo-scramble-bank-container" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:18px; margin-bottom:14px; text-align:center;">
+                            <div style="font-size:13px; color:#64748b; font-weight:600; margin-bottom:12px;">
+                                Доступные буквы:
+                            </div>
+                            <div class="wpo-scramble-bank">
+                                ${tiles.map((t) => `
+                                    <button type="button" class="wpo-letter-chip" data-tile-id="${t.id}" data-char="${this.escapeHtml(t.char)}">
+                                        ${this.escapeHtml(t.char)}
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+
+                        <div style="display:flex; justify-content:center; gap:12px;">
+                            <button type="button" class="wpo-btn-scramble-backspace wpo-btn-secondary" style="padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:600;">
+                                ⌫ Стереть букву
+                            </button>
+                            <button type="button" class="wpo-btn-scramble-reset wpo-btn-secondary" style="padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:600;">
+                                ↺ Сбросить всё
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else if (q.question_type === 'dictation') {
+                const savedObj = (savedAns && typeof savedAns === 'object' && !Array.isArray(savedAns)) ? savedAns : {};
+                let tmpl = this.escapeHtml(q.template || '');
+                tmpl = tmpl.replace(/\[\[dict:(d_\d+)\]\]/g, (match, dId) => {
+                    const gapInfo = (q.dict_gaps && q.dict_gaps[dId]) ? q.dict_gaps[dId] : null;
+                    const opts = gapInfo ? gapInfo.options : [];
+                    const currentVal = savedObj[dId] ? this.escapeHtml(savedObj[dId]) : '';
+                    return `
+                        <select class="wpo-dict-inline-select" data-dict-id="${dId}">
+                            <option value="">...</option>
+                            ${opts.map((opt) => `
+                                <option value="${this.escapeHtml(opt)}" ${currentVal === opt ? 'selected' : ''}>
+                                    ${this.escapeHtml(opt)}
+                                </option>
+                            `).join('')}
+                        </select>
+                    `;
+                });
+
+                html += `
+                    <div class="wpo-dictation-widget" data-qid="${q.id}">
+                        ${q.audio_url ? `
+                            <div class="wpo-dictation-audio-wrap" style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; gap:12px;">
+                                <span style="font-size:22px;">🎧</span>
+                                <div style="flex:1;">
+                                    <div style="font-size:12px; font-weight:700; color:#1e40af; margin-bottom:4px;">Аудиозапись диктанта (нажмите Play для прослушивания текста):</div>
+                                    <audio controls src="${this.escapeHtml(q.audio_url)}" style="width:100%; height:36px;"></audio>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div class="wpo-dictation-container" style="font-size:17px; line-height:2.4; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:20px; color:#1e293b;">
+                            ${tmpl}
+                        </div>
+                    </div>
+                `;
             }
 
             html += '</div>';
@@ -520,6 +859,14 @@
         bindQuestionInputs(q) {
             const inner = this.qContainer.querySelector('.wpo-question-card-inner');
             if (!inner) return;
+
+            // Image zoom lightbox handler
+            inner.querySelectorAll('.wpo-question-image, .wpo-question-content img').forEach((img) => {
+                img.style.cursor = 'zoom-in';
+                img.addEventListener('click', () => {
+                    this.showImageLightbox(img.src, img.alt);
+                });
+            });
 
             if (q.question_type === 'single' || q.question_type === 'boolean') {
                 const radios = inner.querySelectorAll('input[type="radio"]');
@@ -615,17 +962,167 @@
                     });
                 }
             } else if (q.question_type === 'fill_blank') {
-                const inputs = inner.querySelectorAll('.wpo-blank-inline-input');
-                inputs.forEach((inp) => {
-                    inp.addEventListener('input', () => {
-                        const bid = inp.dataset.blankId;
-                        if (!this.answers[q.id] || typeof this.answers[q.id] !== 'object' || Array.isArray(this.answers[q.id])) {
-                            this.answers[q.id] = {};
-                        }
-                        this.answers[q.id][bid] = inp.value.trim();
-                        this.updateNavState();
+                const choiceMode = q.choice_mode || 'input';
+
+                if (!this.answers[q.id] || typeof this.answers[q.id] !== 'object' || Array.isArray(this.answers[q.id])) {
+                    this.answers[q.id] = {};
+                }
+
+                if (choiceMode === 'dropdown') {
+                    const selects = inner.querySelectorAll('.wpo-blank-inline-select');
+                    selects.forEach((sel) => {
+                        sel.addEventListener('change', () => {
+                            const bid = sel.dataset.blankId;
+                            this.answers[q.id][bid] = sel.value;
+                            this.updateNavState();
+                        });
                     });
-                });
+                } else if (choiceMode === 'word_bank') {
+                    const wrapper = inner.querySelector('.wpo-fill-blank-wrapper');
+                    if (!wrapper) return;
+
+                    const slots = Array.from(wrapper.querySelectorAll('.wpo-blank-slot'));
+                    const chips = Array.from(wrapper.querySelectorAll('.wpo-blank-word-chip'));
+                    const resetBtn = wrapper.querySelector('.wpo-blank-bank-reset-btn');
+
+                    let activeSlot = null;
+                    let activeChip = null;
+
+                    const syncChipStates = () => {
+                        const currentAns = this.answers[q.id] || {};
+                        const usedCounts = {};
+                        Object.values(currentAns).forEach((val) => {
+                            const v = String(val || '').trim();
+                            if (v) {
+                                usedCounts[v] = (usedCounts[v] || 0) + 1;
+                            }
+                        });
+
+                        const tempCounts = Object.assign({}, usedCounts);
+                        chips.forEach((chip) => {
+                            const word = chip.dataset.word || '';
+                            if (tempCounts[word] && tempCounts[word] > 0) {
+                                chip.classList.add('is-used');
+                                tempCounts[word]--;
+                            } else {
+                                chip.classList.remove('is-used');
+                            }
+                        });
+                    };
+
+                    const clearSlot = (slot) => {
+                        const bid = slot.dataset.blankId;
+                        delete this.answers[q.id][bid];
+                        const textSpan = slot.querySelector('.wpo-blank-slot-text');
+                        const clearBtn = slot.querySelector('.wpo-blank-slot-clear');
+                        if (textSpan) textSpan.textContent = '___';
+                        if (clearBtn) clearBtn.style.display = 'none';
+                        slot.classList.remove('has-word', 'is-active');
+                        slot.classList.add('is-empty');
+                        syncChipStates();
+                        this.updateNavState();
+                    };
+
+                    const fillSlot = (slot, word) => {
+                        const bid = slot.dataset.blankId;
+                        this.answers[q.id][bid] = word;
+                        const textSpan = slot.querySelector('.wpo-blank-slot-text');
+                        const clearBtn = slot.querySelector('.wpo-blank-slot-clear');
+                        if (textSpan) textSpan.textContent = word;
+                        if (clearBtn) clearBtn.style.display = 'inline-flex';
+                        slot.classList.add('has-word');
+                        slot.classList.remove('is-empty', 'is-active');
+                        activeSlot = null;
+                        if (activeChip) {
+                            activeChip.classList.remove('is-active');
+                            activeChip = null;
+                        }
+                        syncChipStates();
+                        this.updateNavState();
+                    };
+
+                    slots.forEach((slot) => {
+                        slot.addEventListener('click', (e) => {
+                            const clearBtn = e.target.closest('.wpo-blank-slot-clear');
+                            if (clearBtn || slot.classList.contains('has-word')) {
+                                e.stopPropagation();
+                                clearSlot(slot);
+                                return;
+                            }
+
+                            if (activeChip && !activeChip.classList.contains('is-used')) {
+                                fillSlot(slot, activeChip.dataset.word || '');
+                                return;
+                            }
+
+                            if (activeSlot === slot) {
+                                slot.classList.remove('is-active');
+                                activeSlot = null;
+                            } else {
+                                slots.forEach((s) => s.classList.remove('is-active'));
+                                slot.classList.add('is-active');
+                                activeSlot = slot;
+                            }
+                        });
+                    });
+
+                    chips.forEach((chip) => {
+                        chip.addEventListener('click', () => {
+                            if (chip.classList.contains('is-used')) return;
+
+                            const word = chip.dataset.word || '';
+
+                            if (activeSlot && !activeSlot.classList.contains('has-word')) {
+                                fillSlot(activeSlot, word);
+                                return;
+                            }
+
+                            const firstEmpty = slots.find((s) => s.classList.contains('is-empty'));
+                            if (firstEmpty) {
+                                fillSlot(firstEmpty, word);
+                                return;
+                            }
+
+                            if (activeChip === chip) {
+                                chip.classList.remove('is-active');
+                                activeChip = null;
+                            } else {
+                                chips.forEach((c) => c.classList.remove('is-active'));
+                                chip.classList.add('is-active');
+                                activeChip = chip;
+                            }
+                        });
+                    });
+
+                    if (resetBtn) {
+                        resetBtn.addEventListener('click', () => {
+                            this.answers[q.id] = {};
+                            slots.forEach((slot) => {
+                                const textSpan = slot.querySelector('.wpo-blank-slot-text');
+                                const clearBtn = slot.querySelector('.wpo-blank-slot-clear');
+                                if (textSpan) textSpan.textContent = '___';
+                                if (clearBtn) clearBtn.style.display = 'none';
+                                slot.classList.remove('has-word', 'is-active');
+                                slot.classList.add('is-empty');
+                            });
+                            chips.forEach((c) => c.classList.remove('is-used', 'is-active'));
+                            activeSlot = null;
+                            activeChip = null;
+                            this.updateNavState();
+                        });
+                    }
+
+                    syncChipStates();
+                } else {
+                    const inputs = inner.querySelectorAll('.wpo-blank-inline-input');
+                    inputs.forEach((inp) => {
+                        inp.addEventListener('input', () => {
+                            const bid = inp.dataset.blankId;
+                            this.answers[q.id][bid] = inp.value.trim();
+                            this.updateNavState();
+                        });
+                    });
+                }
             } else if (q.question_type === 'slider') {
                 const slider = inner.querySelector('.wpo-slider-range-input');
                 const badge = inner.querySelector('.wpo-slider-badge');
@@ -639,10 +1136,179 @@
                         this.answers[q.id] = parseFloat(slider.value);
                     }
                 }
+            } else if (q.question_type === 'word_scramble') {
+                const widget = inner.querySelector('.wpo-scramble-widget');
+                if (!widget) return;
+
+                const tiles = q.tiles || [];
+                const wordLen = q.word_length || tiles.length;
+                const slotsContainer = widget.querySelector('.wpo-scramble-slots');
+                const bankContainer = widget.querySelector('.wpo-scramble-bank');
+                const btnBackspace = widget.querySelector('.wpo-btn-scramble-backspace');
+                const btnReset = widget.querySelector('.wpo-btn-scramble-reset');
+
+                let placedTiles = [];
+
+                // Restore prior answer if exists
+                const existingAns = this.answers[q.id];
+                if (existingAns && typeof existingAns === 'string') {
+                    const neededChars = existingAns.split('');
+                    const usedTileIds = new Set();
+                    neededChars.forEach((ch) => {
+                        const tile = tiles.find((t) => t.char.toUpperCase() === ch.toUpperCase() && !usedTileIds.has(t.id));
+                        if (tile) {
+                            usedTileIds.add(tile.id);
+                            placedTiles.push(tile);
+                        }
+                    });
+                }
+
+                const renderState = () => {
+                    let slotsHtml = '';
+                    const totalSlots = Math.max(wordLen, placedTiles.length);
+                    for (let i = 0; i < totalSlots; i++) {
+                        const tile = placedTiles[i];
+                        if (tile) {
+                            slotsHtml += `
+                                <div class="wpo-scramble-slot filled" data-idx="${i}" data-tile-id="${tile.id}" title="Нажмите, чтобы убрать букву">
+                                    <span class="wpo-slot-char">${this.escapeHtml(tile.char)}</span>
+                                </div>
+                            `;
+                        } else {
+                            slotsHtml += `
+                                <div class="wpo-scramble-slot empty" data-idx="${i}">
+                                    <span class="wpo-slot-placeholder">_</span>
+                                </div>
+                            `;
+                        }
+                    }
+                    slotsContainer.innerHTML = slotsHtml;
+
+                    const usedSet = new Set(placedTiles.map((t) => t.id));
+                    bankContainer.querySelectorAll('.wpo-letter-chip').forEach((chip) => {
+                        const tid = chip.dataset.tileId;
+                        if (usedSet.has(tid)) {
+                            chip.classList.add('used');
+                            chip.setAttribute('disabled', 'disabled');
+                        } else {
+                            chip.classList.remove('used');
+                            chip.removeAttribute('disabled');
+                        }
+                    });
+
+                    const assembledWord = placedTiles.map((t) => t.char).join('');
+                    this.answers[q.id] = assembledWord;
+                    this.updateNavState();
+                };
+
+                const placeTile = (tile) => {
+                    placedTiles.push(tile);
+                    renderState();
+                };
+
+                const removeTileAt = (idx) => {
+                    if (idx >= 0 && idx < placedTiles.length) {
+                        placedTiles.splice(idx, 1);
+                        renderState();
+                    }
+                };
+
+                bankContainer.addEventListener('click', (e) => {
+                    const chip = e.target.closest('.wpo-letter-chip');
+                    if (chip && !chip.classList.contains('used')) {
+                        const tid = chip.dataset.tileId;
+                        const tile = tiles.find((t) => t.id === tid);
+                        if (tile) {
+                            placeTile(tile);
+                        }
+                    }
+                });
+
+                slotsContainer.addEventListener('click', (e) => {
+                    const slot = e.target.closest('.wpo-scramble-slot.filled');
+                    if (slot) {
+                        const idx = parseInt(slot.dataset.idx, 10);
+                        removeTileAt(idx);
+                    }
+                });
+
+                if (btnBackspace) {
+                    btnBackspace.addEventListener('click', () => {
+                        if (placedTiles.length > 0) {
+                            removeTileAt(placedTiles.length - 1);
+                        }
+                    });
+                }
+
+                if (btnReset) {
+                    btnReset.addEventListener('click', () => {
+                        placedTiles = [];
+                        renderState();
+                    });
+                }
+
+                const handleKeyDown = (e) => {
+                    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+                        return;
+                    }
+                    if (e.key === 'Backspace') {
+                        if (placedTiles.length > 0) {
+                            removeTileAt(placedTiles.length - 1);
+                            e.preventDefault();
+                        }
+                        return;
+                    }
+                    if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                        const pressed = e.key.toUpperCase();
+                        const usedSet = new Set(placedTiles.map((t) => t.id));
+                        const available = tiles.find((t) => t.char.toUpperCase() === pressed && !usedSet.has(t.id));
+                        if (available) {
+                            placeTile(available);
+                            e.preventDefault();
+                        }
+                    }
+                };
+
+                if (this._scrambleKeyHandler) {
+                    window.removeEventListener('keydown', this._scrambleKeyHandler);
+                }
+                this._scrambleKeyHandler = handleKeyDown;
+                window.addEventListener('keydown', handleKeyDown);
+
+                renderState();
+            } else if (q.question_type === 'dictation') {
+                const widget = inner.querySelector('.wpo-dictation-widget');
+                if (!widget) return;
+                const selects = widget.querySelectorAll('.wpo-dict-inline-select');
+                selects.forEach((sel) => {
+                    sel.addEventListener('change', () => {
+                        const did = sel.dataset.dictId;
+                        if (!this.answers[q.id] || typeof this.answers[q.id] !== 'object' || Array.isArray(this.answers[q.id])) {
+                            this.answers[q.id] = {};
+                        }
+                        this.answers[q.id][did] = sel.value;
+                        this.updateNavState();
+                    });
+                });
             }
         }
 
         confirmSubmit() {
+            // First check for missing REQUIRED questions!
+            const unansweredReq = [];
+            this.questions.forEach((q, idx) => {
+                if (q.is_required && !this.isQuestionAnswered(q.id)) {
+                    unansweredReq.push({ q, index: idx, num: idx + 1 });
+                }
+            });
+
+            if (unansweredReq.length > 0) {
+                const numsStr = unansweredReq.map((item) => '#' + item.num).join(', ');
+                alert(`Невозможно завершить тестирование!\n\nВы не ответили на обязательные задания: ${numsStr}.\nПожалуйста, дайте ответ на все обязательные вопросы перед отправкой.`);
+                this.navigate(unansweredReq[0].index);
+                return;
+            }
+
             const unanswered = this.questions.filter((q) => !this.isQuestionAnswered(q.id)).length;
             let msg = 'Вы уверены, что хотите завершить олимпиаду и отправить работу на проверку?';
             if (unanswered > 0) {
@@ -656,6 +1322,18 @@
 
         async submitAnswers(forced) {
             if (this.isSubmitting) return;
+
+            // Enforce required questions check unless forced by timer expiration
+            if (!forced) {
+                const unansweredReq = this.questions.filter((q) => q.is_required && !this.isQuestionAnswered(q.id));
+                if (unansweredReq.length > 0) {
+                    const firstIdx = this.questions.indexOf(unansweredReq[0]);
+                    alert('Пожалуйста, ответьте на все обязательные вопросы перед отправкой!');
+                    if (firstIdx !== -1) this.navigate(firstIdx);
+                    return;
+                }
+            }
+
             this.isSubmitting = true;
 
             clearInterval(this.timerInterval);
@@ -777,11 +1455,6 @@
 
             html += `
                 <div style="margin-top:30px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
-                    ${data.certificate_url ? `
-                        <a href="${data.certificate_url}" target="_blank" class="wpo-btn wpo-btn-primary" style="text-decoration:none;">
-                            🏅 Распечатать / Скачать диплом
-                        </a>
-                    ` : ''}
                     <button type="button" class="wpo-btn wpo-btn-outline" onclick="location.reload();">
                         🔄 Вернуться на главную страницу теста
                     </button>
@@ -791,17 +1464,118 @@
             this.resultsScreen.innerHTML = html;
         }
 
-        showModalWarning(message) {
+        showAntiCheatToast(icon, title, message) {
+            // Prevent toast spam
+            const toastKey = `${icon}_${title}`;
+            const now = Date.now();
+            if (this.lastToastTimes[toastKey] && now - this.lastToastTimes[toastKey] < 1500) {
+                return;
+            }
+            this.lastToastTimes[toastKey] = now;
+
+            let container = document.querySelector('.wpo-anticheat-toasts-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'wpo-anticheat-toasts-container';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            toast.className = 'wpo-anticheat-toast';
+            toast.innerHTML = `
+                <div class="wpo-toast-icon">${icon}</div>
+                <div class="wpo-toast-body">
+                    <div class="wpo-toast-title">${this.escapeHtml(title)}</div>
+                    <div class="wpo-toast-msg">${this.escapeHtml(message)}</div>
+                </div>
+                <button type="button" class="wpo-toast-close" title="Закрыть">&times;</button>
+            `;
+
+            const removeToast = () => {
+                toast.classList.add('is-hiding');
+                setTimeout(() => toast.remove(), 250);
+            };
+
+            toast.querySelector('.wpo-toast-close').addEventListener('click', removeToast);
+            container.appendChild(toast);
+
+            setTimeout(removeToast, 3500);
+        }
+
+        showModalWarning(message, switchCount, maxSwitches) {
+            // Remove any existing warning overlay
+            const existing = document.querySelector('.wpo-anticheat-modal-overlay');
+            if (existing) existing.remove();
+
             const overlay = document.createElement('div');
-            overlay.className = 'wpo-modal-overlay';
+            overlay.className = 'wpo-modal-overlay wpo-anticheat-modal-overlay';
+            const remaining = (maxSwitches && maxSwitches > 0) ? Math.max(0, maxSwitches - switchCount) : null;
+
             overlay.innerHTML = `
-                <div class="wpo-modal-card">
-                    <h3 style="color:#b45309; margin-top:0;">⚠️ Внимание!</h3>
-                    <p style="font-size:15px; margin:16px 0;">${this.escapeHtml(message)}</p>
-                    <button type="button" class="wpo-btn wpo-btn-primary" style="padding:8px 20px;">Ясно, продолжить</button>
+                <div class="wpo-modal-card wpo-anticheat-modal-card">
+                    <div class="wpo-anticheat-badge-wrap">
+                        <span class="wpo-anticheat-pill">🛡️ СИСТЕМА ПРОКТОРИНГА</span>
+                    </div>
+                    <div class="wpo-anticheat-modal-icon">⚠️</div>
+                    <h3 style="color:#b45309; margin:10px 0 8px; font-size:18px;">Зафиксирована потеря фокуса окна!</h3>
+                    <p style="font-size:14px; line-height:1.5; color:#334155; margin:0 0 16px;">${this.escapeHtml(message)}</p>
+
+                    <div class="wpo-anticheat-stats-bar">
+                        <div class="wpo-ac-stat-item">
+                            <span class="wpo-ac-stat-label">Нарушений:</span>
+                            <strong class="wpo-ac-stat-val">${switchCount || 1}</strong>
+                        </div>
+                        ${maxSwitches > 0 ? `
+                        <div class="wpo-ac-stat-item">
+                            <span class="wpo-ac-stat-label">Лимит:</span>
+                            <strong class="wpo-ac-stat-val">${maxSwitches}</strong>
+                        </div>
+                        <div class="wpo-ac-stat-item ${remaining <= 1 ? 'is-danger' : ''}">
+                            <span class="wpo-ac-stat-label">Осталось:</span>
+                            <strong class="wpo-ac-stat-val">${remaining}</strong>
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    <p style="font-size:12px; color:#64748b; margin:12px 0 16px;">
+                        Пожалуйста, оставайтесь на вкладке олимпиады. Все переключения записываются в протокол.
+                    </p>
+
+                    <button type="button" class="wpo-btn wpo-btn-primary wpo-btn-resume" style="padding:9px 24px; width:100%; font-weight:700;">
+                        Я понимаю, вернуться к тестированию
+                    </button>
                 </div>
             `;
-            overlay.querySelector('button').addEventListener('click', () => {
+
+            overlay.querySelector('.wpo-btn-resume').addEventListener('click', () => {
+                overlay.remove();
+            });
+            document.body.appendChild(overlay);
+        }
+
+        showDisqualificationModal(message) {
+            const existing = document.querySelector('.wpo-anticheat-modal-overlay');
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.className = 'wpo-modal-overlay wpo-anticheat-modal-overlay is-disqualified';
+            overlay.innerHTML = `
+                <div class="wpo-modal-card wpo-anticheat-modal-card">
+                    <div class="wpo-anticheat-badge-wrap">
+                        <span class="wpo-anticheat-pill is-danger">⛔ ДИСКВАЛИФИКАЦИЯ</span>
+                    </div>
+                    <div class="wpo-anticheat-modal-icon" style="color:#dc2626;">🚫</div>
+                    <h3 style="color:#b91c1c; margin:10px 0 8px; font-size:18px;">Превышен лимит переключений вкладок</h3>
+                    <p style="font-size:14px; line-height:1.5; color:#334155; margin:0 0 16px;">
+                        ${this.escapeHtml(message)}
+                    </p>
+                    <button type="button" class="wpo-btn wpo-btn-primary wpo-btn-disq-close" style="padding:9px 24px; width:100%; background:#dc2626; border-color:#b91c1c;">
+                        Перейти к результатам
+                    </button>
+                </div>
+            `;
+
+            overlay.querySelector('.wpo-btn-disq-close').addEventListener('click', () => {
                 overlay.remove();
             });
             document.body.appendChild(overlay);
@@ -811,17 +1585,25 @@
             // First attempt: WP REST API
             if (config.restUrl) {
                 try {
+                    const headers = {
+                        'Content-Type': 'application/json'
+                    };
+                    if (config.restNonce) {
+                        headers['X-WP-Nonce'] = config.restNonce;
+                    }
                     const res = await fetch(`${config.restUrl}${endpoint}`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-WP-Nonce': config.nonce || ''
-                        },
+                        headers: headers,
                         body: JSON.stringify(data)
                     });
                     const json = await res.json();
                     if (res.ok) {
                         return json;
+                    } else if (res.status === 400 || res.status === 403 || res.status === 404) {
+                        return {
+                            success: false,
+                            message: json.message || (json.data && json.data.message) || 'Ошибка валидации данных.'
+                        };
                     }
                 } catch (e) {
                     // Fallback to AJAX
@@ -841,11 +1623,26 @@
                 }
             }
 
-            const res = await fetch(config.ajaxUrl, {
-                method: 'POST',
-                body: formData
-            });
-            return await res.json();
+            try {
+                const res = await fetch(config.ajaxUrl, {
+                    method: 'POST',
+                    body: formData
+                });
+                const json = await res.json();
+                if (json.success) {
+                    return json;
+                } else {
+                    return {
+                        success: false,
+                        message: (json.data && json.data.message) || json.message || 'Ошибка выполнения операции.'
+                    };
+                }
+            } catch (err) {
+                return {
+                    success: false,
+                    message: 'Сетевая ошибка при обращении к серверу.'
+                };
+            }
         }
 
         escapeHtml(str) {
@@ -853,6 +1650,39 @@
             const div = document.createElement('div');
             div.textContent = String(str);
             return div.innerHTML;
+        }
+
+        showImageLightbox(src, alt) {
+            let overlay = document.querySelector('.wpo-lightbox-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'wpo-lightbox-overlay';
+                overlay.innerHTML = `
+                    <div class="wpo-lightbox-backdrop"></div>
+                    <div class="wpo-lightbox-content">
+                        <img class="wpo-lightbox-img" src="" alt="">
+                        <button type="button" class="wpo-lightbox-close" title="Закрыть (Esc)">✕</button>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+
+                overlay.addEventListener('click', (e) => {
+                    if (e.target.closest('.wpo-lightbox-close') || e.target.classList.contains('wpo-lightbox-backdrop')) {
+                        overlay.classList.remove('is-active');
+                    }
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && overlay.classList.contains('is-active')) {
+                        overlay.classList.remove('is-active');
+                    }
+                });
+            }
+
+            const img = overlay.querySelector('.wpo-lightbox-img');
+            img.src = src;
+            img.alt = alt || '';
+            overlay.classList.add('is-active');
         }
     }
 

@@ -55,6 +55,8 @@ final class Quiz
             'max_attempts'        => 1,         // 1 = strict olympiad, 0 = unlimited
             'shuffle_questions'   => 0,         // 1 = random order
             'shuffle_answers'     => 1,         // 1 = shuffle choices
+            'show_question_points'=> 1,         // 1 = show points per question, 0 = hide points during test
+            'shared_texts'        => [],        // Shared texts/passages: [['id'=>'st_1','title'=>'...','content'=>'...'], ...]
             'allow_guest'         => 1,         // 1 = allow non-registered participants
             'require_org'         => 1,         // 1 = require school/grade/org
             'require_email'       => 1,         // 1 = require email
@@ -63,22 +65,40 @@ final class Quiz
             'anti_cheat_copy'     => 1,         // 1 = disable copy & right click
             'anti_cheat_blur'     => 1,         // 1 = track tab switches
             'max_tab_switches'    => 5,         // 0 = just log, >0 = limit
+            'anti_cheat_popup_warnings' => 1,   // 1 = show popup toast & modal warnings on anti-cheat triggers
             'allow_external_embed'=> 1,         // 1 = allow iframe embedding on external sites
             'webhook_url'         => '',        // External webhook URL for automated results dispatch
-            'enable_certificate'  => 1,         // 1 = generate printable / downloadable diploma
+            'webhook_secret'      => '',        // HMAC secret for X-WPO-Signature
+            'webhook_log'         => [],        // Last webhook deliveries: [['id'=>..., 'ok'=>true, ...], ...]
+
+            // Incoming REST API (integration by per-quiz key)
+            'api_enabled'         => 0,         // 1 = allow /external/* requests with X-API-Key
+            'api_key'             => '',        // Plain key shown to administrators
+            'api_key_hash'        => '',        // sha256 hash used for lookup
+            'api_key_created'     => '',        // Y-m-d H:i:s when the key was issued
             'email_participant'   => 1,         // 1 = send results to participant email
             'email_admin'         => 0,         // 1 = send notification to admin
             'admin_email_to'      => '',        // admin email recipient
 
-            // Network Folder Export Settings
-            'enable_network_export'   => 0,
-            'network_folder_type'     => 'auto',
-            'network_folder_path'     => '',
-            'network_folder_user'     => '',
-            'network_folder_password' => '',
-            'network_auto_export'     => 0,
+            // Network Folder Connection & Auto-Export/Import Settings
+            'enable_network_export'        => 0,
+            'network_folder_type'          => 'auto',
+            'network_folder_path'          => '',
+            'network_folder_user'          => '',
+            'network_folder_password'      => '',
+            'network_auto_export'          => 0,
+            'network_auto_import'          => 0,        // 1 = auto sync/import questions from network folder
+            'network_auto_import_mode'     => 'append', // append | replace
+            'network_auto_import_interval' => 'every_minute', // every_minute | hourly | twicedaily | daily (legacy always supported)
+            'network_auto_import_file'     => '',       // specific filename or empty for auto-detect
+            'last_network_import'          => [],       // last import audit record
+            'last_network_import_hash'     => '',       // md5 hash of imported content
+            'last_network_import_time'     => 0,        // last successful changed-file import
+            'last_network_check_time'      => 0,        // start of the last actual check, including unchanged/error
+            'last_network_check'           => [],       // check result / trigger, distinct from import audit
 
             // Start / Introductory Page Customization
+            'enable_intro_page'        => 1,    // 1 = show intro page with info/form, 0 = direct start
             'intro_badge'              => 'Олимпиада / Тестирование',
             'intro_title'              => '',   // empty = use quiz title
             'intro_banner_url'         => '',   // Optional cover image
@@ -150,7 +170,7 @@ final class Quiz
     }
 
     /**
-     * Get grade / diploma title and message based on percentage
+     * Get grade title and message based on percentage
      *
      * @return array{label: string, message: string}
      */
@@ -232,6 +252,122 @@ final class Quiz
             return $this->settings[$key];
         }
         return $defaults[$key] ?? $default;
+    }
+
+    /**
+     * Действующий ключ API олимпиады.
+     */
+    public function get_api_key(): string
+    {
+        return (string)$this->get_setting('api_key', '');
+    }
+
+    /**
+     * Есть ли у олимпиады выпущенный ключ API.
+     */
+    public function has_api_key(): bool
+    {
+        return $this->get_api_key() !== '';
+    }
+
+    /**
+     * Маска ключа для интерфейса администратора.
+     */
+    public function get_api_key_masked(): string
+    {
+        return Api::mask($this->get_api_key());
+    }
+
+    /**
+     * Выпустить новый ключ API (и включить API олимпиады).
+     */
+    public function generate_api_key(bool $force_new = true): string
+    {
+        $existing = $this->get_api_key();
+        if (!$force_new && $existing !== '') {
+            return $existing;
+        }
+
+        $key = Api::generate_key();
+        $this->update_patch([
+            'api_key'         => $key,
+            'api_key_hash'    => Api::hash_key($key),
+            'api_key_created' => current_time('mysql'),
+            'api_enabled'     => 1,
+        ]);
+
+        return $key;
+    }
+
+    /**
+     * Отозвать ключ API — все внешние запросы сразу перестают работать.
+     */
+    public function revoke_api_key(): bool
+    {
+        return $this->update_patch([
+            'api_key'         => '',
+            'api_key_hash'    => '',
+            'api_key_created' => '',
+            'api_enabled'     => 0,
+        ]);
+    }
+
+    /**
+     * Секрет подписи исходящих webhook-событий.
+     */
+    public function get_webhook_secret(): string
+    {
+        return (string)$this->get_setting('webhook_secret', '');
+    }
+
+    /**
+     * Get array of all shared texts configured for this quiz
+     */
+    public function get_shared_texts(): array
+    {
+        $texts = $this->get_setting('shared_texts', []);
+        return is_array($texts) ? $texts : [];
+    }
+
+    /**
+     * Get a specific shared text by ID
+     */
+    public function get_shared_text(string $id): ?array
+    {
+        if (empty($id)) {
+            return null;
+        }
+        foreach ($this->get_shared_texts() as $item) {
+            if (isset($item['id']) && (string)$item['id'] === $id) {
+                return $item;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Update shared texts collection for this quiz
+     */
+    public function save_shared_texts(array $texts): bool
+    {
+        $clean = [];
+        foreach ($texts as $idx => $t) {
+            $tid = sanitize_key($t['id'] ?? 'st_' . ($idx + 1));
+            $title = sanitize_text_field($t['title'] ?? '');
+            $content = wp_kses_post($t['content'] ?? '');
+            if ($title === '' && $content === '') {
+                continue;
+            }
+            $clean[] = [
+                'id'      => $tid,
+                'title'   => $title ?: sprintf(__('Общий текст #%d', 'wp-olympiad'), $idx + 1),
+                'content' => $content,
+            ];
+        }
+
+        $new_settings = $this->settings;
+        $new_settings['shared_texts'] = $clean;
+        return $this->update(['settings' => $new_settings]);
     }
 
     public static function get(int $id): ?self
@@ -319,11 +455,14 @@ final class Quiz
         if (empty($slug)) {
             $slug = 'olympiad-' . time();
         }
+        if (strlen($slug) > 180) {
+            $slug = substr($slug, 0, 180);
+        }
 
         // Unique slug check
         $exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE slug = %s", $slug));
         if ($exists) {
-            $slug .= '-' . wp_generate_password(4, false, false);
+            $slug = substr($slug, 0, 170) . '-' . wp_generate_password(4, false, false);
         }
 
         $description = wp_kses_post($data['description'] ?? '');
@@ -390,6 +529,59 @@ final class Quiz
         return $res !== false;
     }
 
+    public function update_setting(string $key, mixed $val): bool
+    {
+        return $this->update_patch([$key => $val]);
+    }
+
+    /**
+     * Точечно обновить отдельные настройки, не затирая параллельные изменения.
+     *
+     * В отличие от update(), здесь свежие настройки перечитываются из БД и
+     * поверх них применяется только патч. Это защищает журнал webhook,
+     * отметки авто-импорта и секреты от «отката» устаревшим объектом Quiz.
+     */
+    public function update_patch(array $patch): bool
+    {
+        global $wpdb;
+        $table = DB::quizzes_table();
+
+        $current_json = $wpdb->get_var($wpdb->prepare(
+            "SELECT settings FROM {$table} WHERE id = %d",
+            $this->id
+        ));
+
+        $settings = $this->settings;
+        if ($current_json !== null) {
+            $decoded = json_decode((string)$current_json, true);
+            if (is_array($decoded)) {
+                $settings = $decoded;
+            }
+        }
+
+        foreach ($patch as $key => $value) {
+            $settings[$key] = $value;
+        }
+
+        $res = $wpdb->update(
+            $table,
+            [
+                'settings'   => wp_json_encode($settings, JSON_UNESCAPED_UNICODE),
+                'updated_at' => current_time('mysql'),
+            ],
+            ['id' => $this->id],
+            ['%s', '%s'],
+            ['%d']
+        );
+
+        if ($res !== false) {
+            $this->settings = $settings;
+            self::clear_cache($this->id);
+        }
+
+        return $res !== false;
+    }
+
     public static function delete(int $id): bool
     {
         global $wpdb;
@@ -437,7 +629,13 @@ final class Quiz
      */
     public function is_active_now(): array
     {
-        if ($this->status !== 'publish') {
+        $user_id = get_current_user_id();
+        // Administrators can always preview and test the Olympiad
+        if ($user_id > 0 && user_can($user_id, 'manage_options')) {
+            return ['active' => true, 'reason' => ''];
+        }
+
+        if ($this->status !== 'publish' && $this->status !== 'published') {
             return [
                 'active' => false,
                 'reason' => __('Олимпиада в настоящее время не опубликована.', 'wp-olympiad'),
@@ -493,6 +691,11 @@ final class Quiz
      */
     public function can_user_attempt(int $user_id, string $email = ''): array
     {
+        // Administrators can always test the quiz without being locked out by attempt limits
+        if ($user_id > 0 && user_can($user_id, 'manage_options')) {
+            return ['allowed' => true, 'reason' => '', 'count' => 0];
+        }
+
         $max_attempts = (int)$this->get_setting('max_attempts', 1);
         if ($max_attempts <= 0) {
             return ['allowed' => true, 'reason' => '', 'count' => 0];

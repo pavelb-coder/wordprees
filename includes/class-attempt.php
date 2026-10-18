@@ -19,6 +19,8 @@ final class Attempt
     public string $participant_name = '';
     public string $participant_email = '';
     public string $participant_org = '';
+    public string $participant_phone = '';
+    public string $participant_city = '';
     public string $started_at = '';
     public ?string $submitted_at = null;
     public int $duration_seconds = 0;
@@ -42,6 +44,17 @@ final class Attempt
             $this->participant_name = (string)($data['participant_name'] ?? '');
             $this->participant_email = (string)($data['participant_email'] ?? '');
             $this->participant_org = (string)($data['participant_org'] ?? '');
+            $this->participant_phone = (string)($data['participant_phone'] ?? '');
+            $this->participant_city = (string)($data['participant_city'] ?? '');
+
+            // Fallback: if phone or city are empty, extract from legacy concatenated participant_org
+            if ($this->participant_phone === '' && preg_match('/(?:тел|phone):?\s*([^,;)]+)/iu', $this->participant_org, $m)) {
+                $this->participant_phone = trim($m[1]);
+            }
+            if ($this->participant_city === '' && preg_match('/\(([^)]+)\)/u', $this->participant_org, $m)) {
+                $this->participant_city = trim($m[1]);
+            }
+
             $this->started_at = (string)($data['started_at'] ?? '');
             $this->submitted_at = !empty($data['submitted_at']) ? (string)$data['submitted_at'] : null;
             $this->duration_seconds = (int)($data['duration_seconds'] ?? 0);
@@ -88,6 +101,8 @@ final class Attempt
         $name = sanitize_text_field($participant_data['name'] ?? '');
         $email = sanitize_email($participant_data['email'] ?? '');
         $org = sanitize_text_field($participant_data['org'] ?? '');
+        $phone = sanitize_text_field($participant_data['phone'] ?? ($participant_data['participant_phone'] ?? ''));
+        $city = sanitize_text_field($participant_data['city'] ?? ($participant_data['participant_city'] ?? ''));
 
         if ($user_id > 0 && empty($name)) {
             $user = wp_get_current_user();
@@ -108,6 +123,8 @@ final class Attempt
             'participant_name'  => $name,
             'participant_email' => $email,
             'participant_org'   => $org,
+            'participant_phone' => $phone,
+            'participant_city'  => $city,
             'started_at'        => $now,
             'submitted_at'      => null,
             'duration_seconds'  => 0,
@@ -120,10 +137,34 @@ final class Attempt
             'ip_address'        => $ip,
             'user_agent'        => $ua,
             'created_at'        => $now,
-        ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s']);
+        ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s']);
 
         if (!$inserted) {
-            return null;
+            // Fallback retry without new columns if DB schema has not yet migrated
+            $inserted = $wpdb->insert($table, [
+                'quiz_id'           => $quiz_id,
+                'user_id'           => $user_id,
+                'token'             => $token,
+                'participant_name'  => $name,
+                'participant_email' => $email,
+                'participant_org'   => $org,
+                'started_at'        => $now,
+                'submitted_at'      => null,
+                'duration_seconds'  => 0,
+                'tab_switches'      => 0,
+                'score'             => 0.00,
+                'max_score'         => 0.00,
+                'percentage'        => 0.00,
+                'passed'            => 0,
+                'status'            => 'in_progress',
+                'ip_address'        => $ip,
+                'user_agent'        => $ua,
+                'created_at'        => $now,
+            ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%d', '%s', '%s', '%s', '%s']);
+
+            if (!$inserted) {
+                return null;
+            }
         }
 
         return self::get((int)$wpdb->insert_id);
@@ -273,6 +314,10 @@ final class Attempt
             $where[] = 'status = %s';
             $params[] = sanitize_key($args['status']);
         }
+        if (isset($args['passed'])) {
+            $where[] = 'passed = %d';
+            $params[] = !empty($args['passed']) ? 1 : 0;
+        }
         if (!empty($args['user_id'])) {
             $where[] = 'user_id = %d';
             $params[] = (int)$args['user_id'];
@@ -317,6 +362,10 @@ final class Attempt
         if (!empty($args['status']) && $args['status'] !== 'all') {
             $where[] = 'status = %s';
             $params[] = sanitize_key($args['status']);
+        }
+        if (isset($args['passed'])) {
+            $where[] = 'passed = %d';
+            $params[] = !empty($args['passed']) ? 1 : 0;
         }
 
         $where_str = implode(' AND ', $where);

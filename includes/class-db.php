@@ -88,6 +88,8 @@ CREATE TABLE {$attempts_table} (
     participant_name varchar(255) NOT NULL DEFAULT '',
     participant_email varchar(255) NOT NULL DEFAULT '',
     participant_org varchar(255) NOT NULL DEFAULT '',
+    participant_phone varchar(100) NOT NULL DEFAULT '',
+    participant_city varchar(150) NOT NULL DEFAULT '',
     started_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
     submitted_at datetime DEFAULT NULL,
     duration_seconds int(11) NOT NULL DEFAULT 0,

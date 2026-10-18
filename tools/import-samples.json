@@ -1,0 +1,457 @@
+{
+    "version": "2.0",
+    "columns": [
+        {
+            "key": "type",
+            "label": "Тип задания",
+            "hint": "Код типа: single, multi, dropdown, boolean, number, text, matching, ordering, fill_blank, slider, word_scramble, dictation, essay. Можно писать по-русски: «один выбор», «тест», «соответствие»…",
+            "example": "single",
+            "width": 17,
+            "required": true
+        },
+        {
+            "key": "title",
+            "label": "Текст вопроса",
+            "hint": "Формулировка задания. Обязательное поле. Для fill_blank и dictation допускаются пропуски вида {ответ|синоним}.",
+            "example": "Какая планета является четвёртой по удалённости от Солнца?",
+            "width": 42,
+            "required": true
+        },
+        {
+            "key": "points",
+            "label": "Баллы",
+            "hint": "Целое число баллов за полностью верный ответ. По умолчанию 1.",
+            "example": "3",
+            "width": 9,
+            "required": false
+        },
+        {
+            "key": "penalty",
+            "label": "Штраф",
+            "hint": "Сколько баллов снимать за неверный ответ. По умолчанию 0.",
+            "example": "0",
+            "width": 9,
+            "required": false
+        },
+        {
+            "key": "group_name",
+            "label": "Раздел",
+            "hint": "Раздел / часть олимпиады для группировки заданий и навигатора. Необязательно.",
+            "example": "Часть 1: Астрономия",
+            "width": 24,
+            "required": false
+        },
+        {
+            "key": "choices",
+            "label": "Варианты / пары / элементы",
+            "hint": "Варианты через «|». Звёздочка * перед вариантом = правильный. Балл за конкретный пункт: «*Марс^2». Пары: «Франция => Париж». Последовательность: элементы по порядку.",
+            "example": "Венера | Земля | *Марс | Юпитер",
+            "width": 40,
+            "required": false
+        },
+        {
+            "key": "correct",
+            "label": "Ключ ответа",
+            "hint": "Альтернатива звёздочке: номер варианта (2), список (1,3), текст ответа, для boolean — да/нет.",
+            "example": "Марс",
+            "width": 22,
+            "required": false
+        },
+        {
+            "key": "target_value",
+            "label": "Число",
+            "hint": "Правильное число для number и slider. Допускается запятая: 9,8.",
+            "example": "9.8",
+            "width": 12,
+            "required": false
+        },
+        {
+            "key": "tolerance",
+            "label": "Погрешность ±",
+            "hint": "Допустимое отклонение для number и slider. 0 — точное совпадение.",
+            "example": "0.1",
+            "width": 12,
+            "required": false
+        },
+        {
+            "key": "answers",
+            "label": "Синонимы ответа",
+            "hint": "Для text — допустимые варианты ответа через «|». Для word_scramble — слово или слова через «|».",
+            "example": "Санкт-Петербург | Петербург | Спб",
+            "width": 32,
+            "required": false
+        },
+        {
+            "key": "explanation",
+            "label": "Пояснение",
+            "hint": "Методический разбор, который показывается после ответа и попадает в протокол.",
+            "example": "Четвёртой планетой от Солнца является Марс.",
+            "width": 34,
+            "required": false
+        },
+        {
+            "key": "is_required",
+            "label": "Обязательный",
+            "hint": "1 — без ответа нельзя завершить тест, 0 — можно пропустить.",
+            "example": "1",
+            "width": 12,
+            "required": false
+        },
+        {
+            "key": "content",
+            "label": "Доп. текст (HTML)",
+            "hint": "Дополнительный блок под формулировкой: таблица, список, цитата. Обычный HTML.",
+            "example": "",
+            "width": 30,
+            "required": false
+        },
+        {
+            "key": "image_url",
+            "label": "Иллюстрация (URL)",
+            "hint": "Полная ссылка на картинку к заданию. Необязательно.",
+            "example": "",
+            "width": 26,
+            "required": false
+        },
+        {
+            "key": "shared_text_id",
+            "label": "Общий текст (ID)",
+            "hint": "ID общего текста/кейса олимпиады (создаётся в конструкторе). Необязательно.",
+            "example": "",
+            "width": 16,
+            "required": false
+        },
+        {
+            "key": "template",
+            "label": "Текст с пропусками",
+            "hint": "Только для fill_blank и dictation: текст с пропусками {ответ|синоним}. Если пусто — берётся из колонки «Текст вопроса».",
+            "example": "",
+            "width": 34,
+            "required": false
+        },
+        {
+            "key": "extra",
+            "label": "Доп. параметры",
+            "hint": "Пары key=value через «;». Ключи: min, max, step, extra_letters, audio_url, scoring, mistakes, mode, distractors, min_words, max_words, keywords, min_keywords, match, typo, shuffle, case_sensitive.",
+            "example": "",
+            "width": 30,
+            "required": false
+        }
+    ],
+    "samples": [
+        {
+            "type": "single",
+            "title": "Какая планета является четвёртой по удалённости от Солнца?",
+            "points": "3",
+            "penalty": "1",
+            "group_name": "Часть 1: Астрономия",
+            "choices": "Венера | Земля | *Марс | Юпитер",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Четвёртой планетой от Солнца является Марс.",
+            "is_required": "1",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": ""
+        },
+        {
+            "type": "multi",
+            "title": "Какие из перечисленных элементов являются благородными газами?",
+            "points": "6",
+            "penalty": "1",
+            "group_name": "Часть 1: Химия",
+            "choices": "*Гелий^2 | Кислород | *Неон^2 | Водород | *Аргон^2",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Гелий, неон и аргон — благородные газы. Баллы начисляются пропорционально выбранным верным пунктам.",
+            "is_required": "0",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": "shuffle=1"
+        },
+        {
+            "type": "dropdown",
+            "title": "He ___ to school every day.",
+            "points": "2",
+            "penalty": "0",
+            "group_name": "Часть 2: Английский язык",
+            "choices": "go | *goes | gone | going",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Present Simple, 3-е лицо единственного числа: goes.",
+            "is_required": "0",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": "shuffle=0"
+        },
+        {
+            "type": "boolean",
+            "title": "Скорость света в вакууме составляет около 300 000 км/с.",
+            "points": "2",
+            "penalty": "0",
+            "group_name": "Часть 1: Физика",
+            "choices": "",
+            "correct": "да",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Скорость света c ≈ 299 792 458 м/с.",
+            "is_required": "0",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": ""
+        },
+        {
+            "type": "number",
+            "title": "Чему равно стандартное ускорение свободного падения на Земле (м/с²)?",
+            "points": "5",
+            "penalty": "0",
+            "group_name": "Часть 2: Расчётные задачи",
+            "choices": "",
+            "correct": "",
+            "target_value": "9,8",
+            "tolerance": "0,1",
+            "answers": "",
+            "explanation": "g ≈ 9,80665 м/с²; принимается ответ в диапазоне 9,7–9,9.",
+            "is_required": "1",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": ""
+        },
+        {
+            "type": "text",
+            "title": "В каком городе находится музей Эрмитаж?",
+            "points": "4",
+            "penalty": "0",
+            "group_name": "Часть 1: Культура",
+            "choices": "",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "Санкт-Петербург | Петербург | Спб | Ленинград",
+            "explanation": "Государственный Эрмитаж находится в Санкт-Петербурге.",
+            "is_required": "0",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": "match=fuzzy; typo=1"
+        },
+        {
+            "type": "matching",
+            "title": "Сопоставьте государства и их столицы:",
+            "points": "6",
+            "penalty": "0",
+            "group_name": "Часть 2: География",
+            "choices": "Франция => Париж | Италия => Рим | Япония => Токио | Бразилия => Бразилиа",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Базовые географические соответствия стран и столиц.",
+            "is_required": "0",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": ""
+        },
+        {
+            "type": "ordering",
+            "title": "Расположите исторические эпохи в правильном хронологическом порядке:",
+            "points": "5",
+            "penalty": "0",
+            "group_name": "Часть 2: История",
+            "choices": "Древний мир | Средние века | Новое время | Новейшее время",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Классическая периодизация всемирной истории.",
+            "is_required": "0",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": ""
+        },
+        {
+            "type": "fill_blank",
+            "title": "В {=1242|двенадцать сорок втором} году произошло Ледовое побоище на {=Чудском|Чудском озере}.",
+            "points": "5",
+            "penalty": "0",
+            "group_name": "Часть 2: История",
+            "choices": "",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Битва на Чудском озере состоялась 5 апреля 1242 года.",
+            "is_required": "0",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": "mode=input; case_sensitive=0"
+        },
+        {
+            "type": "slider",
+            "title": "Укажите, насколько вы согласны с утверждением: «Олимпиада была интересной» (0–10).",
+            "points": "2",
+            "penalty": "0",
+            "group_name": "Часть 3: Рефлексия",
+            "choices": "",
+            "correct": "",
+            "target_value": "8",
+            "tolerance": "1",
+            "answers": "",
+            "explanation": "Зачётный диапазон 7–9 по десятибалльной шкале.",
+            "is_required": "1",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": "min=0; max=10; step=1"
+        },
+        {
+            "type": "word_scramble",
+            "title": "Составьте слово из букв: ",
+            "points": "3",
+            "penalty": "0",
+            "group_name": "Часть 1: Русский язык",
+            "choices": "",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "КВАНТ | КВАНТЫ",
+            "explanation": "Термин «квант» — минимальная порция энергии.",
+            "is_required": "0",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": "extra_letters=Ы; case_sensitive=0"
+        },
+        {
+            "type": "dictation",
+            "title": "Вставьте пропущенные буквы:",
+            "points": "6",
+            "penalty": "0",
+            "group_name": "Часть 1: Русский язык",
+            "choices": "",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Проверяются орфограммы «безударная гласная в корне» и «непроизносимая согласная».",
+            "is_required": "1",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "Быстро {=ск|згк}ать по {=лест|лезт}нице.",
+            "extra": "scoring=proportional; mistakes=1"
+        },
+        {
+            "type": "essay",
+            "title": "Сформулируйте третий закон Ньютона и опишите пример его проявления в технике.",
+            "points": "10",
+            "penalty": "0",
+            "group_name": "Часть 3: Развёрнутые решения",
+            "choices": "",
+            "correct": "",
+            "target_value": "",
+            "tolerance": "",
+            "answers": "",
+            "explanation": "Сила действия равна силе противодействия (реактивное движение, отдача).",
+            "is_required": "1",
+            "content": "",
+            "image_url": "",
+            "shared_text_id": "",
+            "template": "",
+            "extra": "min_words=50; max_words=250; keywords=сила|противодействие|отдача; min_keywords=2"
+        }
+    ],
+    "type_catalog": [
+        {
+            "code": "single",
+            "label": "Один выбор (Radio)",
+            "description": "Один правильный ответ из предложенных вариантов"
+        },
+        {
+            "code": "multi",
+            "label": "Множественный выбор (Checkbox)",
+            "description": "Несколько правильных ответов с пропорциональным начислением баллов"
+        },
+        {
+            "code": "dropdown",
+            "label": "Выпадающий список (Dropdown)",
+            "description": "Выбор одного верного ответа из раскрывающегося списка"
+        },
+        {
+            "code": "boolean",
+            "label": "Верно / Неверно (True/False)",
+            "description": "Определение истинности утверждения (Да/Нет)"
+        },
+        {
+            "code": "number",
+            "label": "Числовой ответ (Точный или с погрешностью)",
+            "description": "Ввод числа с возможностью указания допустимой погрешности (± delta)"
+        },
+        {
+            "code": "text",
+            "label": "Краткий текстовый ответ",
+            "description": "Ввод слова/фразы с проверкой синонимов и игнорированием регистра"
+        },
+        {
+            "code": "matching",
+            "label": "Установление соответствий (Matching)",
+            "description": "Сопоставление элементов левой колонки с элементами правой колонки"
+        },
+        {
+            "code": "ordering",
+            "label": "Установление последовательности (Sequence)",
+            "description": "Расстановка элементов в правильном хронологическом или логическом порядке"
+        },
+        {
+            "code": "fill_blank",
+            "label": "Заполнение пропусков (Fill in the blanks)",
+            "description": "Текст с пропусками вида {ответ1|синоним}, заполняемыми участником"
+        },
+        {
+            "code": "slider",
+            "label": "Шкала / Ползунок (Slider / Scale)",
+            "description": "Выбор числового значения на шкале с проверкой диапазона допуска"
+        },
+        {
+            "code": "word_scramble",
+            "label": "Составление слова из букв (Анаграмма)",
+            "description": "Сборка слова из перемешанных буквенных плиток с проверкой"
+        },
+        {
+            "code": "dictation",
+            "label": "Интерактивный диктант",
+            "description": "Текст с орфограммами/пунктограммами вида {=верно|ошибка} и аудированием"
+        },
+        {
+            "code": "essay",
+            "label": "Развёрнутый ответ / Решение (Эссе)",
+            "description": "Текстовое решение или эссе, оцениваемое жюри/преподавателем вручную"
+        }
+    ]
+}

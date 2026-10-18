@@ -4,10 +4,13 @@ declare(strict_types=1);
 namespace WPOlympiad\Admin;
 
 use WPOlympiad\Quiz;
+use WPOlympiad\Style;
 use WPOlympiad\Question;
 use WPOlympiad\Attempt;
 use WPOlympiad\Export;
-use WPOlympiad\Leaderboard;
+use WPOlympiad\NetworkExport;
+use WPOlympiad\NetworkImport;
+use WPOlympiad\DesktopEditor;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -91,24 +94,44 @@ final class Admin
             return;
         }
 
+        wp_enqueue_media();
+
+        // Frontend stylesheet is reused by the live style preview on the quiz edit screen.
+        // It must be loaded BEFORE the admin stylesheet so that admin design tokens win.
+        $page = isset($_GET['page']) ? sanitize_key((string)$_GET['page']) : '';
+        $preview_styles = ($page === 'wp-olympiad-edit');
+        if ($preview_styles) {
+            wp_enqueue_style(
+                'wp-olympiad-frontend',
+                WP_OLYMPIAD_URL . 'public/css/olympiad-frontend.css',
+                [],
+                WP_OLYMPIAD_VERSION
+            );
+        }
+
         wp_enqueue_style(
             'wp-olympiad-admin',
             WP_OLYMPIAD_URL . 'admin/css/admin.css',
-            [],
-            WP_OLYMPIAD_VERSION
+            $preview_styles ? ['wp-olympiad-frontend'] : [],
+            WP_OLYMPIAD_VERSION . '.' . filemtime(WP_OLYMPIAD_PATH . 'admin/css/admin.css')
         );
 
         wp_enqueue_script(
             'wp-olympiad-admin',
             WP_OLYMPIAD_URL . 'admin/js/admin.js',
-            ['jquery'],
-            WP_OLYMPIAD_VERSION,
+            ['jquery', 'heartbeat'],
+            WP_OLYMPIAD_VERSION . '.' . filemtime(WP_OLYMPIAD_PATH . 'admin/js/admin.js'),
             true
         );
 
         wp_localize_script('wp-olympiad-admin', 'WPOlympiadAdmin', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
+            'restRoot' => rest_url('wp-olympiad/v1/'),
             'nonce'   => wp_create_nonce('wp_olympiad_admin_nonce'),
+            'styleDefaults' => Style::defaults(),
+            'stylePresets'  => Style::presets(),
+            'styleFonts'    => Style::fonts(),
+            'styleShadows'  => Style::shadows(),
             'i18n'    => [
                 'deleteConfirm' => __('Вы действительно хотите удалить этот элемент? Это действие необратимо.', 'wp-olympiad'),
                 'saved'         => __('Изменения успешно сохранены.', 'wp-olympiad'),
@@ -141,6 +164,7 @@ final class Admin
                     'max_attempts'      => max(0, (int)($_POST['max_attempts'] ?? 1)),
                     'shuffle_questions' => !empty($_POST['shuffle_questions']) ? 1 : 0,
                     'shuffle_answers'   => !empty($_POST['shuffle_answers']) ? 1 : 0,
+                    'show_question_points' => !empty($_POST['show_question_points']) ? 1 : 0,
                     'allow_guest'       => !empty($_POST['allow_guest']) ? 1 : 0,
                     'require_org'       => !empty($_POST['require_org']) ? 1 : 0,
                     'require_email'     => !empty($_POST['require_email']) ? 1 : 0,
@@ -149,14 +173,16 @@ final class Admin
                     'anti_cheat_copy'   => !empty($_POST['anti_cheat_copy']) ? 1 : 0,
                     'anti_cheat_blur'   => !empty($_POST['anti_cheat_blur']) ? 1 : 0,
                     'max_tab_switches'  => max(0, (int)($_POST['max_tab_switches'] ?? 5)),
+                    'anti_cheat_popup_warnings' => !empty($_POST['anti_cheat_popup_warnings']) ? 1 : 0,
                     'allow_external_embed' => !empty($_POST['allow_external_embed']) ? 1 : 0,
+                    'api_enabled'       => !empty($_POST['api_enabled']) ? 1 : 0,
                     'webhook_url'       => esc_url_raw($_POST['webhook_url'] ?? ''),
-                    'enable_certificate'=> !empty($_POST['enable_certificate']) ? 1 : 0,
                     'email_participant' => !empty($_POST['email_participant']) ? 1 : 0,
                     'email_admin'       => !empty($_POST['email_admin']) ? 1 : 0,
                     'admin_email_to'    => sanitize_email($_POST['admin_email_to'] ?? ''),
 
                     // Start / Introductory Page Settings
+                    'enable_intro_page'        => !empty($_POST['enable_intro_page']) ? 1 : 0,
                     'intro_badge'              => sanitize_text_field($_POST['intro_badge'] ?? 'Олимпиада / Тестирование'),
                     'intro_title'              => sanitize_text_field($_POST['intro_title'] ?? ''),
                     'intro_banner_url'         => esc_url_raw($_POST['intro_banner_url'] ?? ''),
@@ -199,22 +225,52 @@ final class Admin
                     // Network Folder Export Settings
                     'enable_network_export'    => !empty($_POST['enable_network_export']) ? 1 : 0,
                     'network_folder_type'      => sanitize_key($_POST['network_folder_type'] ?? 'auto'),
-                    'network_folder_path'      => sanitize_text_field(wp_unslash($_POST['network_folder_path'] ?? '')),
+                    'network_folder_path'      => NetworkExport::sanitize_path($_POST['network_folder_path'] ?? ''),
                     'network_folder_user'      => sanitize_text_field(wp_unslash($_POST['network_folder_user'] ?? '')),
                     'network_folder_password'  => (string)($_POST['network_folder_password'] ?? ''),
                     'network_auto_export'      => !empty($_POST['network_auto_export']) ? 1 : 0,
+
+                    // Network Auto-Import Settings
+                    'network_auto_import'          => !empty($_POST['network_auto_import']) ? 1 : 0,
+                    'network_auto_import_mode'     => in_array($_POST['network_auto_import_mode'] ?? '', ['append', 'replace'], true) ? $_POST['network_auto_import_mode'] : 'append',
+                    'network_auto_import_interval' => sanitize_key($_POST['network_auto_import_interval'] ?? 'every_minute'),
+                    'network_auto_import_file'     => sanitize_text_field(wp_unslash($_POST['network_auto_import_file'] ?? '')),
+
+                    // Appearance / Styling of the public testing page
+                    'style' => Style::sanitize_post($_POST),
                 ],
             ];
+
+            // Секрет для подписи webhook создаётся автоматически, как только указан URL.
+            if (!empty($data['settings']['webhook_url'])) {
+                $existing_secret = '';
+                if ($quiz_id > 0) {
+                    $existing_quiz = Quiz::get($quiz_id);
+                    $existing_secret = $existing_quiz ? $existing_quiz->get_webhook_secret() : '';
+                }
+                if ($existing_secret === '') {
+                    $data['settings']['webhook_secret'] = \WPOlympiad\Webhook::generate_secret();
+                }
+            }
 
             if ($quiz_id > 0) {
                 $quiz = Quiz::get($quiz_id);
                 if ($quiz) {
                     $quiz->update($data);
+                    DesktopEditor::ensure_for_quiz($quiz);
+                    if (!empty($data['settings']['network_auto_import'])) {
+                        NetworkImport::auto_import_for_quiz($quiz, false);
+                    }
                     wp_safe_redirect(admin_url('admin.php?page=wp-olympiad&updated=1'));
                     exit;
                 }
             } else {
                 $new_id = Quiz::create($data);
+                $quiz = Quiz::get($new_id);
+                if ($quiz) { DesktopEditor::ensure_for_quiz($quiz); }
+                if ($quiz && !empty($data['settings']['network_auto_import'])) {
+                    NetworkImport::auto_import_for_quiz($quiz, false);
+                }
                 wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-questions&quiz_id=' . $new_id . '&created=1'));
                 exit;
             }
@@ -284,7 +340,7 @@ final class Admin
             Export::export_pivot_matrix($quiz_id);
         }
 
-        // Export to Password-Protected Network Folder
+        // Export to Network Folder directly
         if ($action === 'export_network' && isset($_GET['quiz_id'])) {
             $quiz_id = (int)$_GET['quiz_id'];
             check_admin_referer('wpo_export_network_' . $quiz_id);
@@ -293,6 +349,42 @@ final class Admin
                 wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-attempts&quiz_id=' . $quiz_id . '&network_exported=1'));
             } else {
                 wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-attempts&quiz_id=' . $quiz_id . '&network_error=' . urlencode($res['message'])));
+            }
+            exit;
+        }
+
+        // Direct Download of Exported Network Protocol File
+        if ($action === 'download_network_file' && isset($_GET['quiz_id'])) {
+            $quiz_id = (int)$_GET['quiz_id'];
+            check_admin_referer('wpo_download_network_' . $quiz_id);
+            $raw_file = wp_unslash((string)($_GET['file'] ?? 'all'));
+            $filename = preg_replace('#[^a-zA-Z0-9_\-\.\/а-яА-ЯёЁ]#u', '', $raw_file);
+            if (empty($filename)) {
+                $filename = 'all';
+            }
+            NetworkExport::download_exported_file($quiz_id, $filename);
+            exit;
+        }
+
+        // Direct Download of Question Import Templates (CSV / JSON)
+        if ($action === 'download_question_template') {
+            $format = sanitize_key($_GET['format'] ?? 'csv');
+            NetworkImport::download_template($format);
+            exit;
+        }
+
+        // Direct Download / Export of Quiz Questions (CSV / JSON)
+        if ($action === 'export_questions' && isset($_GET['quiz_id'])) {
+            $quiz_id = (int)$_GET['quiz_id'];
+            $quiz = Quiz::get($quiz_id);
+            if (!$quiz) {
+                wp_die(esc_html__('Олимпиада не найдена.', 'wp-olympiad'));
+            }
+            $format = sanitize_key($_GET['format'] ?? 'csv');
+            if ($format === 'json') {
+                Export::export_quiz_questions_json($quiz);
+            } else {
+                Export::export_quiz_questions_csv($quiz);
             }
             exit;
         }
@@ -318,6 +410,8 @@ final class Admin
         if (!$quiz) {
             wp_die(__('Олимпиада не найдена.', 'wp-olympiad'));
         }
+
+        // Display only. The scheduler / request watchdog imports without opening this screen.
         $questions = $quiz->get_questions(false);
         require_once WP_OLYMPIAD_PATH . 'admin/views/questions-builder.php';
     }

@@ -21,7 +21,6 @@ final class Shortcodes
 
         // Handle standalone external connection / direct link & iframe embed
         add_action('template_redirect', [self::class, 'handle_standalone_runner']);
-        add_action('template_redirect', ['WPOlympiad\\Certificate', 'handle_request']);
     }
 
     /**
@@ -34,7 +33,7 @@ final class Shortcodes
             return;
         }
 
-        $quiz_id = (int)($runner === '1' ? ($_GET['quiz_id'] ?? 0) : $runner);
+        $quiz_id = (int)($_GET['quiz_id'] ?? ($_GET['id'] ?? $runner));
         if ($quiz_id <= 0) {
             return;
         }
@@ -53,6 +52,18 @@ final class Shortcodes
         // Enqueue frontend scripts & styles
         self::enqueue_assets();
 
+        $style_settings = Style::get($quiz);
+        $standalone_bg = !empty($style_settings['canvas_bg']) ? (string)$style_settings['canvas_bg'] : '#f1f5f9';
+
+        // Самый дальний план страницы: цвет + картинка из настроек «Стилистика страницы тестирования».
+        $body_canvas = Style::canvas_background_declarations($style_settings, true);
+        if (empty($body_canvas)) {
+            $body_canvas = ['background-color:' . $standalone_bg];
+        } elseif (empty($style_settings['canvas_bg'])) {
+            // Картинка без явного цвета — подстраховочный светлый фон.
+            $body_canvas[] = 'background-color:' . $standalone_bg;
+        }
+
         // Output clean standalone HTML document
         ?>
         <!DOCTYPE html>
@@ -65,7 +76,7 @@ final class Shortcodes
                 html, body {
                     margin: 0;
                     padding: 0;
-                    background: #f1f5f9;
+                    <?php echo implode(';', $body_canvas); // значения уже санитизированы: #hex и url("...") без кавычек и пробелов ?>;
                     min-height: 100vh;
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
                 }
@@ -109,10 +120,11 @@ final class Shortcodes
         );
 
         wp_localize_script('wp-olympiad-frontend', 'WPOlympiadConfig', [
-            'restUrl' => esc_url_raw(rest_url(RestApi::NAMESPACE)),
-            'ajaxUrl' => esc_url_raw(admin_url('admin-ajax.php')),
-            'nonce'   => wp_create_nonce('wp_olympiad_nonce'),
-            'i18n'    => [
+            'restUrl'   => esc_url_raw(rest_url(RestApi::NAMESPACE)),
+            'ajaxUrl'   => esc_url_raw(admin_url('admin-ajax.php')),
+            'nonce'     => wp_create_nonce('wp_olympiad_nonce'),
+            'restNonce' => wp_create_nonce('wp_rest'),
+            'i18n'      => [
                 'submitting'        => __('Отправка ответов...', 'wp-olympiad'),
                 'confirmSubmit'     => __('Вы уверены, что хотите завершить олимпиаду и отправить ответы?', 'wp-olympiad'),
                 'unansweredWarn'    => __('Внимание: у вас осталось %d неотвеченных вопросов!', 'wp-olympiad'),
@@ -148,12 +160,40 @@ final class Shortcodes
         $user_name = $is_logged_in ? ($current_user->display_name ?: $current_user->user_login) : '';
         $user_email = $is_logged_in ? $current_user->user_email : '';
 
+        // Guest restriction check
+        $allow_guest = (bool)$quiz->get_setting('allow_guest', 1);
+        if (!$allow_guest && !$is_logged_in) {
+            return '<div class="wpo-alert wpo-alert-warning">' . sprintf(
+                __('Для участия в олимпиаде необходимо авторизоваться на сайте. Пожалуйста, <a href="%s">войдите в систему</a>.', 'wp-olympiad'),
+                esc_url(wp_login_url(get_permalink() ?: home_url('/')))
+            ) . '</div>';
+        }
+
+        // Attempt limit check for logged-in users
+        if ($is_logged_in) {
+            $attempt_check = $quiz->can_user_attempt((int)$current_user->ID, $user_email);
+            if (!$attempt_check['allowed']) {
+                return '<div class="wpo-alert wpo-alert-warning">' . esc_html($attempt_check['reason']) . '</div>';
+            }
+        }
+
         $time_limit = (int)$quiz->get_setting('time_limit', 0);
         $questions_count = count($quiz->get_questions(false));
         $pass_pct = (float)$quiz->get_setting('pass_percentage', 60.0);
         $total_points = $quiz->get_total_points();
 
         // Start Page Customization Variables
+        $enable_intro_page = (bool)$quiz->get_setting('enable_intro_page', 1);
+        if (isset($atts['show_intro'])) {
+            $val = strtolower((string)$atts['show_intro']);
+            $enable_intro_page = !in_array($val, ['0', 'false', 'no', 'off'], true);
+        }
+        if (isset($atts['skip_intro'])) {
+            $val = strtolower((string)$atts['skip_intro']);
+            if (in_array($val, ['1', 'true', 'yes', 'on'], true)) {
+                $enable_intro_page = false;
+            }
+        }
         $intro_badge = (string)$quiz->get_setting('intro_badge', __('Олимпиада / Тестирование', 'wp-olympiad'));
         $intro_title = (string)$quiz->get_setting('intro_title', '');
         $display_title = !empty($intro_title) ? $intro_title : $quiz->title;
@@ -193,11 +233,12 @@ final class Shortcodes
 
         ob_start();
         ?>
-        <div class="wpo-quiz-wrapper" id="wpo-quiz-<?php echo esc_attr((string)$quiz_id); ?>" data-quiz-id="<?php echo esc_attr((string)$quiz_id); ?>">
+        <?php echo Style::render($quiz); // Scoped design / appearance of the testing page ?>
+        <div class="wpo-quiz-wrapper" id="wpo-quiz-<?php echo esc_attr((string)$quiz_id); ?>" data-quiz-id="<?php echo esc_attr((string)$quiz_id); ?>" data-skip-intro="<?php echo $enable_intro_page ? '0' : '1'; ?>">
             <!-- 1. Intro / Start Screen -->
-            <div class="wpo-card wpo-intro-screen" style="overflow:hidden;">
+            <div class="wpo-card wpo-intro-screen" style="overflow:hidden; <?php echo !$enable_intro_page ? 'display:none;' : ''; ?>">
                 <?php if (!empty($intro_banner_url)): ?>
-                    <div class="wpo-intro-banner-wrap" style="margin:-32px -32px 24px -32px; overflow:hidden;">
+                    <div class="wpo-intro-banner-wrap">
                         <img src="<?php echo esc_url($intro_banner_url); ?>" alt="<?php echo esc_attr($display_title); ?>" style="width:100%; max-height:260px; object-fit:cover; display:block;">
                     </div>
                 <?php endif; ?>
@@ -343,8 +384,13 @@ final class Shortcodes
                 <?php endif; ?>
             </div>
 
-            <!-- 2. Test Runner Screen (hidden initially) -->
-            <div class="wpo-card wpo-runner-screen" style="display:none;">
+            <!-- 2. Test Runner Screen (hidden initially if intro is enabled) -->
+            <div class="wpo-card wpo-runner-screen" style="<?php echo !$enable_intro_page ? '' : 'display:none;'; ?>">
+                <?php if (!$enable_intro_page): ?>
+                    <div class="wpo-runner-loading" style="text-align:center; padding:32px; font-weight:500; color:#475569;">
+                        ⏳ <?php esc_html_e('Загрузка заданий олимпиады...', 'wp-olympiad'); ?>
+                    </div>
+                <?php endif; ?>
                 <div class="wpo-runner-header">
                     <div class="wpo-question-counter">
                         <span class="wpo-counter-current">1</span> / <span class="wpo-counter-total"><?php echo esc_html((string)$questions_count); ?></span>
