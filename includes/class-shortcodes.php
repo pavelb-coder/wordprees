@@ -33,15 +33,27 @@ final class Shortcodes
             return;
         }
 
-        $quiz_id = (int)($_GET['quiz_id'] ?? ($_GET['id'] ?? $runner));
-        if ($quiz_id <= 0) {
+        $quiz_id_raw = $_GET['quiz_id'] ?? ($_GET['id'] ?? $runner);
+        if (is_array($quiz_id_raw)) {
             return;
         }
 
-        $quiz = Quiz::get($quiz_id);
+        // Explicit «quiz_id» / «id» keep priority for compatibility; otherwise the
+        // runner parameter carries either the numeric olympiad id (all links issued
+        // before named links existed) or the public link name chosen by an admin.
+        $runner_key = trim((string)$quiz_id_raw);
+        if ($runner_key === '') {
+            return;
+        }
+
+        $quiz = Quiz::resolve_public_link($runner_key);
         if (!$quiz) {
             wp_die(esc_html__('Олимпиада не найдена.', 'wp-olympiad'), '', ['response' => 404]);
         }
+
+        // From here on the numeric id of the resolved olympiad is used, no matter
+        // whether the link addressed it by id or by its public name.
+        $quiz_id = (int)$quiz->id;
 
         // Allow external embedding in iframes if configured
         if ($quiz->get_setting('allow_external_embed', 1) && !headers_sent()) {

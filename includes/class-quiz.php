@@ -74,6 +74,7 @@ final class Quiz
             'max_tab_switches'    => 5,         // 0 = just log, >0 = limit
             'anti_cheat_popup_warnings' => 1,   // 1 = show popup toast & modal warnings on anti-cheat triggers
             'allow_external_embed'=> 1,         // 1 = allow iframe embedding on external sites
+            'link_alias'          => '',        // Human readable name used in the public runner link instead of the numeric id
             'webhook_url'         => '',        // External webhook URL for automated results dispatch
             'webhook_secret'      => '',        // HMAC secret for X-WPO-Signature
             'webhook_log'         => [],        // Last webhook deliveries: [['id'=>..., 'ok'=>true, ...], ...]
@@ -200,10 +201,199 @@ final class Quiz
 
     /**
      * Get direct external link to standalone Olympiad runner
+     *
+     * The link carries the human readable name (settings «link_alias») when the
+     * administrator has chosen one, and the numeric olympiad id otherwise, so
+     * links distributed before a name existed keep working untouched.
      */
     public function get_direct_url(): string
     {
-        return add_query_arg(['wpo_runner' => $this->id], home_url('/'));
+        $alias = $this->get_link_alias();
+
+        return add_query_arg(['wpo_runner' => $alias !== '' ? $alias : $this->id], home_url('/'));
+    }
+
+    /** Allowed characters for a public link name (ASCII, lowercase, dash safe). */
+    public const LINK_ALIAS_PATTERN = '/^[a-z0-9][a-z0-9-]{0,47}$/';
+    public const LINK_ALIAS_MAX_LENGTH = 48;
+
+    /** Transliteration used so that a Russian olympiad name yields a readable URL part. */
+    private const LINK_ALIAS_TRANSLIT = [
+        'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e', 'ё' => 'e',
+        'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'й' => 'y', 'к' => 'k', 'л' => 'l', 'м' => 'm',
+        'н' => 'n', 'о' => 'o', 'п' => 'p', 'р' => 'r', 'с' => 's', 'т' => 't', 'у' => 'u',
+        'ф' => 'f', 'х' => 'kh', 'ц' => 'ts', 'ч' => 'ch', 'ш' => 'sh', 'щ' => 'shch',
+        'ъ' => '', 'ь' => '', 'ы' => 'y', 'э' => 'e', 'ю' => 'yu', 'я' => 'ya',
+    ];
+
+    /**
+     * Turn any administrator input into a safe link name: lowercase, Latin,
+     * single dashes, no leading/trailing dash, capped at LINK_ALIAS_MAX_LENGTH.
+     */
+    public static function normalize_link_alias($raw): string
+    {
+        if (!is_scalar($raw)) {
+            return '';
+        }
+
+        $raw = trim((string)$raw);
+        if ($raw === '') {
+            return '';
+        }
+
+        $lower = strtr(mb_strtolower($raw, 'UTF-8'), self::LINK_ALIAS_TRANSLIT);
+        $clean = preg_replace('/[^a-z0-9]+/', '-', $lower) ?? '';
+        $clean = trim($clean, '-');
+        if (strlen($clean) > self::LINK_ALIAS_MAX_LENGTH) {
+            $clean = rtrim(substr($clean, 0, self::LINK_ALIAS_MAX_LENGTH), '-');
+        }
+
+        return $clean;
+    }
+
+    /**
+     * Keep a stored link name normalized, no matter who wrote the settings
+     * (settings form, REST API or a targeted patch), so the LIKE-based lookup
+     * below always finds the alias that get_direct_url() prints.
+     */
+    private static function normalize_settings_link_alias(array &$settings): void
+    {
+        if (array_key_exists('link_alias', $settings)) {
+            $settings['link_alias'] = self::normalize_link_alias($settings['link_alias']);
+        }
+    }
+
+    /** Public link name of this olympiad; '' means the link uses the numeric id. */
+    public function get_link_alias(): string
+    {
+        $alias = self::normalize_link_alias((string)$this->get_setting('link_alias', ''));
+
+        return preg_match(self::LINK_ALIAS_PATTERN, $alias) ? $alias : '';
+    }
+
+    /**
+     * Validate raw administrator input and return [normalized alias, error code].
+     *
+     * Input that consists only of unusable characters is reported as invalid
+     * rather than accepted as an empty value, so a typo cannot silently delete the
+     * name an administrator has already chosen.
+     *
+     * @return array{0:string,1:string}
+     */
+    public static function sanitize_link_alias($raw, int $exclude_quiz_id = 0): array
+    {
+        $alias = self::normalize_link_alias($raw);
+        if ($alias === '' && trim((string)(is_scalar($raw) ? $raw : '')) !== '') {
+            return ['', 'invalid'];
+        }
+
+        return [$alias, self::link_alias_error($alias, $exclude_quiz_id)];
+    }
+
+    /**
+     * Validation result for a link name: '' = acceptable.
+     *
+     * @return string '' | 'invalid' | 'numeric' | 'taken'
+     */
+    public static function link_alias_error(string $alias, int $exclude_quiz_id = 0): string
+    {
+        if ($alias === '') {
+            return '';
+        }
+        if (!preg_match(self::LINK_ALIAS_PATTERN, $alias)) {
+            return 'invalid';
+        }
+        // Digits alone would be ambiguous with the numeric olympiad id already in circulation.
+        if (strspn($alias, '0123456789') === strlen($alias)) {
+            return 'numeric';
+        }
+
+        return self::link_alias_taken($alias, $exclude_quiz_id) ? 'taken' : '';
+    }
+
+    /** Whether another olympiad already uses this public link name. */
+    public static function link_alias_taken(string $alias, int $exclude_quiz_id = 0): bool
+    {
+        if ($alias === '') {
+            return false;
+        }
+
+        global $wpdb;
+        $table = DB::quizzes_table();
+        $like = '%"link_alias":"' . $wpdb->esc_like($alias) . '"%';
+        $rows = $wpdb->get_results($wpdb->prepare("SELECT id, settings FROM {$table} WHERE settings LIKE %s", $like));
+        if (!is_array($rows)) {
+            return false;
+        }
+
+        foreach ($rows as $row) {
+            if ($exclude_quiz_id > 0 && (int)$row->id === $exclude_quiz_id) {
+                continue;
+            }
+            $settings = json_decode((string)$row->settings, true);
+            if (!is_array($settings)) {
+                continue;
+            }
+            if (self::normalize_link_alias((string)($settings['link_alias'] ?? '')) === $alias) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Find an olympiad by its public link name. */
+    public static function get_by_link_alias(string $alias): ?self
+    {
+        if ($alias === '') {
+            return null;
+        }
+
+        global $wpdb;
+        $table = DB::quizzes_table();
+        $like = '%"link_alias":"' . $wpdb->esc_like($alias) . '"%';
+        $rows = $wpdb->get_results($wpdb->prepare("SELECT id FROM {$table} WHERE settings LIKE %s", $like));
+        if (!is_array($rows)) {
+            return null;
+        }
+
+        foreach ($rows as $row) {
+            $quiz = self::get((int)$row->id);
+            if ($quiz && $quiz->get_link_alias() === $alias) {
+                return $quiz;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve the value of the wpo_runner / wpo_embed parameter: an olympiad id
+     * (the shape every link created before 1.0.17 uses) or a link name.
+     */
+    public static function resolve_public_link($raw): ?self
+    {
+        if (!is_scalar($raw)) {
+            return null;
+        }
+
+        $key = trim((string)$raw);
+        if ($key === '' || strlen($key) > 96 || !preg_match('/^[0-9a-zA-Z_-]+$/', $key)) {
+            return null;
+        }
+        if (preg_match('/^\d{1,10}$/', $key)) {
+            return self::get((int)$key);
+        }
+
+        $quiz = self::get_by_link_alias($key);
+        if ($quiz) {
+            return $quiz;
+        }
+
+        // Введённое вручную имя может быть в верхнем регистре или с пробелами.
+        $normalized = self::normalize_link_alias($key);
+
+        return ($normalized !== '' && $normalized !== $key) ? self::get_by_link_alias($normalized) : null;
     }
 
     /**
@@ -443,6 +633,7 @@ final class Quiz
         $status = sanitize_key($data['status'] ?? 'publish');
 
         $settings = self::without_threshold_settings(array_merge(self::default_settings(), $data['settings'] ?? []));
+        self::normalize_settings_link_alias($settings);
         $settings_json = wp_json_encode($settings, JSON_UNESCAPED_UNICODE);
 
         $now = current_time('mysql');
@@ -489,6 +680,7 @@ final class Quiz
             $format[] = '%s';
         }
         if (isset($data['settings']) && is_array($data['settings'])) {
+            self::normalize_settings_link_alias($data['settings']);
             $this->settings = self::without_threshold_settings(array_merge($this->settings, $data['settings']));
             $fields['settings'] = wp_json_encode($this->settings, JSON_UNESCAPED_UNICODE);
             $format[] = '%s';
@@ -533,6 +725,7 @@ final class Quiz
             }
         }
 
+        self::normalize_settings_link_alias($patch);
         foreach ($patch as $key => $value) {
             $settings[$key] = $value;
         }

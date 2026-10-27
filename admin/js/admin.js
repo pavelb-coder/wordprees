@@ -2122,5 +2122,61 @@
                 try { if (document.execCommand('copy')) done(); } catch (e) { /* Keep the URL selected for manual copy. */ }
             }
         });
+
+        // Имя прямой внешней ссылки: живой предпросмотр ссылки и кода iframe (1.0.17).
+        (function () {
+            var $alias = $('#wpo-link-alias');
+            if (!$alias.length) return;
+
+            var base = String($alias.data('base') || '');
+            var quizId = String($alias.data('quiz') || '');
+            var $link = $('#wpo-direct-link');
+            var $open = $('#wpo-direct-link-open');
+            var $embed = $('#wpo-embed-code');
+            var cyr = {
+                'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y','к':'k','л':'l',
+                'м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch',
+                'ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya'
+            };
+
+            function slugify(value) {
+                var out = String(value || '').toLowerCase().replace(/[\u0430-\u044f\u0451]/g, function (ch) {
+                    return cyr[ch] !== undefined ? cyr[ch] : '';
+                });
+                out = out.replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+                return out.slice(0, 48).replace(/-+$/, '');
+            }
+
+            function buildUrl(key) {
+                var sep = base.indexOf('?') === -1 ? '?' : '&';
+                return base + sep + 'wpo_runner=' + encodeURIComponent(key);
+            }
+
+            function render() {
+                var alias = slugify($alias.val());
+                var url = alias ? buildUrl(alias) : (quizId ? buildUrl(quizId) : '');
+                if (!url) return;
+                if ($link.length) $link.val(url);
+                if ($open.length) $open.attr('href', url);
+                if ($embed.length) {
+                    var code = $embed.val();
+                    var hits = code.match(/src="[^"]*"/g) || [];
+                    if (hits.length === 1) {
+                        $embed.val(code.replace(/src="[^"]*"/, 'src="' + url.replace(/"/g, '&quot;') + '"'));
+                    }
+                }
+            }
+
+            $alias.on('input propertychange', render);
+            $('#wpo-link-alias-title').on('click', function () {
+                $alias.val(slugify($('#wpo-title').val()));
+                render();
+                $alias.trigger('focus').trigger('select');
+            });
+            $('#wpo-link-alias-reset').on('click', function () {
+                $alias.val('');
+                render();
+            });
+        })();
     });
 })(jQuery);

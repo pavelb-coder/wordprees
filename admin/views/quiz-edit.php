@@ -28,6 +28,10 @@ $allow_external_embed = $is_new ? 1 : (int)$quiz->get_setting('allow_external_em
 $webhook_url = $is_new ? '' : (string)$quiz->get_setting('webhook_url', '');
 $direct_url = $is_new ? '' : $quiz->get_direct_url();
 $embed_code = $is_new ? '' : $quiz->get_embed_code();
+// Имя прямой внешней ссылки: латиница/цифры/дефис, пусто = ссылка по номеру олимпиады.
+$link_alias = $is_new ? '' : $quiz->get_link_alias();
+$link_home_url = home_url('/');
+$link_alias_error = sanitize_key($_GET['link_alias_error'] ?? '');
 
 // Внешняя интеграция: ключ API и webhook
 $api_enabled = $is_new ? 0 : (int)$quiz->get_setting('api_enabled', 0);
@@ -404,13 +408,62 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                     <!-- 1. Публичные ссылки -->
                     <h3 class="wpo-subhead">🌐 <?php esc_html_e('Публичные ссылки и встраивание', 'wp-olympiad'); ?></h3>
                     <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="wpo-link-alias"><?php esc_html_e('Имя прямой внешней ссылки:', 'wp-olympiad'); ?></label></th>
+                            <td>
+                                <?php if ($link_alias_error !== ''): ?>
+                                    <div class="notice notice-warning inline" style="margin:0 0 10px;padding:10px 12px;">
+                                        <p style="margin:0;">
+                                            <?php
+                                            if ($link_alias_error === 'numeric') {
+                                                esc_html_e('Имя ссылки не может состоять только из цифр: такие адреса уже заняты номерами олимпиад. Добавьте буквы, например «math-2026». Настройки сохранены, имя ссылки не изменено.', 'wp-olympiad');
+                                            } elseif ($link_alias_error === 'taken') {
+                                                esc_html_e('Такое имя ссылки уже использует другая олимпиада. Придумайте другой адрес. Настройки сохранены, имя ссылки не изменено.', 'wp-olympiad');
+                                            } else {
+                                                esc_html_e('Имя ссылки должно начинаться с буквы или цифры и может содержать только латиницу, цифры и дефис (до 48 символов). Настройки сохранены, имя ссылки не изменено.', 'wp-olympiad');
+                                            }
+                                            ?>
+                                        </p>
+                                    </div>
+                                <?php endif; ?>
+                                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                    <input type="text" id="wpo-link-alias" name="link_alias" class="regular-text code"
+                                           maxlength="48" autocomplete="off" spellcheck="false"
+                                           value="<?php echo esc_attr($link_alias); ?>"
+                                           data-base="<?php echo esc_attr($link_home_url); ?>"
+                                           data-quiz="<?php echo esc_attr($is_new ? '' : (string)$quiz->id); ?>">
+                                    <button type="button" class="button button-secondary" id="wpo-link-alias-title"><?php esc_html_e('Из названия', 'wp-olympiad'); ?></button>
+                                    <?php if (!$is_new && $link_alias !== ''): ?>
+                                        <button type="button" class="button" id="wpo-link-alias-reset"><?php esc_html_e('Вернуть номер олимпиады', 'wp-olympiad'); ?></button>
+                                    <?php endif; ?>
+                                </div>
+                                <p class="description"><?php esc_html_e('Короткое человекочитаемое имя олимпиады в адресе прямой ссылки. Допустимы латинские буквы, цифры и одиночные дефисы (до 48 символов); русское название будет транслитерировано автоматически (например, «Математика 2026» → «matematika-2026»).', 'wp-olympiad'); ?></p>
+                                <?php if (!$is_new && $link_alias !== ''): ?>
+                                    <p class="description" style="margin-top:4px;">
+                                        <?php esc_html_e('Ссылка использует имя. Прежний адрес с номером олимпиады', 'wp-olympiad'); ?>
+                                        (<code>?wpo_runner=<?php echo esc_html((string)$quiz->id); ?></code>) <?php esc_html_e('продолжает работать, поэтому разосланные ранее ссылки не ломаются.', 'wp-olympiad'); ?>
+                                        <?php esc_html_e('При смене имени старый именованный адрес перестанет открываться — рассылайте тот, что показан в поле «Прямая внешняя ссылка».', 'wp-olympiad'); ?>
+                                    </p>
+                                <?php elseif ($is_new): ?>
+                                    <p class="description" style="margin-top:4px;">
+                                        <?php esc_html_e('После сохранения ссылка будет использовать номер олимпиады, а с заданным именем станет короче и понятнее участникам.', 'wp-olympiad'); ?>
+                                    </p>
+                                <?php else: ?>
+                                    <p class="description" style="margin-top:4px;">
+                                        <?php esc_html_e('Пока имя не задано, ссылка выглядит как', 'wp-olympiad'); ?>
+                                        <code>?wpo_runner=<?php echo esc_html((string)$quiz->id); ?></code>.
+                                        <?php esc_html_e('Заданное имя можно в любой момент вернуть к номеру олимпиады.', 'wp-olympiad'); ?>
+                                    </p>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
                         <?php if (!$is_new): ?>
                             <tr>
                                 <th scope="row"><?php esc_html_e('Прямая внешняя ссылка:', 'wp-olympiad'); ?></th>
                                 <td>
                                     <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                                        <input type="text" class="large-text code wpo-copyable-input" readonly value="<?php echo esc_url($direct_url); ?>" onclick="this.select();">
-                                        <a href="<?php echo esc_url($direct_url); ?>" target="_blank" class="button button-secondary">
+                                        <input type="text" id="wpo-direct-link" class="large-text code wpo-copyable-input" readonly value="<?php echo esc_url($direct_url); ?>" onclick="this.select();">
+                                        <a href="<?php echo esc_url($direct_url); ?>" id="wpo-direct-link-open" target="_blank" class="button button-secondary">
                                             ↗ <?php esc_html_e('Открыть', 'wp-olympiad'); ?>
                                         </a>
                                     </div>
@@ -420,8 +473,8 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <tr>
                                 <th scope="row"><?php esc_html_e('Код для вставки на внешний сайт (iframe):', 'wp-olympiad'); ?></th>
                                 <td>
-                                    <textarea class="large-text code wpo-copyable-input" rows="2" readonly onclick="this.select();"><?php echo esc_textarea($embed_code); ?></textarea>
-                                    <p class="description"><?php esc_html_e('Вставьте этот HTML-код на любой внешний сайт, в Tilda, Moodle, Stepik, Notion или школьный портал для бесшовного встраивания тестирования.', 'wp-olympiad'); ?></p>
+                                    <textarea id="wpo-embed-code" class="large-text code wpo-copyable-input" rows="2" readonly onclick="this.select();"><?php echo esc_textarea($embed_code); ?></textarea>
+                                    <p class="description"><?php esc_html_e('Вставьте этот HTML-код на любой внешний сайт, в Tilda, Moodle, Stepik, Notion или школьный портал для бесшовного встраивания тестирования. Код обновится после сохранения имени ссылки.', 'wp-olympiad'); ?></p>
                                 </td>
                             </tr>
                         <?php endif; ?>

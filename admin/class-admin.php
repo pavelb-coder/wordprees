@@ -179,6 +179,8 @@ final class Admin
                     'max_tab_switches'  => max(0, (int)($_POST['max_tab_switches'] ?? 5)),
                     'anti_cheat_popup_warnings' => !empty($_POST['anti_cheat_popup_warnings']) ? 1 : 0,
                     'allow_external_embed' => !empty($_POST['allow_external_embed']) ? 1 : 0,
+                    // Имя прямой внешней ссылки (пусто = ссылка по номеру олимпиады).
+                    'link_alias'  => Quiz::normalize_link_alias($_POST['link_alias'] ?? ''),
                     'api_enabled'       => !empty($_POST['api_enabled']) ? 1 : 0,
                     'webhook_url'       => esc_url_raw($_POST['webhook_url'] ?? ''),
                     // Notifications have been retired. Cached forms cannot re-enable them.
@@ -248,6 +250,23 @@ final class Admin
             // Missing fields in cached/partial forms must not disable guest access.
             $data['settings'] = array_merge($data['settings'], Quiz::guest_access_patch($_POST));
 
+            // A stale cached form without the link name field must not reset a name
+            // an administrator has already chosen.
+            $link_alias_error = '';
+            if (!isset($_POST['link_alias']) || !is_scalar($_POST['link_alias'])) {
+                unset($data['settings']['link_alias']);
+            } else {
+                // Name of the public runner link: checked against the format and against
+                // names of other olympiads. On failure the rest of the settings is saved
+                // and the previous link name stays untouched.
+                list($link_alias_clean, $link_alias_error) = Quiz::sanitize_link_alias($_POST['link_alias'], $quiz_id);
+                if ($link_alias_error !== '') {
+                    unset($data['settings']['link_alias']);
+                } else {
+                    $data['settings']['link_alias'] = $link_alias_clean;
+                }
+            }
+
             // Секрет для подписи webhook создаётся автоматически, как только указан URL.
             if (!empty($data['settings']['webhook_url'])) {
                 $existing_secret = '';
@@ -268,6 +287,10 @@ final class Admin
                     if (!empty($data['settings']['network_auto_import'])) {
                         NetworkImport::auto_import_for_quiz($quiz, false);
                     }
+                    if ($link_alias_error !== '') {
+                        wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . '&link_alias_error=' . $link_alias_error));
+                        exit;
+                    }
                     wp_safe_redirect(admin_url('admin.php?page=wp-olympiad&updated=1'));
                     exit;
                 }
@@ -277,6 +300,10 @@ final class Admin
                 if ($quiz) { DesktopEditor::ensure_for_quiz($quiz); }
                 if ($quiz && !empty($data['settings']['network_auto_import'])) {
                     NetworkImport::auto_import_for_quiz($quiz, false);
+                }
+                if ($link_alias_error !== '') {
+                    wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $new_id . '&link_alias_error=' . $link_alias_error));
+                    exit;
                 }
                 wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-questions&quiz_id=' . $new_id . '&created=1'));
                 exit;
