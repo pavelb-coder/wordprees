@@ -9,6 +9,52 @@ final class QuestionExportCleanup
     private const NAMES = ['questions.csv', 'questions.json'];
     private const DIRECTORY = 'вопросы';
 
+    /** Folder that held the removed questions export; kept as a public constant for diagnostics. */
+    public const FOLDER = self::DIRECTORY;
+
+    /**
+     * Exact names the questions export could have left behind for this quiz.
+     * Every name is plugin-owned: no wildcards, nothing that belongs to another author.
+     *
+     * @return array<int, string> base names inside «вопросы/»
+     */
+    public static function retired_names(Quiz $quiz): array
+    {
+        $slug = NetworkExport::build_safe_slug($quiz);
+        return [
+            sprintf('вопросы_%s.csv', $slug),
+            sprintf('вопросы_%s.json', $slug),
+            sprintf('критерии_и_ответы_%s.csv', $slug),
+            'список_заданий.csv',
+            'правильные_ответы.csv',
+            'questions.csv',
+            'questions.json',
+        ];
+    }
+
+    /**
+     * Retire the removed questions export after a successful answer delivery.
+     * Same safety rules as for «отчёты/»: refusals and unverifiable answers keep every file.
+     */
+    public static function prune_after_export(array $config, Quiz $quiz): array
+    {
+        $slug = NetworkExport::build_safe_slug($quiz);
+        if (!preg_match('/\A[a-zA-Z0-9_-]+\z/', $slug)) {
+            return [
+                'success'   => true,
+                'removed'   => [],
+                'absent'    => [],
+                'directory' => 'unverified',
+                'reason'    => __('Недопустимое имя олимпиады; папка «вопросы/» не изменена.', 'wp-olympiad'),
+            ];
+        }
+        return ReportExportCleanup::prune_names(
+            $config,
+            ReportExportCleanup::context(self::DIRECTORY, 'заданий', 'старые файлы заданий'),
+            self::retired_names($quiz)
+        );
+    }
+
     private static function local_root(array $config): ?string
     {
         $type = NetworkExport::detect_type($config); $path = NetworkExport::resolve_local_path((string)($config['path'] ?? ''));

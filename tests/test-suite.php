@@ -1281,7 +1281,10 @@ $it("Прямой экспорт ответов в сетевую папку (б
     $export_res = NetworkExport::export_quiz($net_quiz_id);
     if (!$export_res['success']) return false;
     if (empty($export_res['destination']) || !is_dir($export_res['destination'])) return false;
-    if ($export_res['files_count'] < 3) return false;
+    // 1.0.16: пакет выгрузки - основной протокол и попытка, файлов заданий в нём нет
+    if ($export_res['files_count'] !== 2) return false;
+    if (!empty(array_filter($export_res['files_list'], static fn($f) => str_starts_with((string) $f, 'вопросы/')))) return false;
+    if (($export_res['questions_included'] ?? null) !== false) return false;
 
     // 6. Verify NO ZIP archive is created in network folder (direct files only!)
     $zip_files = glob($net_dir . '/*.zip');
@@ -1292,7 +1295,7 @@ $it("Прямой экспорт ответов в сетевую папку (б
     if (($export_res['primary_file'] ?? '') !== $primary_protocol) return false;
     if (!file_exists($net_dir . '/' . $primary_protocol)) return false;
     if (count(glob($net_dir . '/протоколы/*.csv')) !== 1) return false;
-    if (!file_exists($net_dir . '/вопросы/список_заданий.csv')) return false;
+    if (is_dir($net_dir . '/вопросы')) return false;
     if (file_exists($net_dir . '/отчёты')) return false;
 
     // Verify non-Russified folders are NOT created
@@ -2401,7 +2404,8 @@ $it('Структурирование экспорта по папкам без 
         }
     }
 
-    if (!$has_ru_proto_dir || !$has_ru_quest_dir || $has_ru_rep_dir || !$has_ru_att_dir) {
+    // «вопросы/» больше не часть выгрузки, поэтому её в пакете быть не должно
+    if (!$has_ru_proto_dir || $has_ru_quest_dir || $has_ru_rep_dir || !$has_ru_att_dir) {
         return false;
     }
 
@@ -2419,7 +2423,7 @@ $it('Структурирование экспорта по папкам без 
 
     // Проверка физического создания структурированных подпапок на диске
     if (!is_dir($export_test_dir . '/протоколы')) return false;
-    if (!is_dir($export_test_dir . '/вопросы')) return false;
+    if (is_dir($export_test_dir . '/вопросы')) return false;
     if (file_exists($export_test_dir . '/отчёты')) return false;
     if (!is_dir($export_test_dir . '/попытки')) return false;
 
@@ -2443,6 +2447,20 @@ $it('Структурирование экспорта по папкам без 
     if (empty($att_files) || !file_exists($att_files[0])) return false;
     $att_content = file_get_contents($att_files[0]);
     if (!str_contains($att_content, 'Столица Бразилии')) return false;
+
+    // 3b. Снятый экспорт вопросов: сохранённый API по-прежнему пишет папку,
+    //     а ближайшая успешная выгрузка снимает её файлы точечно, не трогая чужие.
+    $slug61 = NetworkExport::build_safe_slug(Quiz::get($quiz_id));
+    $button61 = NetworkExport::export_questions_to_network(Quiz::get($quiz_id), ['type' => 'filesystem', 'path' => $export_test_dir]);
+    if (empty($button61['success']) || !is_dir($export_test_dir . '/вопросы')) return false;
+    file_put_contents($export_test_dir . '/вопросы/черновик_учителя.txt', 'не удалять');
+    $retire61 = NetworkExport::export_quiz($quiz_id, ['type' => 'filesystem', 'path' => $export_test_dir]);
+    if (empty($retire61['success'])) return false;
+    if (is_file($export_test_dir . '/вопросы/список_заданий.csv')) return false;
+    if (is_file($export_test_dir . '/вопросы/вопросы_' . $slug61 . '.json')) return false;
+    if (file_get_contents($export_test_dir . '/вопросы/черновик_учителя.txt') !== 'не удалять') return false;
+    if (($retire61['questions_directory'] ?? '') !== 'not_empty') return false;
+    if (count($retire61['removed_question_files'] ?? []) !== 5) return false;
 
     // 4. Проверка REST API POST /start параметров Anti-Cheat и всплывающих предупреждений
     $start_req = new WP_REST_Request('POST', '/wp-olympiad/v1/start');
@@ -4360,6 +4378,7 @@ require __DIR__ . '/test-report-export-cleanup.php';
 require __DIR__ . '/test-import-folder.php';
 require __DIR__ . '/test-import-search.php';
 require __DIR__ . '/test-auto-export-scope.php';
+require __DIR__ . '/test-questions-export-removal.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

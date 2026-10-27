@@ -734,7 +734,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                     <input type="checkbox" name="network_auto_export" value="1" <?php checked($network_auto_export, 1); ?>>
                                     <?php esc_html_e('Автоматически выгружать файлы протоколов и попыток (CSV) напрямую в сетевую папку при каждом завершении тестирования участником', 'wp-olympiad'); ?>
                                 </label>
-                                <p class="description"><?php esc_html_e('Задания в «вопросы/» этой выгрузкой не создаются и не обновляются — для них предназначена кнопка «Экспортировать вопросы в сетевую папку». Ранее созданные файлы остаются на месте и автоматически не удаляются.', 'wp-olympiad'); ?></p>
+                                <p class="description"><?php esc_html_e('Задания в сетевую папку больше не выгружаются: экспорт вопросов удалён. Если в хранилище остались файлы «вопросы/», плагин снимет их точечно после ближайшей успешной выгрузки; чужие файлы не затрагиваются.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
                         <tr>
@@ -800,9 +800,6 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         <button type="button" class="button button-secondary" id="wpo-btn-run-network-import" data-quiz-id="<?php echo esc_attr((string)$quiz->id); ?>">
                                             📥 <?php esc_html_e('Импортировать вопросы из папки сейчас', 'wp-olympiad'); ?>
                                         </button>
-                                        <button type="button" class="button button-secondary" id="wpo-btn-export-questions-network" data-quiz-id="<?php echo esc_attr((string)$quiz->id); ?>" title="<?php esc_attr_e('Экспортировать все задания олимпиады в сетевую папку (каталог вопросы/)', 'wp-olympiad'); ?>">
-                                            📤 <?php esc_html_e('Экспортировать вопросы в сетевую папку', 'wp-olympiad'); ?>
-                                        </button>
                                         <button type="button" class="button button-primary" id="wpo-btn-run-network-export" data-quiz-id="<?php echo esc_attr((string)$quiz->id); ?>">
                                             📤 <?php esc_html_e('Экспортировать в сетевую папку сейчас', 'wp-olympiad'); ?>
                                         </button>
@@ -843,9 +840,13 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         <?php if (!empty($last_network_export['reports_notice'])): ?>
                                             <div style="margin-top:4px; color:#92400e;"><?php echo esc_html($last_network_export['reports_notice']); ?></div>
                                         <?php endif; ?>
-                                        <?php if (array_key_exists('questions_included', $last_network_export) && empty($last_network_export['questions_included'])): ?>
+                                        <?php if (!empty($last_network_export['questions_notice'])): ?>
+                                            <div style="margin-top:4px; color:#92400e;">
+                                                <?php echo esc_html($last_network_export['questions_notice']); ?>
+                                            </div>
+                                        <?php elseif (array_key_exists('questions_included', $last_network_export) && empty($last_network_export['questions_included'])): ?>
                                             <div style="margin-top:4px; color:#166534;">
-                                                <?php esc_html_e('Файлы заданий в «вопросы/» этой выгрузкой не создавались и не изменялись — для них предназначена кнопка «Экспортировать вопросы в сетевую папку».', 'wp-olympiad'); ?>
+                                                <?php esc_html_e('Экспорт вопросов удалён: файлы заданий этой выгрузкой не создаются, а старые файлы «вопросы/» сняты.', 'wp-olympiad'); ?>
                                             </div>
                                         <?php endif; ?>
                                     </div>

@@ -105,23 +105,40 @@ final class ReportExportCleanup
     {
         $slug = NetworkExport::build_safe_slug($quiz);
         if (!preg_match('/\A[a-zA-Z0-9_-]+\z/', $slug)) {
-            return self::error(self::DIRECTORY, __('Недопустимое имя олимпиады.', 'wp-olympiad'));
+            return self::error(self::DIRECTORY, __('Недопустимое имя олимпиады.', 'wp-olympiad'), self::context());
         }
-        $names = [
+        return self::prune_names($config, self::context(), [
             'манифест_выгрузки_' . $slug . '.txt',
             'руководство_к_протоколам.txt',
             'сводка_результатов.txt',
-        ];
+        ]);
+    }
+
+    /**
+     * Same safety rules for any export-owned subfolder: an exact list of file names,
+     * never a wildcard, and the folder itself is removed only while it is empty.
+     *
+     * @param array{dir:string,label:string,phrase:string} $ctx wording context
+     * @param array<int, string> $names base names inside the folder
+     */
+    public static function prune_names(array $config, array $ctx, array $names): array
+    {
         $root = self::local_root($config);
         if ($root !== null) {
-            return self::filesystem($root, $names);
+            return self::filesystem($root, $names, $ctx);
         }
         return match (NetworkExport::detect_type($config)) {
-            'webdav' => self::webdav($config, $names),
-            'ftp' => self::ftp($config, $names),
-            'smb', 'filesystem' => self::smb($config, $names),
-            default => self::error(self::DIRECTORY, __('Неизвестный тип подключения.', 'wp-olympiad')),
+            'webdav' => self::webdav($config, $names, $ctx),
+            'ftp' => self::ftp($config, $names, $ctx),
+            'smb', 'filesystem' => self::smb($config, $names, $ctx),
+            default => self::error($ctx['dir'], __('Неизвестный тип подключения.', 'wp-olympiad'), $ctx),
         };
+    }
+
+    /** Context of the report folder; other callers build their own. */
+    public static function context(string $dir = self::DIRECTORY, string $label = 'отчётов', string $phrase = 'старые отчёты'): array
+    {
+        return ['dir' => $dir, 'label' => $label, 'phrase' => $phrase];
     }
 
     private static function local_root(array $config): ?string
@@ -137,10 +154,10 @@ final class ReportExportCleanup
         return $type === 'smb' && (DIRECTORY_SEPARATOR === '\\' || is_dir($path)) ? $path : null;
     }
 
-    private static function error(string $relative, string $reason): array
+    private static function error(string $relative, string $reason, array $ctx): array
     {
         // Diagnostics contain relative names only, never network credentials.
-        return ['success' => false, 'message' => sprintf(__('Не удалось убрать старые отчёты «%1$s»: %2$s', 'wp-olympiad'), $relative, $reason)];
+        return ['success' => false, 'message' => sprintf(__('Не удалось убрать %1$s «%2$s»: %3$s', 'wp-olympiad'), $ctx['phrase'], $relative, $reason)];
     }
 
     private static function result(array $removed, array $absent, string $directory): array
@@ -148,29 +165,29 @@ final class ReportExportCleanup
         return ['success' => true, 'removed' => $removed, 'absent' => $absent, 'directory' => $directory];
     }
 
-    private static function filesystem(string $root, array $names): array
+    private static function filesystem(string $root, array $names, array $ctx): array
     {
-        $dir = rtrim($root, '/\\') . '/' . self::DIRECTORY;
+        $dir = rtrim($root, '/\\') . '/' . $ctx['dir'];
         clearstatcache(true, $dir);
         if (is_link($dir)) {
-            return self::error(self::DIRECTORY, __('Папка отчётов является ссылкой; её содержимое не затрагивается.', 'wp-olympiad'));
+            return self::error($ctx['dir'], sprintf(__('Папка %s является ссылкой; её содержимое не затрагивается.', 'wp-olympiad'), $ctx['label'], $ctx), $ctx);
         }
         if (!file_exists($dir)) {
-            return self::result([], array_map(static fn($name) => self::DIRECTORY . '/' . $name, $names), 'absent');
+            return self::result([], array_map(static fn($name) => $ctx['dir'] . '/' . $name, $names), 'absent');
         }
         if (!is_dir($dir)) {
-            return self::error(self::DIRECTORY, __('Это не каталог.', 'wp-olympiad'));
+            return self::error($ctx['dir'], __('Это не каталог.', 'wp-olympiad'), $ctx);
         }
         $base = realpath($root);
         $actual = realpath($dir);
         if ($actual === false) {
             clearstatcache(true, $dir);
             if (!file_exists($dir) && !is_link($dir)) {
-                return self::result([], array_map(static fn($name) => self::DIRECTORY . '/' . $name, $names), 'absent');
+                return self::result([], array_map(static fn($name) => $ctx['dir'] . '/' . $name, $names), 'absent');
             }
         }
         if ($base === false || $actual === false || !str_starts_with(wp_normalize_path($actual) . '/', rtrim(wp_normalize_path($base), '/') . '/')) {
-            return self::error(self::DIRECTORY, __('Папка выходит за настроенный корень.', 'wp-olympiad'));
+            return self::error($ctx['dir'], __('Папка выходит за настроенный корень.', 'wp-olympiad'), $ctx);
         }
 
         // Preflight every exact target before deleting any of them.
@@ -178,7 +195,7 @@ final class ReportExportCleanup
             $target = $dir . '/' . $name;
             clearstatcache(true, $target);
             if ((file_exists($target) || is_link($target)) && !is_file($target) && !is_link($target)) {
-                return self::error(self::DIRECTORY . '/' . $name, __('Это не обычный файл; каталоги не удаляются.', 'wp-olympiad'));
+                return self::error($ctx['dir'] . '/' . $name, __('Это не обычный файл; каталоги не удаляются.', 'wp-olympiad'), $ctx);
             }
         }
         $removed = [];
@@ -186,18 +203,18 @@ final class ReportExportCleanup
         foreach ($names as $index => $name) {
             clearstatcache(true, $dir);
             if (!file_exists($dir) && !is_link($dir)) {
-                foreach (array_slice($names, $index) as $remaining) $absent[] = self::DIRECTORY . '/' . $remaining;
+                foreach (array_slice($names, $index) as $remaining) $absent[] = $ctx['dir'] . '/' . $remaining;
                 return self::result($removed, $absent, 'absent');
             }
             $current = realpath($dir);
             if ($current === false && !file_exists($dir) && !is_link($dir)) {
-                foreach (array_slice($names, $index) as $remaining) $absent[] = self::DIRECTORY . '/' . $remaining;
+                foreach (array_slice($names, $index) as $remaining) $absent[] = $ctx['dir'] . '/' . $remaining;
                 return self::result($removed, $absent, 'absent');
             }
             if (is_link($dir) || $current !== $actual) {
-                return self::error(self::DIRECTORY, __('Папка отчётов изменилась во время очистки.', 'wp-olympiad'));
+                return self::error($ctx['dir'], sprintf(__('Папка %s изменилась во время очистки.', 'wp-olympiad'), $ctx['label']), $ctx);
             }
-            $rel = self::DIRECTORY . '/' . $name;
+            $rel = $ctx['dir'] . '/' . $name;
             $target = $dir . '/' . $name;
             clearstatcache(true, $target);
             if (!file_exists($target) && !is_link($target)) {
@@ -211,7 +228,7 @@ final class ReportExportCleanup
                     $absent[] = $rel;
                     continue;
                 }
-                return self::error($rel, __('Нет прав удаления или файл занят.', 'wp-olympiad'));
+                return self::error($rel, __('Нет прав удаления или файл занят.', 'wp-olympiad'), $ctx);
             }
             $removed[] = $rel;
         }
@@ -219,7 +236,7 @@ final class ReportExportCleanup
         clearstatcache(true, $dir);
         if (!file_exists($dir) && !is_link($dir)) return self::result($removed, $absent, 'absent');
         if (is_link($dir) || realpath($dir) !== $actual) {
-            return self::error(self::DIRECTORY, __('Папка отчётов изменилась во время очистки.', 'wp-olympiad'));
+            return self::error($ctx['dir'], sprintf(__('Папка %s изменилась во время очистки.', 'wp-olympiad'), $ctx['label']), $ctx);
         }
         // rmdir is non-recursive and cannot remove a directory containing other files.
         if (@rmdir($dir)) {
@@ -230,7 +247,7 @@ final class ReportExportCleanup
             return self::result($removed, $absent, 'absent');
         }
         if (is_link($dir) || !is_dir($dir)) {
-            return self::error(self::DIRECTORY, __('Папка отчётов изменилась во время очистки.', 'wp-olympiad'));
+            return self::error($ctx['dir'], sprintf(__('Папка %s изменилась во время очистки.', 'wp-olympiad'), $ctx['label']), $ctx);
         }
         $children = @scandir($dir);
         if ($children === false) {
@@ -266,7 +283,7 @@ final class ReportExportCleanup
     }
 
     /** Read a single Depth:0 WebDAV resource, refusing ambiguous or unsafe XML. */
-    private static function dav_info(string $url, array $headers, string $relative): array
+    private static function dav_info(string $url, array $headers, string $relative, array $ctx): array
     {
         $headers['Depth'] = '0';
         $headers['Content-Type'] = 'application/xml; charset=utf-8';
@@ -280,15 +297,15 @@ final class ReportExportCleanup
             return ['success' => true, 'exists' => false];
         }
         if ($code !== 207 || !class_exists('DOMDocument')) {
-            return self::error($relative, sprintf(__('Не удалось безопасно проверить WebDAV (HTTP %d).', 'wp-olympiad'), $code));
+            return self::error($relative, sprintf(__('Не удалось безопасно проверить WebDAV (HTTP %d).', 'wp-olympiad'), $code, $ctx), $ctx);
         }
         $body = (string)wp_remote_retrieve_body($response);
         if ($body === '' || strlen($body) >= 1048576 || stripos($body, '<!DOCTYPE') !== false) {
-            return self::error($relative, __('Недопустимый ответ WebDAV.', 'wp-olympiad'));
+            return self::error($relative, __('Недопустимый ответ WebDAV.', 'wp-olympiad'), $ctx);
         }
         $xml = new \DOMDocument();
         if (!@$xml->loadXML($body, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
-            return self::error($relative, __('Некорректный XML WebDAV.', 'wp-olympiad'));
+            return self::error($relative, __('Некорректный XML WebDAV.', 'wp-olympiad'), $ctx);
         }
         $xpath = new \DOMXPath($xml);
         $xpath->registerNamespace('d', 'DAV:');
@@ -303,7 +320,7 @@ final class ReportExportCleanup
             }
         }
         if (count($matched) !== 1) {
-            return self::error($relative, __('WebDAV не подтвердил точный путь.', 'wp-olympiad'));
+            return self::error($relative, __('WebDAV не подтвердил точный путь.', 'wp-olympiad'), $ctx);
         }
         $type = null;
         $etag = '';
@@ -322,39 +339,39 @@ final class ReportExportCleanup
             }
         }
         if ($type === null) {
-            return self::error($relative, __('WebDAV не подтвердил тип объекта.', 'wp-olympiad'));
+            return self::error($relative, __('WebDAV не подтвердил тип объекта.', 'wp-olympiad'), $ctx);
         }
         return ['success' => true, 'exists' => true, 'type' => $type, 'etag' => $etag];
     }
 
-    private static function webdav(array $config, array $names): array
+    private static function webdav(array $config, array $names, array $ctx): array
     {
         $base = (string)$config['path'];
         $headers = [];
         if (!empty($config['user']) || !empty($config['password'])) {
             $headers['Authorization'] = 'Basic ' . base64_encode(($config['user'] ?? '') . ':' . ($config['password'] ?? ''));
         }
-        $directory = self::dav_info(self::dav_url($base, self::DIRECTORY), $headers, self::DIRECTORY);
+        $directory = self::dav_info(self::dav_url($base, $ctx['dir']), $headers, $ctx['dir'], $ctx);
         if (!$directory['success']) return self::skipped($directory['message']);
         if (!$directory['exists']) {
-            return self::result([], array_map(static fn($name) => self::DIRECTORY . '/' . $name, $names), 'absent');
+            return self::result([], array_map(static fn($name) => $ctx['dir'] . '/' . $name, $names), 'absent');
         }
         if ($directory['type'] !== 'collection') {
-            return self::error(self::DIRECTORY, __('WebDAV-объект не является каталогом.', 'wp-olympiad'));
+            return self::error($ctx['dir'], __('WebDAV-объект не является каталогом.', 'wp-olympiad'), $ctx);
         }
         $existing = [];
         $absent = [];
         foreach ($names as $name) {
-            $rel = self::DIRECTORY . '/' . $name;
+            $rel = $ctx['dir'] . '/' . $name;
             $url = self::dav_url($base, $rel);
-            $info = self::dav_info($url, $headers, $rel);
+            $info = self::dav_info($url, $headers, $rel, $ctx);
             if (!$info['success']) return self::skipped($info['message']);
             if (!$info['exists']) {
                 $absent[] = $rel;
                 continue;
             }
             if ($info['type'] !== 'file') {
-                return self::error($rel, __('Это каталог; его содержимое не удаляется.', 'wp-olympiad'));
+                return self::error($rel, __('Это каталог; его содержимое не удаляется.', 'wp-olympiad'), $ctx);
             }
             // A conditional DELETE prevents removing a replacement resource.
             // A conditional DELETE prevents removing a replacement resource. Some servers
@@ -381,7 +398,7 @@ final class ReportExportCleanup
             } elseif (in_array($code, [200, 204], true)) {
                 $removed[] = $file['relative'];
             } else {
-                return self::error($file['relative'], 'WebDAV HTTP ' . $code);
+                return self::error($file['relative'], 'WebDAV HTTP ' . $code, $ctx);
             }
         }
         // WebDAV DELETE on a collection is recursive, even if a prior listing
@@ -420,61 +437,61 @@ final class ReportExportCleanup
         return match ($matches[0][0] ?? '') { 'd' => 'dir', '-' => 'file', 'l' => 'link', default => null };
     }
 
-    private static function ftp(array $config, array $names): array
+    private static function ftp(array $config, array $names, array $ctx): array
     {
-        if (!function_exists('ftp_connect')) return self::error(self::DIRECTORY, __('В PHP отсутствует FTP.', 'wp-olympiad'));
+        if (!function_exists('ftp_connect')) return self::error($ctx['dir'], __('В PHP отсутствует FTP.', 'wp-olympiad'), $ctx);
         $parsed = parse_url((string)$config['path']);
-        if (!$parsed || empty($parsed['host'])) return self::error(self::DIRECTORY, __('Некорректный FTP URL.', 'wp-olympiad'));
+        if (!$parsed || empty($parsed['host'])) return self::error($ctx['dir'], __('Некорректный FTP URL.', 'wp-olympiad'), $ctx);
         $tls = strtolower((string)($parsed['scheme'] ?? '')) === 'ftps';
-        if ($tls && !function_exists('ftp_ssl_connect')) return self::error(self::DIRECTORY, __('FTPS не поддерживается сервером.', 'wp-olympiad'));
+        if ($tls && !function_exists('ftp_ssl_connect')) return self::error($ctx['dir'], __('FTPS не поддерживается сервером.', 'wp-olympiad'), $ctx);
         $connection = $tls ? @ftp_ssl_connect($parsed['host'], (int)($parsed['port'] ?? 21), 15) : @ftp_connect($parsed['host'], (int)($parsed['port'] ?? 21), 15);
-        if (!$connection) return self::error(self::DIRECTORY, __('Нет соединения с FTP.', 'wp-olympiad'));
+        if (!$connection) return self::error($ctx['dir'], __('Нет соединения с FTP.', 'wp-olympiad'), $ctx);
         try {
             $user = ($config['user'] ?? '') ?: rawurldecode((string)($parsed['user'] ?? 'anonymous'));
             $password = ($config['password'] ?? '') ?: rawurldecode((string)($parsed['pass'] ?? ''));
-            if (!@ftp_login($connection, $user, $password)) return self::error(self::DIRECTORY, __('Авторизация FTP отклонена.', 'wp-olympiad'));
+            if (!@ftp_login($connection, $user, $password)) return self::error($ctx['dir'], __('Авторизация FTP отклонена.', 'wp-olympiad'), $ctx);
             @ftp_pasv($connection, true);
             @ftp_set_option($connection, FTP_TIMEOUT_SEC, 15);
             $base_path = rawurldecode((string)($parsed['path'] ?? '/'));
-            if (!@ftp_chdir($connection, $base_path === '' ? '/' : $base_path)) return self::error(self::DIRECTORY, __('Корень FTP недоступен.', 'wp-olympiad'));
+            if (!@ftp_chdir($connection, $base_path === '' ? '/' : $base_path)) return self::error($ctx['dir'], __('Корень FTP недоступен.', 'wp-olympiad'), $ctx);
             $base = @ftp_pwd($connection);
-            if ($base === false) return self::error(self::DIRECTORY, __('FTP не подтвердил корень.', 'wp-olympiad'));
+            if ($base === false) return self::error($ctx['dir'], __('FTP не подтвердил корень.', 'wp-olympiad'), $ctx);
             $root_entries = self::ftp_entries($connection, '.');
-            if ($root_entries === null) return self::skipped(__('FTP не отвечает на запрос типов файлов (MLSD); папка «отчёты/» не изменена.', 'wp-olympiad'));
-            if (!array_key_exists(self::DIRECTORY, $root_entries)) {
-                return self::result([], array_map(static fn($name) => self::DIRECTORY . '/' . $name, $names), 'absent');
+            if ($root_entries === null) return self::skipped(sprintf(__('FTP не отвечает на запрос типов файлов (MLSD); папка «%s/» не изменена.', 'wp-olympiad'), $ctx['dir']));
+            if (!array_key_exists($ctx['dir'], $root_entries)) {
+                return self::result([], array_map(static fn($name) => $ctx['dir'] . '/' . $name, $names), 'absent');
             }
-            $listed_kind = self::ftp_listed_kind($connection, self::DIRECTORY);
+            $listed_kind = self::ftp_listed_kind($connection, $ctx['dir']);
             if (in_array($listed_kind, ['file', 'link'], true)) {
-                return self::error(self::DIRECTORY, __('Папка отчётов является ссылкой или файлом; её содержимое не затрагивается.', 'wp-olympiad'));
+                return self::error($ctx['dir'], sprintf(__('Папка %s является ссылкой или файлом; её содержимое не затрагивается.', 'wp-olympiad'), $ctx['label'], $ctx), $ctx);
             }
-            if ($root_entries[self::DIRECTORY] !== 'dir' || !@ftp_chdir($connection, self::DIRECTORY)) {
-                return self::error(self::DIRECTORY, __('FTP не подтвердил обычный каталог без ссылки.', 'wp-olympiad'));
+            if ($root_entries[$ctx['dir']] !== 'dir' || !@ftp_chdir($connection, $ctx['dir'])) {
+                return self::error($ctx['dir'], __('FTP не подтвердил обычный каталог без ссылки.', 'wp-olympiad'), $ctx);
             }
             if ($listed_kind !== 'dir') {
-                return self::skipped(__('LIST не подтвердил тип папки «отчёты»; она не изменена.', 'wp-olympiad'));
+                return self::skipped(sprintf(__('LIST не подтвердил тип папки «%s»; она не изменена.', 'wp-olympiad'), $ctx['dir']));
             }
             $entries = self::ftp_entries($connection, '.');
-            if ($entries === null) return self::skipped(__('FTP не отвечает на запрос типов файлов (MLSD); папка «отчёты/» не изменена.', 'wp-olympiad'));
+            if ($entries === null) return self::skipped(sprintf(__('FTP не отвечает на запрос типов файлов (MLSD); папка «%s/» не изменена.', 'wp-olympiad'), $ctx['dir']));
             foreach ($names as $name) {
                 if (!isset($entries[$name])) {
                     continue;
                 }
                 if ($entries[$name] !== 'file') {
-                    return self::error(self::DIRECTORY . '/' . $name, __('Это не обычный файл; ссылки и каталоги не удаляются.', 'wp-olympiad'));
+                    return self::error($ctx['dir'] . '/' . $name, __('Это не обычный файл; ссылки и каталоги не удаляются.', 'wp-olympiad'), $ctx);
                 }
                 $kind = self::ftp_listed_kind($connection, $name);
                 if ($kind === null) {
-                    return self::skipped(sprintf(__('LIST не подтвердил тип файла «%s»; папка «отчёты/» не изменена.', 'wp-olympiad'), $name));
+                    return self::skipped(sprintf(__('LIST не подтвердил тип файла «%1$s»; папка «%2$s/» не изменена.', 'wp-olympiad'), $name, $ctx['dir']));
                 }
                 if ($kind !== 'file') {
-                    return self::error(self::DIRECTORY . '/' . $name, __('Это не обычный файл; ссылки и каталоги не удаляются.', 'wp-olympiad'));
+                    return self::error($ctx['dir'] . '/' . $name, __('Это не обычный файл; ссылки и каталоги не удаляются.', 'wp-olympiad'), $ctx);
                 }
             }
             $removed = [];
             $absent = [];
             foreach ($names as $name) {
-                $rel = self::DIRECTORY . '/' . $name;
+                $rel = $ctx['dir'] . '/' . $name;
                 if (!isset($entries[$name])) {
                     $absent[] = $rel;
                     continue;
@@ -485,17 +502,17 @@ final class ReportExportCleanup
                         $absent[] = $rel;
                         continue;
                     }
-                    return self::error($rel, __('FTP запретил удаление.', 'wp-olympiad'));
+                    return self::error($rel, __('FTP запретил удаление.', 'wp-olympiad'), $ctx);
                 }
                 $removed[] = $rel;
             }
             $remaining = self::ftp_entries($connection, '.');
             if ($remaining === null || !@ftp_chdir($connection, $base)) return self::result($removed, $absent, 'retained');
             if ($remaining) return self::result($removed, $absent, 'not_empty');
-            if (@ftp_rmdir($connection, self::DIRECTORY)) return self::result($removed, $absent, 'removed');
+            if (@ftp_rmdir($connection, $ctx['dir'])) return self::result($removed, $absent, 'removed');
             $fresh_root = self::ftp_entries($connection, '.');
-            if (is_array($fresh_root) && !isset($fresh_root[self::DIRECTORY])) return self::result($removed, $absent, 'absent');
-            if (is_array($fresh_root) && ($fresh_root[self::DIRECTORY] ?? '') === 'dir' && @ftp_chdir($connection, self::DIRECTORY)) {
+            if (is_array($fresh_root) && !isset($fresh_root[$ctx['dir']])) return self::result($removed, $absent, 'absent');
+            if (is_array($fresh_root) && ($fresh_root[$ctx['dir']] ?? '') === 'dir' && @ftp_chdir($connection, $ctx['dir'])) {
                 $fresh = self::ftp_entries($connection, '.');
                 if (is_array($fresh) && $fresh) return self::result($removed, $absent, 'not_empty');
             }
@@ -505,25 +522,25 @@ final class ReportExportCleanup
         }
     }
 
-    private static function smb(array $config, array $names): array
+    private static function smb(array $config, array $names, array $ctx): array
     {
         $parsed = NetworkExport::parse_smb_path((string)($config['path'] ?? ''));
         $binary = NetworkExport::get_smbclient_binary();
-        if (!$parsed || !$binary || !function_exists('exec')) return self::error(self::DIRECTORY, __('SMB требует корректный путь и smbclient.', 'wp-olympiad'));
+        if (!$parsed || !$binary || !function_exists('exec')) return self::error($ctx['dir'], __('SMB требует корректный путь и smbclient.', 'wp-olympiad'), $ctx);
         $user = ($config['user'] ?? '') ?: $parsed['user'];
         $password = ($config['password'] ?? '') ?: $parsed['password'];
-        if (strpbrk($user . $password, "\r\n") !== false) return self::error(self::DIRECTORY, __('Некорректные реквизиты SMB.', 'wp-olympiad'));
+        if (strpbrk($user . $password, "\r\n") !== false) return self::error($ctx['dir'], __('Некорректные реквизиты SMB.', 'wp-olympiad'), $ctx);
         $authfile = null;
         $auth = '-N';
         try {
             if ($user !== '' || $password !== '') {
                 $authfile = tempnam(sys_get_temp_dir(), 'wpo_report_smb_');
-                if ($authfile === false) return self::error(self::DIRECTORY, __('Не удалось подготовить SMB-авторизацию.', 'wp-olympiad'));
+                if ($authfile === false) return self::error($ctx['dir'], __('Не удалось подготовить SMB-авторизацию.', 'wp-olympiad'), $ctx);
                 @chmod($authfile, 0600);
                 $domain = '';
                 if (str_contains($user, '\\')) [$domain, $user] = explode('\\', $user, 2);
                 elseif (str_contains($user, '/')) [$domain, $user] = explode('/', $user, 2);
-                if (@file_put_contents($authfile, "username = {$user}\npassword = {$password}\n" . ($domain !== '' ? "domain = {$domain}\n" : '')) === false) return self::error(self::DIRECTORY, __('Ошибка файла реквизитов SMB.', 'wp-olympiad'));
+                if (@file_put_contents($authfile, "username = {$user}\npassword = {$password}\n" . ($domain !== '' ? "domain = {$domain}\n" : '')) === false) return self::error($ctx['dir'], __('Ошибка файла реквизитов SMB.', 'wp-olympiad'), $ctx);
                 $auth = '-A ' . escapeshellarg($authfile);
             }
             $base = escapeshellarg($binary) . ' ' . escapeshellarg($parsed['service']) . ' ' . $auth . ' -t 12';
@@ -537,23 +554,23 @@ final class ReportExportCleanup
                 return [$exit, array_values(array_unique($matches[0])), $text];
             };
             $missing = self::MISSING_STATUSES;
-            [$code, $errors, $text] = $run('readlink "' . self::DIRECTORY . '"');
+            [$code, $errors, $text] = $run('readlink "' . $ctx['dir'] . '"');
             $state = self::judge_smb_directory($code, $errors, $text);
             if ($state === 'absent') {
-                return self::result([], array_map(static fn($name) => self::DIRECTORY . '/' . $name, $names), 'absent');
+                return self::result([], array_map(static fn($name) => $ctx['dir'] . '/' . $name, $names), 'absent');
             }
             if ($state === 'link') {
-                return self::error(self::DIRECTORY, __('Папка отчётов является ссылкой; её содержимое не затрагивается.', 'wp-olympiad'));
+                return self::error($ctx['dir'], sprintf(__('Папка %s является ссылкой; её содержимое не затрагивается.', 'wp-olympiad'), $ctx['label'], $ctx), $ctx);
             }
             if ($state === 'unsupported') {
-                return self::skipped(__('SMB не отвечает на проверку каталога на ссылку; папка «отчёты/» не изменена.', 'wp-olympiad'));
+                return self::skipped(sprintf(__('SMB не отвечает на проверку каталога на ссылку; папка «%s/» не изменена.', 'wp-olympiad'), $ctx['dir']));
             }
             $present = [];
             $absent = [];
             // Preflight the exact targets: reject links and directories, not just wildcards.
             foreach ($names as $name) {
-                $rel = self::DIRECTORY . '/' . $name;
-                $remote = self::DIRECTORY . '\\' . $name;
+                $rel = $ctx['dir'] . '/' . $name;
+                $remote = $ctx['dir'] . '\\' . $name;
                 [$code, $errors, $text] = $run('readlink "' . $remote . '"');
                 if ($errors && !array_diff($errors, $missing)) {
                     $absent[] = $rel;
@@ -562,42 +579,42 @@ final class ReportExportCleanup
                 [, , $info] = $run('allinfo "' . $remote . '"');
                 $state = self::judge_smb_target($code, $errors, $text, self::smb_attributes($info));
                 if ($state === 'dangerous') {
-                    return self::error($rel, __('SMB не подтвердил обычный файл: это ссылка или каталог.', 'wp-olympiad'));
+                    return self::error($rel, __('SMB не подтвердил обычный файл: это ссылка или каталог.', 'wp-olympiad'), $ctx);
                 }
                 if ($state === 'unsupported') {
-                    return self::skipped(sprintf(__('SMB не подтвердил тип файла «%s»; папка «отчёты/» не изменена.', 'wp-olympiad'), $name));
+                    return self::skipped(sprintf(__('SMB не подтвердил тип файла «%1$s»; папка «%2$s/» не изменена.', 'wp-olympiad'), $name, $ctx['dir']));
                 }
                 $present[] = $name;
             }
             $removed = [];
             foreach ($present as $index => $name) {
-            [$dir_code, $dir_errors, $dir_text] = $run('readlink "' . self::DIRECTORY . '"');
+            [$dir_code, $dir_errors, $dir_text] = $run('readlink "' . $ctx['dir'] . '"');
             $dir_state = self::judge_smb_directory($dir_code, $dir_errors, $dir_text);
             if ($dir_state === 'absent') {
-                foreach (array_slice($present, $index) as $remaining) $absent[] = self::DIRECTORY . '/' . $remaining;
+                foreach (array_slice($present, $index) as $remaining) $absent[] = $ctx['dir'] . '/' . $remaining;
                 return self::result($removed, $absent, 'absent');
             }
             if ($dir_state !== 'plain') {
-                return self::error(self::DIRECTORY, __('Папка отчётов изменилась во время очистки SMB.', 'wp-olympiad'));
+                return self::error($ctx['dir'], sprintf(__('Папка %s изменилась во время очистки SMB.', 'wp-olympiad'), $ctx['label']), $ctx);
             }
-                $rel = self::DIRECTORY . '/' . $name;
-                [$code, $errors] = $run('del "' . self::DIRECTORY . '\\' . $name . '"');
+                $rel = $ctx['dir'] . '/' . $name;
+                [$code, $errors] = $run('del "' . $ctx['dir'] . '\\' . $name . '"');
                 if ($errors && !array_diff($errors, $missing)) {
                     $absent[] = $rel;
                 } elseif ($code === 0 && !$errors) {
                     $removed[] = $rel;
                 } else {
-                    return self::error($rel, __('SMB не подтвердил удаление файла.', 'wp-olympiad'));
+                    return self::error($rel, __('SMB не подтвердил удаление файла.', 'wp-olympiad'), $ctx);
                 }
             }
-            [$dir_code, $dir_errors, $dir_text] = $run('readlink "' . self::DIRECTORY . '"');
+            [$dir_code, $dir_errors, $dir_text] = $run('readlink "' . $ctx['dir'] . '"');
             $dir_state = self::judge_smb_directory($dir_code, $dir_errors, $dir_text);
             if ($dir_state === 'absent') return self::result($removed, $absent, 'absent');
             if ($dir_state !== 'plain') {
-                return self::error(self::DIRECTORY, __('Папка отчётов изменилась во время очистки SMB.', 'wp-olympiad'));
+                return self::error($ctx['dir'], sprintf(__('Папка %s изменилась во время очистки SMB.', 'wp-olympiad'), $ctx['label']), $ctx);
             }
             // SMB rmdir is non-recursive; a concurrent or hidden file prevents removal.
-            [$code, $errors] = $run('rmdir "' . self::DIRECTORY . '"');
+            [$code, $errors] = $run('rmdir "' . $ctx['dir'] . '"');
             if ($errors && !array_diff($errors, $missing)) return self::result($removed, $absent, 'absent');
             if ($errors && !array_diff($errors, ['NT_STATUS_DIRECTORY_NOT_EMPTY'])) return self::result($removed, $absent, 'not_empty');
             if ($code === 0 && !$errors) return self::result($removed, $absent, 'removed');

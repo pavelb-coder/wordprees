@@ -26,8 +26,11 @@ $it('Экспорт вопросов: только пять русских фа�
         $exports_assert(count(NetworkImport::parse_questions_content(file_get_contents($csv[0]), basename($csv[0]))) === 13 && count(NetworkImport::parse_questions_content(file_get_contents($json[0]), basename($json[0]))) === 13, 'Localized export lost question data');
         $package = NetworkExport::generate_export_files($quiz);
         $question_files = array_values(array_filter(array_keys($package['files']), static fn($f) => str_starts_with($f, 'вопросы/')));
-        sort($question_files); $manual = $result['files']; sort($manual);
-        return $question_files === $manual;
+        $exports_assert($question_files === [], 'Пакет выгрузки ответов содержит файлы заданий');
+        $exports_assert(is_file($root . '/вопросы/критерии_и_ответы_' . NetworkExport::build_safe_slug($quiz) . '.csv'), 'Сохранённый метод не записал критерии');
+        $exports_assert(count(glob($root . '/вопросы/*')) === 5, 'Пять русских файлов заданий не на месте: ' . count(glob($root . '/вопросы/*')));
+        $retired = NetworkExport::export_quiz($id, ['type' => 'local', 'path' => $root]);
+        return !empty($retired['success']) && !is_dir($root . '/вопросы') && count($retired['removed_question_files'] ?? []) === 5;
     } finally { $exports_cleanup($root, $id); }
 });
 
@@ -68,8 +71,8 @@ $it('Экспорт вопросов: ошибка записи замены н�
     try {
         $config = ['type' => 'local', 'path' => $root];
         file_put_contents($root . '/вопросы/questions.csv', 'retain old');
-        $quiz = Quiz::get($id); $package = NetworkExport::generate_export_files($quiz);
-        $localized = current(array_filter(array_keys($package['files']), static fn($f) => str_starts_with($f, 'вопросы/вопросы_') && str_ends_with($f, '.json')));
+        $quiz = Quiz::get($id);
+        $localized = 'вопросы/вопросы_' . NetworkExport::build_safe_slug($quiz) . '.json';
         mkdir($root . '/' . $localized);
         $failed = NetworkExport::export_questions_to_network($quiz, $config);
         $exports_assert(empty($failed['success']) && file_get_contents($root . '/вопросы/questions.csv') === 'retain old', 'Old data deleted before replacement success');

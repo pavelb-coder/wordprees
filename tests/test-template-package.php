@@ -92,7 +92,15 @@ $it('Комплект шаблонов: пользовательские questio
             $pkg_assert(!empty($import['success']) && $import['imported_count'] === 13, 'User input format disabled: ' . $name);
         }
         $out = NetworkExport::export_quiz($id, ['type' => 'local', 'path' => $root]);
-        $pkg_assert(!empty($out['success']) && count(glob($root . '/вопросы/вопросы_*.csv')) >= 1 && count(glob($root . '/вопросы/вопросы_*.json')) >= 1 && !file_exists($root . '/вопросы/questions.csv') && !file_exists($root . '/вопросы/questions.json'), 'Actual question export was disabled');
+        // 1.0.16: выгрузка ответов больше не пишет задания, но снимает старые файлы «вопросы/»
+        $pkg_assert(!empty($out['success']) && !is_dir($root . '/вопросы') && count(glob($root . '/протоколы/*.csv')) === 1, 'Answer export stopped working after the questions export was removed');
+        $pkg_assert(file_get_contents($root . '/import/questions.csv') === $csv && file_get_contents($root . '/import/questions.json') === $json, 'Import files were touched by the retirement');
+        wp_mkdir_p($root . '/вопросы');
+        file_put_contents($root . '/вопросы/questions.csv', 'старый экспорт CSV');
+        file_put_contents($root . '/вопросы/questions.json', 'старый экспорт JSON');
+        $retire = NetworkExport::export_quiz($id, ['type' => 'local', 'path' => $root]);
+        $pkg_assert(!empty($retire['success']) && !file_exists($root . '/вопросы/questions.csv') && !file_exists($root . '/вопросы/questions.json') && !is_dir($root . '/вопросы'), 'Legacy question aliases survived the retirement');
+        $pkg_assert(file_get_contents($root . '/import/questions.csv') === $csv, 'Retirement reached import folder');
         return count(Quiz::get($id)->get_questions(false)) === 13;
     } finally { Quiz::delete($id); $pkg_cleanup($root); }
 });

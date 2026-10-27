@@ -412,11 +412,11 @@ final class RestApi
         }
 
         // Automatic export to password-protected network folder if configured.
-        // By the owner's decision it delivers protocols and attempts only: the
-        // question files in «вопросы/» are written by the separate button.
+        // Since 1.0.16 no export writes «вопросы/»: the questions export was removed, and
+        // NetworkExport::export_quiz retires its leftovers instead (protocols and attempts only).
         if (!empty($quiz->get_setting('network_auto_export', 0))) {
             try {
-                NetworkExport::export_quiz($quiz->id, [], false);
+                NetworkExport::export_quiz($quiz->id);
             } catch (\Throwable $e) {
                 // Silent catch: network delivery error must never break participant submission
                 error_log('WPOlympiad Auto Network Export Error: ' . $e->getMessage());

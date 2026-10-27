@@ -42,7 +42,7 @@ $it('Протокол: в новом комплекте и совместимо�
         $csv = $package['files'][$primary];
         $protocol_assert($csv === Export::export_quiz_attempts($id, false), 'Primary protocol no longer contains the complete group export');
         $protocol_assert(str_starts_with($csv, "\xEF\xBB\xBF") && str_contains($csv, 'Тестовый участник') && str_contains($csv, 'Тестовый вопрос протокола'), 'Protocol content or UTF-8 BOM changed');
-        $protocol_assert(isset($package['files']['вопросы/список_заданий.csv']), 'Question export changed');
+        $protocol_assert(!array_filter(array_keys($package['files']), static fn(string $name): bool => str_starts_with($name, 'вопросы/')), 'Question files are still part of the package');
         $protocol_assert(!array_filter(array_keys($package['files']), static fn(string $name): bool => str_starts_with($name, 'отчёты/')), 'Report files still generated');
         $attempts = array_filter(array_keys($package['files']), static fn(string $name): bool => str_starts_with($name, 'попытки/'));
         $protocol_assert(count($attempts) === 1, 'Individual attempt export changed');

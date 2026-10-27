@@ -380,20 +380,9 @@ final class Admin
             exit;
         }
 
-        // Direct Download / Export of Quiz Questions (CSV / JSON)
-        if ($action === 'export_questions' && isset($_GET['quiz_id'])) {
-            $quiz_id = (int)$_GET['quiz_id'];
-            $quiz = Quiz::get($quiz_id);
-            if (!$quiz) {
-                wp_die(esc_html__('Олимпиада не найдена.', 'wp-olympiad'));
-            }
-            $format = sanitize_key($_GET['format'] ?? 'xlsx');
-            if ($format === 'json') {
-                Export::export_quiz_questions_json($quiz);
-            } else {
-                Export::export_quiz_questions_csv($quiz);
-            }
-            exit;
+        // The questions download URL was retired in 1.0.16; direct links answer 410 instead of files.
+        if ($action === 'export_questions') {
+            wp_die(esc_html__('Экспорт вопросов удалён из плагина. Скачайте комплект файлов в разделе «Результаты» или используйте импорт из XLSX.', 'wp-olympiad'), '', ['response' => 410]);
         }
     }
 

@@ -639,6 +639,10 @@ final class Ajax
         wp_send_json_success($res);
     }
 
+    /**
+     * @deprecated 1.0.16 Кнопка выгрузки вопросов убрана из интерфейса; действие сохранено
+     *             для прежних внешних вызовов и по-прежнему пишет только «вопросы/».
+     */
     public static function ajax_export_questions_to_network(): void
     {
         if (!current_user_can('manage_options')) {

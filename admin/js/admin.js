@@ -1240,57 +1240,7 @@
         });
 
 
-        // 15f. Export Questions directly to Network Folder (AJAX)
-        $(document).on('click', '#wpo-btn-export-questions-network', function (e) {
-            e.preventDefault();
-            var $btn = $(this);
-            var quizId = parseInt($btn.attr('data-quiz-id'), 10) || 0;
-            var $spinner = $('#wpo-network-test-spinner');
-            var $msg = $('#wpo-network-test-message');
-
-            var path = getNetworkPath();
-            var type = $('#network_folder_type').val() || 'auto';
-            var user = $('#network_folder_user').val() || '';
-            var password = $('#network_folder_password').val() || '';
-
-            var origText = $btn.text();
-            $btn.prop('disabled', true).text('Экспорт заданий...');
-            if ($spinner.length) $spinner.addClass('is-active');
-            $msg.hide();
-
-            $.post(config.ajaxUrl, {
-                action: 'wp_olympiad_export_questions_to_network',
-                nonce: config.nonce,
-                quiz_id: quizId,
-                path: path,
-                type: type,
-                user: user,
-                password: password
-            }, function (res) {
-                $btn.prop('disabled', false).text(origText);
-                if ($spinner.length) $spinner.removeClass('is-active');
-                if (res.success && res.data) {
-                    var data = res.data;
-                    var html = '✓ <strong>' + wpoEsc(data.message) + '</strong>';
-                    if (data.destination) {
-                        html += '<div style="margin-top:4px; font-size:12px; color:#1e293b;">Сетевая папка: <code>' + data.destination + '/вопросы/</code> (' + (data.files_count || 1) + ' файлов)</div>';
-                    }
-                    $msg.css({ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '10px 14px', borderRadius: '4px' })
-                        .html(html)
-                        .fadeIn();
-                } else {
-                    $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', padding: '10px 14px', borderRadius: '4px' })
-                        .html('✕ ' + (res.data ? res.data.message : 'Ошибка экспорта заданий в сетевую папку.'))
-                        .fadeIn();
-                }
-            }).fail(function () {
-                $btn.prop('disabled', false).text(origText);
-                if ($spinner.length) $spinner.removeClass('is-active');
-                $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', padding: '10px 14px', borderRadius: '4px' })
-                    .html('✕ Сетевая ошибка при попытке экспорта заданий.')
-                    .fadeIn();
-            });
-        });
+        // 15f. Кнопка выгрузки вопросов удалена в 1.0.16 (экспорт вопросов больше не доступен из интерфейса).
 
         // 16. Questions Import Modal & Handlers (Desktop Upload + Network Folder)
         function scanNetworkImportFiles() {

@@ -27,11 +27,12 @@ $reports_dispose = static function (string $root, int $id): void {
     exec('rm -rf ' . escapeshellarg($root));
 };
 
-$it('Отчёты: новый комплект не содержит папку и сохраняет основной протокол и вопросы', function () use ($reports_assert): bool {
+$it('Отчёты: новый комплект не содержит папку отчётов и файлов заданий', function () use ($reports_assert): bool {
     $id = Quiz::create(['title' => 'No report package']);
     try {
         $pkg = NetworkExport::generate_export_files(Quiz::get($id));
-        $reports_assert(!empty($pkg['success']) && isset($pkg['files'][$pkg['primary_filename']], $pkg['files']['вопросы/список_заданий.csv']), 'Protocol or questions missing');
+        $reports_assert(!empty($pkg['success']) && isset($pkg['files'][$pkg['primary_filename']]), 'Primary protocol missing');
+        $reports_assert(!array_filter(array_keys($pkg['files']), static fn(string $f): bool => str_starts_with($f, 'вопросы/')), 'Question files are still in the package');
         foreach (array_keys($pkg['files']) as $path) {
             $reports_assert(!str_starts_with($path, 'отчёты/') && !str_starts_with($path, 'отчеты/') && !str_starts_with($path, 'reports/'), 'New report file generated');
         }
@@ -69,15 +70,24 @@ $it('Отчёты / диск: посторонние файлы, вложенн�
     } finally { $reports_dispose($root, $id); }
 });
 
-$it('Отчёты / диск: не удалять старые данные при сбое выгрузки или каталогах с именами файлов', function () use ($reports_assert, $reports_fixture, $reports_dispose): bool {
+$it('Отчёты / диск: конфликт в «вопросы/» не валит выгрузку, сбой доставки и каталог с именем отчёта остаются ошибками', function () use ($reports_assert, $reports_fixture, $reports_dispose): bool {
     [$root, $id, $names] = $reports_fixture();
     try {
         $quiz = Quiz::get($id); $slug = NetworkExport::build_safe_slug($quiz);
         wp_mkdir_p($root . '/вопросы/вопросы_' . $slug . '.json');
+        $conflict = NetworkExport::export_quiz($id, ['type' => 'filesystem', 'path' => $root]);
+        $reports_assert(!empty($conflict['success']) && is_dir($root . '/вопросы/вопросы_' . $slug . '.json')
+            && str_contains((string) $conflict['message'], 'Очистка «вопросы/» не выполнена'), 'Question folder conflict broke the answer export');
+        $reports_assert($conflict['removed_report_files'] === array_map(static fn(string $n): string => 'отчёты/' . $n, $names), 'Reports were not retired by the successful export');
+        rmdir($root . '/вопросы/вопросы_' . $slug . '.json'); rmdir($root . '/вопросы');
+        wp_mkdir_p($root . '/отчёты');
+        foreach ($names as $name) file_put_contents($root . '/отчёты/' . $name, 'восстановленный отчёт ' . $name);
+        unlink($root . '/протоколы/протокол_' . $slug . '.csv');
+        mkdir($root . '/протоколы/протокол_' . $slug . '.csv');
         $bad = NetworkExport::export_quiz($id, ['type' => 'filesystem', 'path' => $root]);
         $reports_assert(empty($bad['success']), 'Failed delivery reported success');
         foreach ($names as $name) $reports_assert(file_exists($root . '/отчёты/' . $name), 'Report removed before full delivery');
-        rmdir($root . '/вопросы/вопросы_' . $slug . '.json');
+        rmdir($root . '/протоколы/протокол_' . $slug . '.csv');
         unlink($root . '/отчёты/' . $names[0]); mkdir($root . '/отчёты/' . $names[0]);
         file_put_contents($root . '/отчёты/' . $names[0] . '/внутри.txt', 'не удалять');
         $bad = NetworkExport::export_quiz($id, ['type' => 'filesystem', 'path' => $root]);

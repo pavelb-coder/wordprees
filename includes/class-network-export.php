@@ -76,10 +76,9 @@ final class NetworkExport
      *
      * @param int $quiz_id
      * @param array $override_config Optional overrides for path/credentials
-     * @param bool $include_questions Question files in «вопросы/» are written only by the
-     *                                 explicit questions/manual export (owner decision); the
-     *                                 automatic per-submission export passes false and then
-     *                                 neither writes nor cleans that directory.
+     * @param bool $include_questions Deprecated since 1.0.16 and ignored: the questions
+     *                                 export was removed, so no export writes «вопросы/».
+     *                                 The argument is kept so old callers keep working.
      * @return array{
      *     success: bool,
      *     message: string,
@@ -88,12 +87,15 @@ final class NetworkExport
      *     files_count?: int,
      *     files_list?: array<int, string>,
      *     questions_included?: bool,
+     *     removed_question_files?: array<int, string>,
+     *     questions_directory?: string,
+     *     questions_notice?: string,
      *     download_url?: string,
      *     file_url?: string|null,
      *     size?: int
      * }
      */
-    public static function export_quiz(int $quiz_id, array $override_config = [], bool $include_questions = true): array
+    public static function export_quiz(int $quiz_id, array $override_config = [], bool $include_questions = false): array
     {
         $quiz = Quiz::get($quiz_id);
         if (!$quiz) {
@@ -105,15 +107,10 @@ final class NetworkExport
 
         $config = self::get_quiz_network_config($quiz, $override_config);
 
-        // Generate direct export files (no archive)
-        $package = self::generate_export_files($quiz, $include_questions);
+        // Generate direct export files (no archive). Question files are no longer exported at all.
+        $package = self::generate_export_files($quiz);
         if (!$package['success']) {
             return $package;
-        }
-
-        if ($include_questions) {
-            $safe = QuestionExportCleanup::preflight($config, $package['files']);
-            if (!$safe['success']) return $safe;
         }
 
         // Deliver files directly to the network destination
@@ -123,12 +120,18 @@ final class NetworkExport
             return $delivery;
         }
 
-        // Without question files there is nothing to retire: «вопросы/» stays untouched.
-        $cleanup = ['removed' => [], 'absent' => []];
-        if ($include_questions) {
-            $cleanup = QuestionExportCleanup::prune($config);
-            if (!$cleanup['success']) return ['success' => false, 'message' => __('Файлы выгружены, но очистка старых имён не завершена. ', 'wp-olympiad') . $cleanup['message'], 'cleanup' => $cleanup];
-        }
+        // 1.0.16: the questions export is gone, so its leftovers are retired point by point.
+        // Like the report folder this never fails a delivered export - it is reported instead.
+        $questions_cleanup = QuestionExportCleanup::prune_after_export($config, $quiz);
+        $questions_removed = $questions_cleanup['removed'] ?? [];
+        $cleanup = [
+            'removed' => array_values(array_filter(
+                $questions_removed,
+                static fn(string $rel): bool => in_array(basename($rel), ['questions.csv', 'questions.json'], true)
+            )),
+            'absent'  => $questions_cleanup['absent'] ?? [],
+        ];
+        $questions_notice = self::questions_cleanup_notice($questions_cleanup, count($questions_removed));
 
         // The user chose to retire only the three old report files after delivery.
         $report_cleanup = ReportExportCleanup::prune($config, $quiz);
@@ -168,12 +171,14 @@ final class NetworkExport
                 __('Ответы олимпиады «%1$s» успешно экспортированы напрямую в сетевую папку: %2$s', 'wp-olympiad'),
                 $quiz->title,
                 $delivery['destination']
-            ) . ' ' . ($include_questions
-                ? __('Старые questions.csv и questions.json в экспортной папке отсутствуют.', 'wp-olympiad')
-                : __('Файлы заданий в «вопросы/» этой выгрузкой не создаются и не изменяются — для них есть отдельная кнопка.', 'wp-olympiad'))
+            ) . ' ' . __('Файлы заданий этой выгрузкой не создаются: экспорт вопросов удалён.', 'wp-olympiad')
+              . ($questions_notice !== '' ? ' ' . $questions_notice : '')
               . ($reports_notice !== '' ? ' ' . $reports_notice : ''),
             'destination'  => $delivery['destination'],
-            'questions_included' => $include_questions,
+            'questions_included' => false,
+            'removed_question_files' => $questions_removed,
+            'questions_directory' => (string) ($questions_cleanup['directory'] ?? ''),
+            'questions_notice' => $questions_notice,
             'primary_file' => $package['primary_filename'],
             'removed_legacy_files' => $cleanup['removed'] ?? [],
             'removed_report_files' => $report_cleanup['removed'],
@@ -191,6 +196,43 @@ final class NetworkExport
         set_transient('wpo_last_network_export_' . $quiz_id, $result_data, DAY_IN_SECONDS * 30);
 
         return $result_data;
+    }
+
+    /**
+     * What the questions retirement has to say about its outcome (never a failure).
+     *
+     * @param array<string, mixed> $cleanup
+     */
+    private static function questions_cleanup_notice(array $cleanup, int $removed_count): string
+    {
+        if (empty($cleanup['success'])) {
+            return __('Очистка «вопросы/» не выполнена: ', 'wp-olympiad')
+                . ($cleanup['message'] ?? __('транспорт не ответил.', 'wp-olympiad'))
+                . ' ' . __('Файлы заданий не удалены, на выгрузку ответов это не влияет.', 'wp-olympiad');
+        }
+        $directory = (string) ($cleanup['directory'] ?? '');
+        if ($directory === 'unverified') {
+            return __('Старые файлы заданий не удалены: ', 'wp-olympiad')
+                . ($cleanup['reason'] ?? __('транспорт не подтвердил безопасность удаления папки.', 'wp-olympiad'))
+                . ' ' . __('На выгрузку ответов это не влияет; папку можно убрать вручную.', 'wp-olympiad');
+        }
+        if ($removed_count === 0) {
+            return $directory === 'removed'
+                ? __('Папка «вопросы/» пуста и убрана.', 'wp-olympiad')
+                : '';
+        }
+        $notice = sprintf(
+            _n('Старый файл заданий в «вопросы/» удалён (%d).', 'Старые файлы заданий в «вопросы/» удалены (%d).', $removed_count, 'wp-olympiad'),
+            $removed_count
+        );
+        if ($directory === 'removed') {
+            $notice .= ' ' . __('Папка «вопросы/» пуста и убрана.', 'wp-olympiad');
+        } elseif ($directory === 'webdav_retained') {
+            $notice .= ' ' . __('Папка «вопросы/» сохранена: WebDAV не поддерживает безопасное нерекурсивное удаление каталога.', 'wp-olympiad');
+        } elseif (in_array($directory, ['not_empty', 'retained'], true)) {
+            $notice .= ' ' . __('Папка «вопросы/» сохранена: в ней остались другие файлы.', 'wp-olympiad');
+        }
+        return $notice;
     }
 
     /**
@@ -293,6 +335,11 @@ final class NetworkExport
     /**
      * Export quiz questions directly to the network folder in 'вопросы/' (CSV, JSON, keys)
      *
+     * @deprecated 1.0.16 The questions export was removed from the plugin interface; answers
+     *             and protocols no longer include «вопросы/». The method stays so that custom
+     *             scripts and older integrations keep working, and it still retires only the
+     *             two legacy aliases instead of the whole folder.
+     *
      * @param Quiz $quiz
      * @param array $override
      * @return array{success: bool, message: string, destination?: string, files_count?: int, files?: array<string>}
@@ -335,9 +382,10 @@ final class NetworkExport
     }
 
     /**
-     * Generate direct export files (CSV protocol, question keys and attempts).
+     * Generate direct export files (CSV protocol and attempts).
      *
-     * @param bool $include_questions false = protocols and attempts only (automatic export)
+     * @param bool $include_questions Deprecated since 1.0.16 and ignored: «вопросы/» is no longer
+     *             written by any export, so every package contains protocols and attempts only.
      *
      * @param Quiz $quiz
      * @return array{
@@ -359,8 +407,7 @@ final class NetworkExport
             $protocol_csv = '';
         }
 
-        // 2. Generate questions keys & scoring breakdown CSV (only when questions are exported)
-        $keys_csv = $include_questions ? self::generate_questions_key_csv($quiz) : '';
+        // 2. Since 1.0.16 no question files belong to an export package («вопросы/» is retired instead).
 
         // 3. Name the primary file for this quiz.
         $safe_slug = self::build_safe_slug($quiz);
@@ -393,18 +440,6 @@ final class NetworkExport
             // Папка «протоколы»
             $primary_file => $protocol_csv,
         ];
-
-        // Папка «вопросы» создаётся только явным экспортом заданий / полной ручной выгрузкой.
-        if ($include_questions) {
-            $files += [
-                sprintf('вопросы/критерии_и_ответы_%s.csv', $safe_slug)       => $keys_csv,
-                'вопросы/список_заданий.csv'                                  => $keys_csv,
-                'вопросы/правильные_ответы.csv'                               => $keys_csv,
-
-                sprintf('вопросы/вопросы_%s.csv', $safe_slug)                 => (string)(Export::export_quiz_questions_csv($quiz, false) ?? ''),
-                sprintf('вопросы/вопросы_%s.json', $safe_slug)                => (string)(Export::export_quiz_questions_json($quiz, false) ?? ''),
-            ];
-        }
 
         // Индивидуальные работы участников только в папке «попытки»
         foreach ($attempts as $att) {
