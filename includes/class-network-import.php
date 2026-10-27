@@ -137,139 +137,282 @@ final class NetworkImport
     }
 
     /**
-     * Scan network folder for available question import files (.csv, .json, .tsv)
+     * Find question files in the connected storage. A populated import/ takes
+     * precedence; only when it contains no supported files do we use the
+     * former search (recursive on a local mount, configured root on a remote
+     * connection). $error distinguishes an unreadable import/ from an empty
+     * one, so an access failure cannot silently import an unrelated root file.
      *
-     * @param Quiz $quiz
-     * @param array $override
+     * Returned paths are always relative to the configured storage root.
+     *
      * @return array<int, array{name: string, path: string, size: int, modified: string, ext: string}>
      */
-    public static function scan_network_folder_for_import_files(Quiz $quiz, array $override = []): array
+    public static function scan_network_folder_for_import_files(Quiz $quiz, array $override = [], ?string &$error = null): array
     {
+        $error = null;
         $config = NetworkExport::get_quiz_network_config($quiz, $override);
         $type = NetworkExport::detect_type($config);
-        $files = [];
-
-        if ($type === 'filesystem') {
-            $dest_dir = NetworkExport::resolve_local_path($config['path']);
-            if (is_dir($dest_dir)) {
-                // Обход корня и вложенных каталогов (до 3 уровней): файлы заданий могут лежать
-                // в любой подпапке сетевого ресурса — «Задания», «import», «вопросы» и т. п.
-                $skip_dirs = ['$RECYCLE.BIN', 'System Volume Information', '.git', 'node_modules', '.Trash', '.Trashes'];
-                $queue = [[rtrim($dest_dir, '/\\'), '', 0]];
-
-                while (!empty($queue)) {
-                    [$dir, $prefix, $level] = array_shift($queue);
-                    $scan = @scandir($dir);
-                    if ($scan === false) {
-                        continue;
-                    }
-
-                    foreach ($scan as $file) {
-                        if ($file === '.' || $file === '..') {
-                            continue;
-                        }
-
-                        $full_path = rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . $file;
-
-                        if (is_dir($full_path)) {
-                            if ($level >= 3 || in_array($file, $skip_dirs, true)) {
-                                continue;
-                            }
-                            $queue[] = [$full_path, $prefix . self::normalize_filename($file) . '/', $level + 1];
-                            continue;
-                        }
-
-                        if (!is_file($full_path)) {
-                            continue;
-                        }
-
-                        // Имена с Windows/SMB-хранилищ могут приходить в CP1251 — приводим к UTF-8
-                        $display_name = self::normalize_filename($file);
-                        $ext = strtolower(pathinfo($display_name, PATHINFO_EXTENSION));
-
-                        if (!in_array($ext, ['csv', 'json', 'tsv', 'xlsx', 'xlsm'], true)) {
-                            continue;
-                        }
-
-                        // Инструкции, манифесты и временные файлы Office не являются заданиями
-                        if (preg_match('/(?:readme|manifest|инструкц|~\$)/iu', $display_name)) {
-                            continue;
-                        }
-
-                        $files[] = [
-                            'name'     => $display_name,
-                            'path'     => $prefix . $display_name,
-                            'size'     => (int)@filesize($full_path),
-                            'modified' => date('Y-m-d H:i:s', (int)@filemtime($full_path)),
-                            'ext'      => $ext,
-                            'mtime'    => (int)@filemtime($full_path),
-                            'depth'    => $level,
-                        ];
-                    }
-                }
-
-                // Приоритет: корень папки, затем имена questions/тест, затем более «свежие» файлы
-                usort($files, static function (array $a, array $b): int {
-                    $rank = static function (array $f): int {
-                        // Образцы и шаблоны показываем в конце: рабочий файл заданий важнее
-                        if (self::is_plugin_template_file((string)$f['path'])) {
-                            return 3;
-                        }
-                        $name = mb_strtolower((string)$f['name']);
-                        if (str_starts_with($name, 'questions')) {
-                            return 0;
-                        }
-                        if (str_starts_with($name, 'тест') || str_starts_with($name, 'test')) {
-                            return 1;
-                        }
-                        return 2;
-                    };
-
-                    return [$rank($a), $a['depth'], -($a['mtime'] ?? 0)] <=> [$rank($b), $b['depth'], -($b['mtime'] ?? 0)];
-                });
-            }
-        } elseif ($type === 'smb') {
-            // Windows-ресурс: сначала пробуем локальный/смонтированный путь, затем smbclient
-            $local_files = self::scan_network_folder_for_import_files($quiz, array_merge($config, ['type' => 'filesystem']));
-            $files = !empty($local_files) ? $local_files : self::scan_smb_folder($config);
-        } elseif ($type === 'webdav') {
-            $files = self::scan_webdav_folder($config);
-        } elseif ($type === 'ftp') {
-            if (function_exists('ftp_connect')) {
-                $parsed = parse_url($config['path']);
-                $host = $parsed['host'] ?? '';
-                $port = (int)($parsed['port'] ?? 21);
-                $remote_dir = $parsed['path'] ?? '/';
-
-                $conn = @ftp_connect($host, $port, 5);
-                if ($conn) {
-                    $user = $config['user'] ?: 'anonymous';
-                    $pass = $config['password'] ?: '';
-                    if (@ftp_login($conn, $user, $pass)) {
-                        @ftp_pasv($conn, true);
-                        $list = @ftp_nlist($conn, $remote_dir);
-                        if (is_array($list)) {
-                            foreach ($list as $f) {
-                                $fname = basename($f);
-                                $ext = strtolower(pathinfo($fname, PATHINFO_EXTENSION));
-                                if (in_array($ext, ['csv', 'json', 'tsv', 'xlsx', 'xlsm'], true)) {
-                                    $files[] = [
-                                        'name'     => $fname,
-                                        'path'     => $fname,
-                                        'size'     => (int)@ftp_size($conn, $f),
-                                        'modified' => date('Y-m-d H:i:s'),
-                                        'ext'      => $ext,
-                                    ];
-                                }
-                            }
-                        }
-                    }
-                    @ftp_close($conn);
-                }
-            }
+        if ($type === 'smb' && is_dir(NetworkExport::resolve_local_path((string)$config['path']))) {
+            // A Windows share can also be supplied as an already-mounted local path.
+            $type = 'filesystem';
         }
 
+        $prefix = DesktopEditor::import_prefix($config);
+        $files = self::scan_import_location($config, $type, $prefix, false, $error);
+        if ($error !== null) {
+            return [];
+        }
+        if ($files !== []) {
+            return self::sort_import_files($files);
+        }
+
+        // When the configured root already is import/, do not append import/
+        // again. The local legacy search can still inspect its subdirectories.
+        if ($type !== 'filesystem' && $prefix === '') {
+            return [];
+        }
+        $files = self::scan_import_location($config, $type, '', $type === 'filesystem', $error);
+        return $error === null ? self::sort_import_files($files) : [];
+    }
+
+    private static function scan_import_location(array $config, string $type, string $prefix, bool $recursive, ?string &$error): array
+    {
+        switch ($type) {
+            case 'smb':
+                return self::scan_smb_folder($config, $prefix, $error);
+            case 'webdav':
+                return self::scan_webdav_folder($config, $prefix, $error);
+            case 'ftp':
+                return self::scan_ftp_folder($config, $prefix, $error);
+            default:
+                return self::scan_filesystem_folder($config, $prefix, $recursive, $error);
+        }
+    }
+
+    private static function is_import_filename(string $name): bool
+    {
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        return in_array($ext, ['csv', 'json', 'tsv', 'xlsx', 'xlsm'], true)
+            && !preg_match('/(?:readme|manifest|инструкц|~\$)/iu', $name);
+    }
+
+    /**
+     * A bare configured filename is a search by name: look for that name in
+     * import/ first, then retain its old root/common-folder lookup. A path
+     * containing a slash is explicit (./file.csv selects the root exactly).
+     *
+     * @return string|null Relative path, or null if import/ could not be checked.
+     */
+    private static function resolve_named_import(Quiz $quiz, string $filename, array $override, ?string &$error): ?string
+    {
+        $error = null;
+        if (str_contains($filename, '/') || str_contains($filename, '\\')) return $filename;
+        $config = NetworkExport::get_quiz_network_config($quiz, $override);
+        $prefix = DesktopEditor::import_prefix($config);
+        if ($prefix === '') return $filename;
+        $type = NetworkExport::detect_type($config);
+        if ($type === 'smb' && is_dir(NetworkExport::resolve_local_path((string)$config['path']))) $type = 'filesystem';
+        $files = self::scan_import_location($config, $type, $prefix, false, $error);
+        if ($error !== null) return null;
+
+        $match = null;
+        foreach (self::sort_import_files($files) as $file) {
+            if ((string)$file['name'] === $filename) return (string)$file['path'];
+            if (self::filename_match_key((string)$file['name']) === self::filename_match_key($filename)) {
+                $match = $match ?? (string)$file['path'];
+            }
+        }
+        return $match ?? $filename;
+    }
+
+    /** Keep the existing name priority, consistently across discovery, preview and import. */
+    private static function sort_import_files(array $files): array
+    {
+        $priority = array_flip([
+            'questions.csv', 'questions.xlsx', 'questions.xlsm', 'questions.json',
+            'import.csv', 'import.xlsx', 'import.xlsm', 'import.json',
+            'questions_template_macros.xlsm', 'questions_template.xlsx', 'questions_template.csv',
+            'шаблон_вопросов_макросы.xlsm', 'шаблон_вопросов.xlsx', 'шаблон_вопросов.csv',
+        ]);
+        $key = static function (array $file) use ($priority): array {
+            $name = self::filename_match_key((string)$file['name']);
+            $general = str_starts_with($name, 'questions') ? 0
+                : ((str_starts_with($name, 'тест') || str_starts_with($name, 'test')) ? 1 : 2);
+            return [
+                self::is_template_like_name($name) ? 1 : 0,
+                $priority[$name] ?? 100,
+                $general,
+                (int)($file['depth'] ?? 0),
+                -(int)($file['mtime'] ?? 0),
+                self::filename_match_key((string)$file['path']),
+                (string)$file['path'],
+            ];
+        };
+        usort($files, static fn(array $a, array $b): int => $key($a) <=> $key($b));
         return $files;
+    }
+
+    /** Local/mounted storage: direct import/ first, then the old three-level scan. */
+    private static function scan_filesystem_folder(array $config, string $prefix, bool $recursive, ?string &$error): array
+    {
+        $root = NetworkExport::resolve_local_path((string)($config['path'] ?? ''));
+        if (!is_dir($root)) {
+            $error = sprintf(__('Путь %s не существует или не виден серверу.', 'wp-olympiad'), $root);
+            return [];
+        }
+        $dir = $prefix !== '' ? rtrim($root, '/\\') . DIRECTORY_SEPARATOR . 'import' : $root;
+        if (!is_dir($dir)) {
+            if ($prefix !== '' && !file_exists($dir) && !is_link($dir)) {
+                return []; // No import/ yet: legacy search is allowed.
+            }
+            $error = __('Путь import существует, но не является доступной папкой.', 'wp-olympiad');
+            return [];
+        }
+
+        $files = [];
+        $skip_dirs = ['$RECYCLE.BIN', 'System Volume Information', '.git', 'node_modules', '.Trash', '.Trashes'];
+        $queue = [[$dir, $prefix, 0]];
+        while ($queue !== []) {
+            [$current, $relative, $depth] = array_shift($queue);
+            $entries = @scandir($current);
+            if ($entries === false) {
+                if ($depth === 0) {
+                    $error = __('Не удалось прочитать папку import или подключённое хранилище. Проверьте права доступа.', 'wp-olympiad');
+                    return [];
+                }
+                continue; // Preserve the old behaviour for inaccessible legacy subfolders.
+            }
+            foreach ($entries as $entry) {
+                if ($entry === '.' || $entry === '..') continue;
+                $full = rtrim($current, '/\\') . DIRECTORY_SEPARATOR . $entry;
+                $name = self::normalize_filename($entry);
+                if (is_dir($full)) {
+                    if ($recursive && $depth < 3 && !in_array($entry, $skip_dirs, true)) {
+                        $queue[] = [$full, $relative . $name . '/', $depth + 1];
+                    }
+                    continue;
+                }
+                if (!is_file($full) || !self::is_import_filename($name)) continue;
+                $mtime = (int)@filemtime($full);
+                $files[] = [
+                    'name' => $name, 'path' => $relative . $name,
+                    'size' => (int)@filesize($full), 'modified' => $mtime ? date('Y-m-d H:i:s', $mtime) : '',
+                    'ext' => strtolower(pathinfo($name, PATHINFO_EXTENSION)), 'mtime' => $mtime, 'depth' => $depth,
+                ];
+            }
+        }
+        return $files;
+    }
+
+    /** FTP: list the actual import directory rather than only the configured root. */
+    private static function scan_ftp_folder(array $config, string $prefix, ?string &$error): array
+    {
+        if (!function_exists('ftp_connect')) {
+            $error = __('Расширение PHP FTP недоступно; проверить папку import не удалось.', 'wp-olympiad');
+            return [];
+        }
+        $url = parse_url((string)($config['path'] ?? ''));
+        $host = is_array($url) ? (string)($url['host'] ?? '') : '';
+        $port = is_array($url) ? (int)($url['port'] ?? 21) : 21;
+        $remote_dir = is_array($url) ? rawurldecode((string)($url['path'] ?? '/')) : '/';
+        if ($host === '') {
+            $error = __('Некорректный адрес FTP-хранилища.', 'wp-olympiad');
+            return [];
+        }
+        $secure = strtolower((string)($url['scheme'] ?? 'ftp')) === 'ftps';
+        if ($secure && !function_exists('ftp_ssl_connect')) {
+            $error = __('На сервере недоступно расширение PHP FTPS.', 'wp-olympiad');
+            return [];
+        }
+        $conn = $secure ? @ftp_ssl_connect($host, $port, 8) : @ftp_connect($host, $port, 8);
+        if (!$conn) {
+            $error = __('Не удалось подключиться к FTP-хранилищу для поиска заданий.', 'wp-olympiad');
+            return [];
+        }
+        try {
+            if (!@ftp_login($conn, (string)($config['user'] ?? '') ?: 'anonymous', (string)($config['password'] ?? ''))) {
+                $error = __('Не удалось войти в FTP-хранилище. Проверьте логин и пароль.', 'wp-olympiad');
+                return [];
+            }
+            @ftp_pasv($conn, true);
+            if (!@ftp_chdir($conn, $remote_dir !== '' ? $remote_dir : '/')) {
+                $error = __('Не удалось открыть настроенную FTP-папку.', 'wp-olympiad');
+                return [];
+            }
+            if ($prefix !== '' && !@ftp_chdir($conn, 'import')) {
+                // FTP uses the same 550 code for an absent and an unreadable
+                // directory. Only fall back when the parent listing confirms
+                // that import is absent.
+                $parent = @ftp_nlist($conn, '.');
+                if (!is_array($parent)) {
+                    $error = __('Не удалось проверить наличие папки import на FTP.', 'wp-olympiad');
+                    return [];
+                }
+                foreach ($parent as $item) {
+                    if (basename(str_replace('\\', '/', (string)$item)) === 'import') {
+                        $error = __('Папка import на FTP найдена, но недоступна для чтения.', 'wp-olympiad');
+                        return [];
+                    }
+                }
+                return [];
+            }
+
+            $files = [];
+            $listing = function_exists('ftp_mlsd') ? @ftp_mlsd($conn, '.') : false;
+            if (is_array($listing)) {
+                foreach ($listing as $entry) {
+                    $raw_name = (string)($entry['name'] ?? '');
+                    $name = self::normalize_filename($raw_name);
+                    $entry_type = strtolower((string)($entry['type'] ?? ''));
+                    if (in_array($entry_type, ['dir', 'cdir', 'pdir'], true)) continue;
+                    if ($entry_type !== 'file') {
+                        if (self::is_import_filename($name)) {
+                            $error = __('FTP-сервер не подтвердил тип найденного файла; укажите путь вручную.', 'wp-olympiad');
+                            return [];
+                        }
+                        continue;
+                    }
+                    if (!self::is_import_filename($name) || str_contains($raw_name, '/') || str_contains($raw_name, '\\')) continue;
+                    $modified_raw = (string)($entry['modify'] ?? '');
+                    $modified = preg_match('/^\d{14}/', $modified_raw) ? strtotime(substr($modified_raw, 0, 14) . ' UTC') : false;
+                    $mtime = $modified === false ? 0 : $modified;
+                    $files[] = [
+                        'name' => $name, 'path' => $prefix . $raw_name,
+                        'size' => (int)($entry['size'] ?? 0), 'modified' => $mtime ? date('Y-m-d H:i:s', $mtime) : '',
+                        'ext' => strtolower(pathinfo($name, PATHINFO_EXTENSION)), 'mtime' => $mtime, 'depth' => 0,
+                    ];
+                }
+                return $files;
+            }
+
+            // Older FTP servers without MLSD: accept only entries for which
+            // SIZE confirms a regular file; never treat an unknown listing as empty.
+            $listing = @ftp_nlist($conn, '.');
+            if (!is_array($listing)) {
+                $error = __('FTP-сервер не предоставил список файлов папки.', 'wp-olympiad');
+                return [];
+            }
+            foreach ($listing as $item) {
+                $raw_name = basename(str_replace('\\', '/', (string)$item));
+                $name = self::normalize_filename($raw_name);
+                if (!self::is_import_filename($name)) continue;
+                $size = @ftp_size($conn, $raw_name);
+                if ($size < 0) {
+                    $error = __('FTP-сервер не подтвердил тип найденного файла. Укажите путь вручную или включите MLSD/SIZE.', 'wp-olympiad');
+                    return [];
+                }
+                $mtime = (int)@ftp_mdtm($conn, $raw_name);
+                if ($mtime < 0) $mtime = 0;
+                $files[] = [
+                    'name' => $name, 'path' => $prefix . $raw_name,
+                    'size' => $size, 'modified' => $mtime ? date('Y-m-d H:i:s', $mtime) : '',
+                    'ext' => strtolower(pathinfo($name, PATHINFO_EXTENSION)), 'mtime' => $mtime, 'depth' => 0,
+                ];
+            }
+            return $files;
+        } finally {
+            @ftp_close($conn);
+        }
     }
 
     /**
@@ -282,24 +425,11 @@ final class NetworkImport
         return (bool)preg_match('/(?:template|шаблон|образец|sample|пример)/iu', $name);
     }
 
-    /**
-     * Файл разложен самим плагином как образец шаблона (в подкаталоге import/),
-     * а не подготовлен организатором — такие файлы при автоопределении идут последними.
-     */
+    /** Files explicitly named as examples/templates come after working files. */
     public static function is_plugin_template_file(string $path): bool
     {
         $path = str_replace('\\', '/', trim($path));
-        $name = mb_strtolower(self::normalize_filename(basename($path)));
-
-        if (self::is_template_like_name($name)) {
-            return true;
-        }
-
-        if (str_starts_with(mb_strtolower($path), 'import/') && in_array($name, ['questions.csv', 'questions.json', 'questions.tsv'], true)) {
-            return true;
-        }
-
-        return false;
+        return self::is_template_like_name(basename($path));
     }
 
     /**
@@ -583,6 +713,12 @@ final class NetworkImport
             $error = __('Не указано имя файла заданий.', 'wp-olympiad');
             return null;
         }
+        foreach (explode('/', str_replace('\\', '/', $relative_path)) as $segment) {
+            if ($segment === '..' || rawurldecode($segment) === '..' || str_contains($segment, "\0")) {
+                $error = __('Укажите путь к файлу относительно подключённой папки без переходов на уровень выше.', 'wp-olympiad');
+                return null;
+            }
+        }
 
         $config = NetworkExport::get_quiz_network_config($quiz, $override);
         $type = NetworkExport::detect_type($config);
@@ -638,8 +774,11 @@ final class NetworkImport
             return null;
         }
 
-        // Основные каталоги, где плагин ищет файлы заданий
-        $sub_dirs = ['', 'import', 'questions', 'вопросы', 'задания', 'templates'];
+        // A discovered/explicit relative path must stay in that directory: if
+        // import/file.csv disappears, do not silently read root/file.csv instead.
+        // A bare filename retains its historical search in common directories.
+        $has_directory = str_contains($norm_rel, DIRECTORY_SEPARATOR);
+        $sub_dirs = $has_directory ? [''] : ['', 'import', 'questions', 'вопросы', 'задания', 'templates'];
         $dirs = [];
         foreach ($sub_dirs as $sub) {
             $dirs[] = $sub === '' ? rtrim($dest_dir, '/\\') : rtrim($dest_dir, '/\\') . DIRECTORY_SEPARATOR . $sub;
@@ -647,7 +786,7 @@ final class NetworkImport
 
         // Варианты имени: исходное, NFC/NFD и перекодировки для Windows-хранилищ (CP1251/CP866)
         $rel_variants  = self::filename_variants($norm_rel);
-        $name_variants = self::filename_variants($clean_basename);
+        $name_variants = $has_directory ? [] : self::filename_variants($clean_basename);
 
         $reason = null;
         foreach ($dirs as $dir) {
@@ -667,8 +806,10 @@ final class NetworkImport
             }
         }
 
-        // Резервный поиск: регистронезависимо и с учётом кодировки имён, до 3 уровней вложенности
-        $found = self::find_local_file($dest_dir, $clean_basename, 3);
+        // Case/encoding fallback remains within the explicitly named directory;
+        // bare names retain the former three-level search.
+        $search_dir = $has_directory ? rtrim($dest_dir, '/\\') . DIRECTORY_SEPARATOR . dirname($norm_rel) : $dest_dir;
+        $found = is_dir($search_dir) ? self::find_local_file($search_dir, $clean_basename, $has_directory ? 0 : 3) : null;
         if ($found !== null) {
             $content = self::read_local_file($found, $reason);
             if ($content !== null) {
@@ -717,14 +858,19 @@ final class NetworkImport
         $parsed = parse_url($path);
         $host = (string)($parsed['host'] ?? '');
         $port = (int)($parsed['port'] ?? 21);
-        $remote_dir = (string)($parsed['path'] ?? '/');
+        $remote_dir = rawurldecode((string)($parsed['path'] ?? '/'));
 
         if ($host === '') {
             $error = sprintf(__('Некорректный адрес FTP: %s', 'wp-olympiad'), $path);
             return null;
         }
 
-        $conn = @ftp_connect($host, $port, 8);
+        $secure = strtolower((string)($parsed['scheme'] ?? 'ftp')) === 'ftps';
+        if ($secure && !function_exists('ftp_ssl_connect')) {
+            $error = __('На сервере недоступно расширение PHP FTPS.', 'wp-olympiad');
+            return null;
+        }
+        $conn = $secure ? @ftp_ssl_connect($host, $port, 8) : @ftp_connect($host, $port, 8);
         if (!$conn) {
             $error = sprintf(
                 __('Не удалось подключиться к FTP-серверу %1$s:%2$d. Проверьте адрес, порт, доступность сервера и настройки файрвола.', 'wp-olympiad'),
@@ -775,7 +921,9 @@ final class NetworkImport
     {
         $error = null;
         $base = rtrim((string)($config['path'] ?? ''), '/');
-        $url = $base . '/' . ltrim(str_replace('\\', '/', $relative_path), '/');
+        $relative = ltrim(str_replace('\\', '/', $relative_path), '/');
+        $parts = explode('/', $relative);
+        $url = $base . '/' . implode('/', array_map('rawurlencode', $parts));
 
         $args = [
             'timeout'     => 25,
@@ -789,6 +937,20 @@ final class NetworkImport
         }
 
         $response = wp_remote_get($url, $args);
+        // Older stored filenames may already be URL-encoded. Try that notation
+        // only after the literal filename is confirmed absent (literal % wins).
+        if (!is_wp_error($response) && (int)wp_remote_retrieve_response_code($response) === 404 && preg_match('/%[0-9a-f]{2}/i', $relative)) {
+            $decoded = array_map('rawurldecode', $parts);
+            $safe_legacy = true;
+            foreach ($decoded as $part) {
+                if ($part === '..' || strpbrk($part, "/\\\0") !== false) { $safe_legacy = false; break; }
+            }
+            $legacy = $base . '/' . implode('/', array_map('rawurlencode', $decoded));
+            if ($safe_legacy && $legacy !== $url) {
+                $url = $legacy;
+                $response = wp_remote_get($url, $args);
+            }
+        }
         if (is_wp_error($response)) {
             $error = sprintf(
                 __('Не удалось получить файл по адресу %1$s: %2$s', 'wp-olympiad'),
@@ -927,135 +1089,130 @@ final class NetworkImport
         return [$exit_code, $output];
     }
 
-    /**
-     * List files of the SMB share via smbclient.
-     *
-     * @return array<int, array{name: string, path: string, size: int, modified: string, ext: string}>
-     */
-    private static function scan_smb_folder(array $config): array
+    /** List one SMB directory; paths returned are relative to the configured root. */
+    private static function scan_smb_folder(array $config, string $prefix, ?string &$error): array
     {
-        $files = [];
         $parsed = NetworkExport::parse_smb_path((string)($config['path'] ?? ''));
-        if (!$parsed) {
-            return $files;
+        $bin = NetworkExport::get_smbclient_binary();
+        if (!$parsed || !$bin) {
+            $error = __('Не удалось проверить SMB-папку: проверьте адрес и наличие smbclient.', 'wp-olympiad');
+            return [];
+        }
+        $directory = trim(trim((string)$parsed['subdir'], '/') . '/' . trim($prefix, '/'), '/');
+        if (strpbrk($directory, "\"\r\n\0") !== false) {
+            $error = __('Недопустимые символы в пути SMB-папки.', 'wp-olympiad');
+            return [];
+        }
+        $target = ($directory !== '' ? $directory . '/' : '') . '*';
+        [$exit, $output] = self::smb_run($bin, (string)$parsed['service'], $config, $parsed, 'ls "' . $target . '"');
+        $response = implode("\n", $output);
+        if ($exit !== 0 || preg_match('/NT_STATUS_[A-Z_]+\s+listing/i', $response)) {
+            if ($prefix !== '' && preg_match('/NT_STATUS_(?:OBJECT_NAME_NOT_FOUND|OBJECT_PATH_NOT_FOUND|NO_SUCH_FILE)\b/i', $response)) {
+                // Some SMB servers return NO_SUCH_FILE for an empty directory.
+                // Ask for the directory itself before treating it as absent.
+                [$probe_exit, $probe] = self::smb_run($bin, (string)$parsed['service'], $config, $parsed, 'ls "' . $directory . '"');
+                $probe_text = implode("\n", $probe);
+                if (preg_match('/NT_STATUS_(?:OBJECT_NAME_NOT_FOUND|OBJECT_PATH_NOT_FOUND|NO_SUCH_FILE)\b/i', $probe_text)) return [];
+                if ($probe_exit === 0 && preg_match('/^\s{2}.+?\s+[ADNRHS]*D[ADNRHS]*\s+\d+\s+.+$/mu', $probe_text)) return [];
+            }
+            $error = __('Не удалось прочитать папку import или подключённое SMB-хранилище. Проверьте путь и права.', 'wp-olympiad');
+            return [];
         }
 
-        $smb_bin = NetworkExport::get_smbclient_binary();
-        if (!$smb_bin) {
-            return $files;
-        }
-
-        $subdir = trim((string)$parsed['subdir'], '/');
-        $target = ($subdir !== '' ? $subdir . '/' : '') . '*';
-
-        [$exit_code, $output] = self::smb_run($smb_bin, (string)$parsed['service'], $config, $parsed, 'ls "' . $target . '"');
-        if ($exit_code !== 0) {
-            return $files;
-        }
-
-        // Пример строки: "  questions.csv    A    12345  Mon Oct 17 12:00:00 2026"
+        $files = [];
         foreach ($output as $line) {
-            if (!preg_match('/^\s{2}(.+?)\s+([ADNRHS]+)\s+(\d+)\s+(.+)$/u', $line, $m)) {
-                continue;
-            }
-            $attrs = $m[2];
-            if (str_contains($attrs, 'D')) {
-                continue;
-            }
-            $name = self::normalize_filename(trim($m[1]));
-            if ($name === '.' || $name === '..') {
-                continue;
-            }
-            $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-            if (!in_array($ext, ['csv', 'json', 'tsv', 'xlsx', 'xlsm'], true)) {
-                continue;
-            }
-            if (preg_match('/(?:readme|manifest|инструкц|~\$)/iu', $name)) {
-                continue;
-            }
+            if (!preg_match('/^\s{2}(.+?)\s+([ADNRHS]+)\s+(\d+)\s+(.+)$/u', $line, $m)) continue;
+            if (str_contains($m[2], 'D')) continue;
+            $raw_name = trim($m[1]);
+            $name = self::normalize_filename($raw_name);
+            if (!self::is_import_filename($name) || strpbrk($raw_name, "/\\\"\r\n\0") !== false) continue;
+            $mtime = strtotime(trim($m[4]));
+            $mtime = $mtime === false ? 0 : $mtime;
             $files[] = [
-                'name'     => $name,
-                'path'     => ($subdir !== '' ? $subdir . '/' : '') . $name,
-                'size'     => (int)$m[3],
-                'modified' => trim($m[4]),
-                'ext'      => $ext,
-                'mtime'    => 0,
-                'depth'    => 0,
+                'name' => $name, 'path' => $prefix . $raw_name,
+                'size' => (int)$m[3], 'modified' => trim($m[4]),
+                'ext' => strtolower(pathinfo($name, PATHINFO_EXTENSION)), 'mtime' => $mtime, 'depth' => 0,
             ];
         }
-
         return $files;
     }
 
-    /**
-     * List files of a WebDAV folder via PROPFIND.
-     *
-     * @return array<int, array{name: string, path: string, size: int, modified: string, ext: string}>
-     */
-    private static function scan_webdav_folder(array $config): array
+    /** List one WebDAV collection with Depth: 1, not just the configured root. */
+    private static function scan_webdav_folder(array $config, string $prefix, ?string &$error): array
     {
-        $files = [];
         $base = rtrim((string)($config['path'] ?? ''), '/');
         if ($base === '') {
-            return $files;
+            $error = __('Не указан адрес WebDAV-хранилища.', 'wp-olympiad');
+            return [];
         }
-
+        $target = $base . '/' . $prefix;
         $args = [
-            'method'  => 'PROPFIND',
-            'timeout' => 20,
+            'method' => 'PROPFIND', 'timeout' => 20,
             'headers' => ['Depth' => '1'],
         ];
         if (!empty($config['user']) || !empty($config['password'])) {
             $args['headers']['Authorization'] = 'Basic ' . base64_encode((string)$config['user'] . ':' . (string)$config['password']);
         }
-
-        $response = wp_remote_request($base . '/', $args);
-        if (is_wp_error($response) || (int)wp_remote_retrieve_response_code($response) >= 400) {
-            return $files;
+        $response = wp_remote_request($target, $args);
+        if (is_wp_error($response)) {
+            $error = __('Не удалось связаться с WebDAV при поиске файлов import.', 'wp-olympiad');
+            return [];
         }
-
+        $code = (int)wp_remote_retrieve_response_code($response);
+        if (($code === 404 || $code === 410) && $prefix !== '') return [];
+        if ($code < 200 || $code >= 300) {
+            $error = sprintf(__('WebDAV не предоставил список папки import (HTTP %d). Проверьте путь, права и поддержку PROPFIND.', 'wp-olympiad'), $code);
+            return [];
+        }
         $body = (string)wp_remote_retrieve_body($response);
-        if ($body === '') {
-            return $files;
+        // Validate where the XML extension exists, and do not resolve external entities.
+        if (class_exists('DOMDocument')) {
+            $xml = new \DOMDocument();
+            if (!@$xml->loadXML($body, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+                $error = __('WebDAV вернул некорректный список файлов папки import.', 'wp-olympiad');
+                return [];
+            }
         }
-
-        if (!preg_match_all('#<[^>]*:?href[^>]*>(.*?)</[^>]*:?href>#isu', $body, $matches)) {
-            return $files;
+        if (!preg_match('~<(?:[\w.-]+:)?multistatus\b[^>]*>~i', $body)
+            || !preg_match('~</(?:[\w.-]+:)?multistatus\s*>~i', $body)) {
+            $error = __('WebDAV не вернул список файлов в формате Multi-Status (PROPFIND).', 'wp-olympiad');
+            return [];
         }
-
-        $base_path = (string)(parse_url($base, PHP_URL_PATH) ?? '/');
-        $base_path = rtrim($base_path, '/') . '/';
-
-        foreach ($matches[1] as $href) {
-            $href = html_entity_decode(trim($href), ENT_QUOTES, 'UTF-8');
-            $href = (string)parse_url($href, PHP_URL_PATH);
-            if ($href === '' || str_ends_with($href, '/')) {
-                continue;   // каталог или корень
-            }
-
-            $relative = str_starts_with($href, $base_path) ? substr($href, strlen($base_path)) : basename($href);
-            $relative = ltrim(str_replace('\\', '/', $relative), '/');
-            $name = self::normalize_filename(basename($relative));
-            $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-
-            if (!in_array($ext, ['csv', 'json', 'tsv', 'xlsx', 'xlsm'], true)) {
-                continue;
-            }
-            if (preg_match('/(?:readme|manifest|инструкц|~\$)/iu', $name)) {
-                continue;
-            }
-
+        preg_match_all('~<(?:[\w.-]+:)?response\b[^>]*>(.*?)</(?:[\w.-]+:)?response\s*>~is', $body, $blocks);
+        $base_url = parse_url($target);
+        $base_path = is_array($base_url) ? (string)($base_url['path'] ?? '/') : '/';
+        $segments = static function (string $path): array {
+            $parts = array_values(array_filter(explode('/', trim($path, '/')), static fn(string $s): bool => $s !== ''));
+            return array_map('rawurldecode', $parts);
+        };
+        $base_parts = $segments($base_path);
+        $files = [];
+        foreach ($blocks[1] as $block) {
+            if (!preg_match('~<(?:[\w.-]+:)?href\b[^>]*>(.*?)</(?:[\w.-]+:)?href\s*>~is', $block, $match)) continue;
+            if (preg_match('~<(?:[\w.-]+:)?collection\b[^>]*/?>~i', $block)) continue;
+            $href = html_entity_decode(trim($match[1]), ENT_QUOTES | ENT_XML1, 'UTF-8');
+            $parsed = parse_url($href);
+            if (!is_array($parsed)) continue;
+            if (!empty($parsed['host']) && strcasecmp((string)$parsed['host'], (string)($base_url['host'] ?? '')) !== 0) continue;
+            $href_path = (string)($parsed['path'] ?? '');
+            if ($href_path === '' || str_ends_with($href_path, '/')) continue;
+            $href_parts = $segments($href_path);
+            if (!str_starts_with($href_path, '/')) $href_parts = array_merge($base_parts, $href_parts);
+            if (count($href_parts) !== count($base_parts) + 1 || array_slice($href_parts, 0, count($base_parts)) !== $base_parts) continue;
+            $raw_name = (string)end($href_parts);
+            if ($raw_name === '.' || $raw_name === '..' || strpbrk($raw_name, "/\\\0\r\n") !== false) continue;
+            $name = self::normalize_filename($raw_name);
+            if (!self::is_import_filename($name)) continue;
+            $size = preg_match('~<(?:[\w.-]+:)?getcontentlength\b[^>]*>\s*(\d+)\s*</~i', $block, $sm) ? (int)$sm[1] : 0;
+            $date_text = preg_match('~<(?:[\w.-]+:)?getlastmodified\b[^>]*>(.*?)</~is', $block, $dm) ? trim($dm[1]) : '';
+            $mtime = $date_text !== '' ? strtotime($date_text) : false;
+            $mtime = $mtime === false ? 0 : $mtime;
             $files[] = [
-                'name'     => $name,
-                'path'     => $relative,
-                'size'     => 0,
-                'modified' => '',
-                'ext'      => $ext,
-                'mtime'    => 0,
-                'depth'    => 0,
+                'name' => $name, 'path' => $prefix . $raw_name,
+                'size' => $size, 'modified' => $mtime ? date('Y-m-d H:i:s', $mtime) : '',
+                'ext' => strtolower(pathinfo($name, PATHINFO_EXTENSION)), 'mtime' => $mtime, 'depth' => 0,
             ];
         }
-
         return $files;
     }
 
@@ -1120,27 +1277,20 @@ final class NetworkImport
         $path = trim($relative_path);
         $candidates = [];
         $first_error = null;
+        $scan_error = null;
 
-        if ($path === '') {
-            $files = self::scan_network_folder_for_import_files($quiz, $override);
+        if ($path !== '') {
+            $path = self::resolve_named_import($quiz, $path, $override, $scan_error) ?? '';
+        } else {
+            $files = self::scan_network_folder_for_import_files($quiz, $override, $scan_error);
             $candidates = array_values(array_map(static fn(array $f): string => (string)$f['path'], $files));
-
-            // Сначала пробуем рабочие файлы, образцы шаблонов — только если других нет
-            $user_files = array_values(array_filter(
-                $candidates,
-                static fn(string $p): bool => !self::is_plugin_template_file($p)
-            ));
-            if (!empty($user_files)) {
-                $candidates = array_merge($user_files, array_values(array_diff($candidates, $user_files)));
-            }
-
             $path = $candidates[0] ?? '';
         }
 
         if ($path === '') {
             return [
                 'success' => false,
-                'message' => __('В сетевой папке не найдено файлов заданий (.xlsx, .xlsm, .csv, .json).', 'wp-olympiad')
+                'message' => ($scan_error ?: __('В папке import и при резервном поиске не найдено файлов заданий (.xlsx, .xlsm, .csv, .json, .tsv).', 'wp-olympiad'))
                     . ' ' . self::describe_network_folder($quiz, $override),
                 'stats'   => self::empty_analysis()['stats'],
                 'report'  => [],
@@ -2397,60 +2547,37 @@ final class NetworkImport
             $filename = trim((string)$quiz->get_setting('network_auto_import_file', ''));
         }
 
-        // Явно указанный файл — импортируем только его
+        // An explicit path is exact. A bare filename is first sought in import/,
+        // then at its former location; do not select a different filename.
         if ($filename !== '') {
-            return self::import_one_file($quiz, $filename, $override, $mode, $force, $hide_points);
+            $scan_error = null;
+            $resolved = self::resolve_named_import($quiz, $filename, $override, $scan_error);
+            if ($resolved === null) {
+                return [
+                    'success' => false, 'imported_count' => 0,
+                    'total_count' => count($quiz->get_questions(false)),
+                    'filename' => $filename,
+                    'message' => $scan_error ?: __('Не удалось проверить папку import.', 'wp-olympiad'),
+                ];
+            }
+            return self::import_one_file($quiz, $resolved, $override, $mode, $force, $hide_points);
         }
 
-        $available = self::scan_network_folder_for_import_files($quiz, $override);
+        $scan_error = null;
+        $available = self::scan_network_folder_for_import_files($quiz, $override, $scan_error);
         if (empty($available)) {
             return [
                 'success'        => false,
                 'imported_count' => 0,
                 'total_count'    => count($quiz->get_questions(false)),
-                'message'        => __('В сетевой папке не найдено файлов для импорта заданий (.csv, .xlsx, .xlsm, .json). Поместите файл в папку или нажмите «Поместить шаблон».', 'wp-olympiad')
+                'message'        => ($scan_error ?: __('В папке import и при резервном поиске не найдено файлов заданий (.csv, .xlsx, .xlsm, .json, .tsv). Поместите файл в import или укажите его путь вручную.', 'wp-olympiad'))
                     . ' ' . self::describe_network_folder($quiz, $override),
             ];
         }
 
-        // Рабочие файлы важнее разложенных образцов шаблонов
-        $user_files = array_values(array_filter(
-            $available,
-            static fn(array $f): bool => !self::is_plugin_template_file((string)($f['path'] ?? $f['name']))
-        ));
-        if (!empty($user_files)) {
-            $available = $user_files;
-        }
-
-        $priority_names = [
-            'questions.csv',
-            'questions.xlsx',
-            'questions.xlsm',
-            'questions.json',
-            'import.csv',
-            'import.xlsx',
-            'import.xlsm',
-            'import.json',
-            'questions_template_macros.xlsm',
-            'questions_template.xlsx',
-            'questions_template.csv',
-            'шаблон_вопросов_макросы.xlsm',
-            'шаблон_вопросов.xlsx',
-            'шаблон_вопросов.csv',
-        ];
-
-        $ordered = [];
-        foreach ($priority_names as $pname) {
-            foreach ($available as $cand) {
-                if (strtolower((string)$cand['name']) === $pname) {
-                    $ordered[$cand['path']] = $cand['path'];
-                }
-            }
-        }
-        foreach ($available as $cand) {
-            $ordered[$cand['path']] = $cand['path'];
-        }
-        $candidates = array_values($ordered);
+        // The scanner applies one consistent name priority for the UI,
+        // validation and import. Try examples only after working files.
+        $candidates = array_values(array_unique(array_map(static fn(array $f): string => (string)$f['path'], $available)));
 
         // Пробуем файлы по очереди: первый, где реально есть задания, и становится источником
         $first_error = null;

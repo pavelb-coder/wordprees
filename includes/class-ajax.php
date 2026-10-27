@@ -454,7 +454,7 @@ final class Ajax
         }
 
         wp_send_json_success([
-            'source'  => $filename !== '' ? $filename : __('автоопределение', 'wp-olympiad'),
+            'source'  => (string)($result['source'] ?? ($filename !== '' ? $filename : __('автоопределение', 'wp-olympiad'))),
             'message' => $result['message'],
             'stats'   => $result['stats'],
             'report'  => $result['report'],
@@ -488,14 +488,15 @@ final class Ajax
             $override['password'] = (string)$_POST['password'];
         }
 
-        $files = NetworkImport::scan_network_folder_for_import_files($quiz, $override);
+        $scan_error = null;
+        $files = NetworkImport::scan_network_folder_for_import_files($quiz, $override, $scan_error);
         $config = NetworkExport::get_quiz_network_config($quiz, $override);
 
         wp_send_json_success([
             'files'        => $files,
             'network_path' => $config['path'],
             'network_type' => $config['type'],
-            'diagnostics'  => empty($files) ? NetworkImport::describe_network_folder($quiz, $override) : '',
+            'diagnostics'  => empty($files) ? ($scan_error ?: NetworkImport::describe_network_folder($quiz, $override)) : '',
         ]);
     }
 

@@ -285,7 +285,7 @@ foreach ($questions as $question_obj) {
                             </button>
                         </div>
                         <span class="description" style="font-size:11px; color:#64748b;">
-                            <?php esc_html_e('Файлы ищутся в корне папки, а также внутри подкаталогов import/ и questions/.', 'wp-olympiad'); ?>
+                            <?php esc_html_e('Сначала ищем файлы непосредственно в import/. Если их нет, проверяем корень хранилища и доступные подпапки как раньше. Простое имя также сначала ищется в import; для файла в корне укажите ./имя. Если подключение уже указывает на import/, указывайте только имя файла.', 'wp-olympiad'); ?>
                         </span>
                     </div>
 
@@ -300,7 +300,7 @@ foreach ($questions as $question_obj) {
                             </select>
                         </div>
                         <div style="margin-top:6px;">
-                            <input type="text" id="wpo-import-manual-filename" class="widefat" placeholder="<?php esc_attr_e('Или введите путь к вашему файлу: Мои_вопросы.xlsx, задания.csv...', 'wp-olympiad'); ?>" style="font-size:12px;">
+                            <input type="text" id="wpo-import-manual-filename" class="widefat" placeholder="<?php esc_attr_e('Или введите путь относительно хранилища: import/Мои_вопросы.xlsx', 'wp-olympiad'); ?>" style="font-size:12px;">
                         </div>
                     </div>
                 </div>

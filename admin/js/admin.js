@@ -1049,27 +1049,23 @@
             }
         });
 
-        // Helper: get sanitized network folder path, ignoring placeholders
-        function getNetworkPath() {
-            var $input = $('#network_folder_path');
+        // Ignore only the copied multi-example hint, never a real /mnt/share
+        // or \\server\share path. This mirrors the PHP path handling.
+        function networkPathValue($input) {
             if (!$input.length) return '';
             var val = ($input.val() || '').trim();
             var ph = ($input.attr('placeholder') || '').trim();
-            if (!val || val === ph || val.indexOf('server\\share') !== -1 || val.indexOf('/mnt/share') !== -1) {
-                return '';
-            }
-            return val;
+            var isExample = /\s(?:или|or)\s/i.test(val) &&
+                (val.indexOf('server\\share') !== -1 || val.indexOf('/mnt/share') !== -1);
+            return !val || val === ph || isExample ? '' : val;
+        }
+
+        function getNetworkPath() {
+            return networkPathValue($('#network_folder_path'));
         }
 
         function getBuilderNetworkPath() {
-            var $input = $('#wpo-import-network-path');
-            if (!$input.length) return '';
-            var val = ($input.val() || '').trim();
-            var ph = ($input.attr('placeholder') || '').trim();
-            if (!val || val === ph || val.indexOf('server\\share') !== -1 || val.indexOf('/mnt/share') !== -1) {
-                return '';
-            }
-            return val;
+            return networkPathValue($('#wpo-import-network-path'));
         }
 
         // 14. Test Network Folder Connection (AJAX)
@@ -1218,10 +1214,10 @@
                 if ($spinner.length) $spinner.removeClass('is-active');
                 if (res.success && res.data) {
                     var data = res.data;
-                    var html = '✓ <strong>' + data.message + '</strong>';
+                    var html = '✓ <strong>' + wpoEsc(data.message) + '</strong>';
                     if (data.filename) {
                         html += '<div style="margin-top:6px; font-size:12px; color:#1e293b;">' +
-                            'Файл: <strong><code>' + data.filename + '</code></strong> | ' +
+                            'Файл: <strong><code>' + wpoEsc(data.filename) + '</code></strong> | ' +
                             'Импортировано: <strong>' + (data.imported_count || 0) + '</strong> | ' +
                             'Всего в тесте: <strong>' + (data.total_count || 0) + '</strong>' +
                             '</div>';
@@ -1231,7 +1227,7 @@
                         .fadeIn();
                 } else {
                     $msg.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' })
-                        .html('✕ ' + (res.data ? res.data.message : 'Ошибка импорта заданий.'))
+                        .html('✕ ' + wpoEsc(res.data ? res.data.message : 'Ошибка импорта заданий.'))
                         .fadeIn();
                 }
             }).fail(function () {
@@ -1275,7 +1271,7 @@
                 if ($spinner.length) $spinner.removeClass('is-active');
                 if (res.success && res.data) {
                     var data = res.data;
-                    var html = '✓ <strong>' + data.message + '</strong>';
+                    var html = '✓ <strong>' + wpoEsc(data.message) + '</strong>';
                     if (data.destination) {
                         html += '<div style="margin-top:4px; font-size:12px; color:#1e293b;">Сетевая папка: <code>' + data.destination + '/вопросы/</code> (' + (data.files_count || 1) + ' файлов)</div>';
                     }
@@ -1302,8 +1298,12 @@
             if (!quizId) return;
 
             var $sel = $('#wpo-import-discovered-files');
+            var $manual = $('#wpo-import-manual-filename');
+            var previousAuto = $sel.data('autoSelectedPath');
+            if (previousAuto && $manual.val().trim() === previousAuto) $manual.val('');
+            $sel.removeData('autoSelectedPath');
             var customPath = getBuilderNetworkPath();
-            $sel.html('<option value="">⏳ Поиск файлов шаблонов в сетевой папке...</option>').prop('disabled', true);
+            $sel.html('<option value="">⏳ Поиск файлов заданий в import/...</option>').prop('disabled', true);
 
             $.post(config.ajaxUrl, {
                 action: 'wp_olympiad_scan_network_import',
@@ -1317,7 +1317,7 @@
                     $sel.empty();
 
                     if (files.length === 0) {
-                        $sel.append('<option value="">— Файлы шаблонов (.xlsm, .xlsx, .csv, .json) не найдены —</option>');
+                        $sel.append('<option value="">— Файлы заданий (.xlsm, .xlsx, .csv, .json, .tsv) не найдены —</option>');
                         // Показываем, что именно находится в подключенной папке
                         if (res.data.diagnostics) {
                             var $hint = $('#wpo-import-scan-diagnostics');
@@ -1331,17 +1331,15 @@
                         $('#wpo-import-scan-diagnostics').hide();
                         $sel.append('<option value="">— Выберите найденный файл для импорта —</option>');
                         files.forEach(function (f) {
-                            var sizeKb = Math.round(f.size / 102.4) / 10;
-                            $sel.append('<option value="' + f.path + '">📄 ' + f.name + ' (' + sizeKb + ' КБ, ' + f.modified + ')</option>');
+                            var sizeKb = Math.round((f.size || 0) / 102.4) / 10;
+                            var label = '📄 ' + f.path + ' (' + sizeKb + ' КБ' + (f.modified ? ', ' + f.modified : '') + ')';
+                            $('<option>').val(f.path).text(label).appendTo($sel);
                         });
-                        // Auto-select first matching questions file
-                        var firstMatch = files.find(function (f) {
-                            var n = f.name.toLowerCase();
-                            return n.indexOf('questions') !== -1 || n.indexOf('template') !== -1;
-                        }) || files[0];
+                        // The server applies the same priority as automatic import.
+                        var firstMatch = files[0];
                         if (firstMatch) {
-                            $sel.val(firstMatch.path);
-                            $('#wpo-import-manual-filename').val(firstMatch.path);
+                            $sel.val(firstMatch.path).data('autoSelectedPath', firstMatch.path);
+                            $manual.val(firstMatch.path);
                         }
                     }
                 } else {
@@ -1376,7 +1374,7 @@
             var file = this.files && this.files[0];
             if (file) {
                 var sizeKb = Math.round(file.size / 102.4) / 10;
-                $('#wpo-import-selected-filename').html('📄 <span style="color:#0284c7;">' + file.name + '</span> (' + sizeKb + ' КБ)');
+                $('#wpo-import-selected-filename').html('📄 <span style="color:#0284c7;">' + wpoEsc(file.name) + '</span> (' + sizeKb + ' КБ)');
             } else {
                 $('#wpo-import-selected-filename').text('Файл не выбран. Нажмите кнопку выше для выбора файла.');
             }
@@ -1389,6 +1387,7 @@
         $(document).on('change', '#wpo-import-discovered-files', function () {
             var val = $(this).val();
             if (val) {
+                $(this).data('autoSelectedPath', val);
                 $('#wpo-import-manual-filename').val(val);
             }
         });
@@ -1437,10 +1436,10 @@
                     success: function (res) {
                         $btn.prop('disabled', false).text('📥 Запустить импорт заданий');
                         if (res.success && res.data) {
-                            var msg = '✓ <strong>' + res.data.message + '</strong>';
+                            var msg = '✓ <strong>' + wpoEsc(res.data.message) + '</strong>';
                             if (res.data.details && res.data.details.length > 0) {
                                 msg += '<div style="margin-top:6px; font-size:12px; color:#166534; max-height:80px; overflow-y:auto;">' +
-                                    res.data.details.slice(0, 5).join('<br>') +
+                                    res.data.details.slice(0, 5).map(wpoEsc).join('<br>') +
                                     (res.data.details.length > 5 ? '<br><em>... и ещё ' + (res.data.details.length - 5) + '</em>' : '') +
                                 '</div>';
                             }
@@ -1453,7 +1452,7 @@
                             }, 1400);
                         } else {
                             $status.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5' })
-                                .html('✕ <strong>Ошибка импорта:</strong> ' + (res.data ? res.data.message : 'Не удалось распознать задания'));
+                                .html('✕ <strong>Ошибка импорта:</strong> ' + wpoEsc(res.data ? res.data.message : 'Не удалось распознать задания'));
                         }
                     },
                     error: function () {
@@ -1488,10 +1487,10 @@
                 }, function (res) {
                     $btn.prop('disabled', false).text('📥 Запустить импорт заданий');
                     if (res.success && res.data) {
-                        var msg = '✓ <strong>' + res.data.message + '</strong>';
+                        var msg = '✓ <strong>' + wpoEsc(res.data.message) + '</strong>';
                         if (res.data.details && res.data.details.length > 0) {
                             msg += '<div style="margin-top:6px; font-size:12px; color:#166534; max-height:80px; overflow-y:auto;">' +
-                                res.data.details.slice(0, 5).join('<br>') +
+                                res.data.details.slice(0, 5).map(wpoEsc).join('<br>') +
                                 (res.data.details.length > 5 ? '<br><em>... и ещё ' + (res.data.details.length - 5) + '</em>' : '') +
                             '</div>';
                         }
@@ -1505,7 +1504,7 @@
                         }, 1400);
                     } else {
                         $status.css({ background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5' })
-                            .html('✕ <strong>Ошибка импорта:</strong> ' + (res.data ? res.data.message : 'Неизвестная ошибка'));
+                            .html('✕ <strong>Ошибка импорта:</strong> ' + wpoEsc(res.data ? res.data.message : 'Неизвестная ошибка'));
                     }
                 }).fail(function () {
                     $btn.prop('disabled', false).text('📥 Запустить импорт заданий');

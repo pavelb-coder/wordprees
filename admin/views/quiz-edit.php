@@ -744,7 +744,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                     <strong><?php esc_html_e('Автоматически импортировать задания из сетевой папки', 'wp-olympiad'); ?></strong>
                                 </label>
                                 <p class="description">
-                                    <?php esc_html_e('Плагин будет автоматически проверять сетевую папку (подкаталог import/ или корень) на наличие обновлённых файлов заданий (Excel .xlsm/.xlsx, .csv, .json) и синхронизировать вопросы олимпиады.', 'wp-olympiad'); ?>
+                                    <?php esc_html_e('При пустом имени файла плагин сначала проверяет import/, а если там нет файлов поддерживаемых форматов — использует прежний поиск в хранилище. Файл можно указать явно.', 'wp-olympiad'); ?>
                                 </p>
                             </td>
                         </tr>
@@ -773,8 +773,8 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                         <tr class="wpo-auto-import-row">
                             <th scope="row"><label for="network_auto_import_file"><?php esc_html_e('Имя файла заданий (необязательно):', 'wp-olympiad'); ?></label></th>
                             <td>
-                                <input type="text" name="network_auto_import_file" id="network_auto_import_file" value="<?php echo esc_attr($network_auto_import_file); ?>" class="regular-text code" placeholder="Мои_вопросы.xlsx или пусто для автопоиска">
-                                <p class="description"><?php esc_html_e('Оставьте пустым для автопоиска вашего файла заданий (.xlsx, .xlsm, .csv или .json).', 'wp-olympiad'); ?></p>
+                                <input type="text" name="network_auto_import_file" id="network_auto_import_file" value="<?php echo esc_attr($network_auto_import_file); ?>" class="regular-text code" placeholder="import/Мои_вопросы.xlsx или пусто для автопоиска">
+                                <p class="description"><?php esc_html_e('Простое имя сначала ищется в import/. Укажите import/имя или ./имя для точного файла в import или в корне. Если путь хранилища уже ведёт в import/, достаточно имени. При автопоиске старые файлы и шаблоны тоже могут быть выбраны; проверьте их, особенно в режиме замены.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
                         <tr>

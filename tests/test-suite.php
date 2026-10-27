@@ -3575,7 +3575,7 @@ $it('Новый вопрос: галочка «Скрыть баллы за эт
 });
 
 // ---------------------------------------------------------------------------
-$it('Сетевая папка: поиск файлов заданий в подпапках, приоритет рабочего файла и понятная диагностика', function (): bool {
+$it('Сетевая папка: сначала import, затем вложенные каталоги и понятная диагностика', function (): bool {
     $dir = sys_get_temp_dir() . '/wpo_scan_' . uniqid();
     wp_mkdir_p($dir . '/Задания/2026');
     wp_mkdir_p($dir . '/import');
@@ -3583,50 +3583,44 @@ $it('Сетевая папка: поиск файлов заданий в под
     wp_mkdir_p($dir . '/только_xls');
 
     $quiz_id = Quiz::create(['title' => 'Тест поиска файлов в сетевой папке', 'status' => 'publish']);
-    $quiz = Quiz::get($quiz_id);
-    if (!$quiz) return false;
+    try {
+        $quiz = Quiz::get($quiz_id);
+        if (!$quiz) return false;
+        $cfg = ['path' => $dir, 'type' => 'local'];
+        $xlsx = NetworkImport::get_template_xlsx();
+        if ($xlsx === '') return false;
 
-    $cfg = ['path' => $dir, 'type' => 'local'];
-    $xlsx = NetworkImport::get_template_xlsx();
-    if ($xlsx === '') return false;
+        file_put_contents($dir . '/Задания/2026/тест.xlsx', $xlsx);
+        file_put_contents($dir . '/import/questions.csv', "type;title;points;choices;correct\nsingle;Вопрос в import;1;Да|Нет;1\n");
+        file_put_contents($dir . '/import/README_IMPORT.txt', 'инструкция');
+        $files = NetworkImport::scan_network_folder_for_import_files($quiz, $cfg);
+        if (array_column($files, 'path') !== ['import/questions.csv']) return false;
+        $probe = NetworkImport::analyze_import_file($quiz, '', $cfg);
+        if (empty($probe['success']) || ($probe['source'] ?? '') !== 'import/questions.csv') return false;
+        $import = NetworkImport::auto_import_for_quiz($quiz, true, $cfg, 'append', '', true, false);
+        if (empty($import['success']) || ($import['filename'] ?? '') !== 'import/questions.csv') return false;
 
-    // 1. Рабочий файл лежит во вложенной папке, рядом — образцы плагина и инструкция
-    file_put_contents($dir . '/Задания/2026/тест.xlsx', $xlsx);
-    file_put_contents($dir . '/import/questions.csv', "type;title;points\nsingle;Образец;1\n");
-    file_put_contents($dir . '/import/README_IMPORT.txt', 'инструкция');
+        // Если в import нет входных файлов, работает прежний трёхуровневый поиск.
+        unlink($dir . '/import/questions.csv');
+        $files = NetworkImport::scan_network_folder_for_import_files($quiz, $cfg);
+        if (($files[0]['path'] ?? '') !== 'Задания/2026/тест.xlsx') return false;
+        if (in_array('import/README_IMPORT.txt', array_column($files, 'path'), true)) return false;
+        $probe = NetworkImport::analyze_import_file($quiz, '', $cfg);
+        if (empty($probe['success']) || (int)$probe['stats']['importable'] < 13) return false;
+        $import = NetworkImport::auto_import_for_quiz(Quiz::get($quiz_id), true, $cfg, 'append', '', true, false);
+        if (empty($import['success']) || ($import['filename'] ?? '') !== 'Задания/2026/тест.xlsx') return false;
 
-    $files = NetworkImport::scan_network_folder_for_import_files($quiz, $cfg);
-    $paths = array_map(static fn(array $f): string => (string)$f['path'], $files);
-    if (!in_array('Задания/2026/тест.xlsx', $paths, true)) return false;   // вложенность найдена
-    if (in_array('import/README_IMPORT.txt', $paths, true)) return false;  // инструкция не считается заданиями
-    if (($paths[0] ?? '') !== 'Задания/2026/тест.xlsx') return false;      // рабочий файл — первым
-
-    // 2. Автоопределение выбирает рабочий файл, а не образец из import/
-    $probe = NetworkImport::analyze_import_file($quiz, '', $cfg);
-    if (empty($probe['success'])) return false;
-    if ((int)$probe['stats']['importable'] < 13) return false;
-
-    $import = NetworkImport::auto_import_for_quiz($quiz, true, $cfg, 'append', '');
-    if (empty($import['success'])) return false;
-    if (($import['filename'] ?? '') !== 'Задания/2026/тест.xlsx') return false;
-
-    // 3. Пустая папка: сообщение объясняет причину
-    $empty = NetworkImport::analyze_import_file($quiz, '', ['path' => $dir . '/пусто', 'type' => 'local']);
-    if (!empty($empty['success'])) return false;
-    if (mb_strpos($empty['message'], 'пуста') === false) return false;
-
-    // 4. Несуществующий путь: подсказка про монтирование сетевого ресурса
-    $missing = NetworkImport::analyze_import_file($quiz, '', ['path' => $dir . '/нет-такой-папки', 'type' => 'local']);
-    if (mb_strpos($missing['message'], 'не существует') === false) return false;
-
-    // 5. В папке только .xls — подсказка сохранить как .xlsx
-    file_put_contents($dir . '/только_xls/старый.xls', 'x');
-    $xls = NetworkImport::analyze_import_file($quiz, '', ['path' => $dir . '/только_xls', 'type' => 'local']);
-    if (mb_strpos($xls['message'], '.xlsx') === false) return false;
-
-    exec('rm -rf ' . escapeshellarg($dir));
-    Quiz::delete($quiz_id);
-    return true;
+        $empty = NetworkImport::analyze_import_file($quiz, '', ['path' => $dir . '/пусто', 'type' => 'local']);
+        if (!empty($empty['success']) || mb_strpos($empty['message'], 'пуста') === false) return false;
+        $missing = NetworkImport::analyze_import_file($quiz, '', ['path' => $dir . '/нет-такой-папки', 'type' => 'local']);
+        if (mb_strpos($missing['message'], 'не существует') === false) return false;
+        file_put_contents($dir . '/только_xls/старый.xls', 'x');
+        $xls = NetworkImport::analyze_import_file($quiz, '', ['path' => $dir . '/только_xls', 'type' => 'local']);
+        return mb_strpos($xls['message'], '.xlsx') !== false;
+    } finally {
+        exec('rm -rf ' . escapeshellarg($dir));
+        Quiz::delete($quiz_id);
+    }
 });
 
 // 75. Чтение файлов заданий из сетевой папки: локальный путь, WebDAV, SMB, FTP
@@ -4364,6 +4358,7 @@ require __DIR__ . '/test-style-tools.php';
 require __DIR__ . '/test-protocol-export.php';
 require __DIR__ . '/test-report-export-cleanup.php';
 require __DIR__ . '/test-import-folder.php';
+require __DIR__ . '/test-import-search.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);
