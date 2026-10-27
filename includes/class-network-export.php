@@ -415,7 +415,6 @@ final class NetworkExport
         $safe_slug = self::build_safe_slug($quiz);
         $readme_text = self::generate_manifest_text($quiz, $total_attempts, $safe_slug);
 
-        $date_suffix = date('Y-m-d_H-i-s');
         $primary_file = sprintf('протоколы/протокол_%s.csv', $safe_slug);
 
         // 4. Detailed individual attempts breakdown in 'попытки/' and 'attempts/' folders
@@ -442,10 +441,7 @@ final class NetworkExport
         $files = [
             // Исключительно русскоязычные папки и названия файлов (протоколы, вопросы, отчёты)
             // Папка «протоколы»
-            sprintf('протоколы/протокол_%s.csv', $safe_slug)                   => $protocol_csv,
-            'протоколы/сводный_протокол.csv'                                  => $protocol_csv,
-            'протоколы/ответы_участников.csv'                                 => $protocol_csv,
-            sprintf('протоколы/протокол_%s_%s.csv', $safe_slug, $date_suffix)  => $protocol_csv,
+            $primary_file                                                     => $protocol_csv,
 
             // Папка «вопросы»
             sprintf('вопросы/критерии_и_ответы_%s.csv', $safe_slug)           => $keys_csv,
@@ -824,7 +820,7 @@ final class NetworkExport
             '📁 протоколы/ (protocols/):',
             '   - протокол_' . $slug . '.csv — Основной файл протокола с ответами',
             '     участников по каждому заданию олимпиады (кодировка UTF-8 BOM).',
-            '   - сводный_протокол.csv, ответы_участников.csv — Сводные таблицы.',
+            '     Повторная выгрузка обновляет этот файл; старые копии не удаляются.',
             '',
             '📁 вопросы/ (questions/):',
             '   - критерии_и_ответы_' . $slug . '.csv — Перечень всех заданий с правильными',

@@ -1288,7 +1288,10 @@ $it("Прямой экспорт ответов в сетевую папку (б
     if (!empty($zip_files)) return false;
 
     // 7. Verify files exist inside organized and Russified subfolders (no loose files in root!)
-    if (!file_exists($net_dir . '/протоколы/сводный_протокол.csv')) return false;
+    $primary_protocol = 'протоколы/протокол_' . NetworkExport::build_safe_slug(Quiz::get($net_quiz_id)) . '.csv';
+    if (($export_res['primary_file'] ?? '') !== $primary_protocol) return false;
+    if (!file_exists($net_dir . '/' . $primary_protocol)) return false;
+    if (count(glob($net_dir . '/протоколы/*.csv')) !== 1) return false;
     if (!file_exists($net_dir . '/вопросы/список_заданий.csv')) return false;
     if (!file_exists($net_dir . '/отчёты/руководство_к_протоколам.txt')) return false;
 
@@ -1297,7 +1300,7 @@ $it("Прямой экспорт ответов в сетевую папку (б
         return false;
     }
 
-    $csv_content = file_get_contents($net_dir . '/протоколы/сводный_протокол.csv');
+    $csv_content = file_get_contents($net_dir . '/' . $primary_protocol);
     if ($csv_content === false || !str_contains($csv_content, 'Тестовый Участник Сети')) {
         return false;
     }
@@ -1342,7 +1345,8 @@ $it("Прямой экспорт ответов в сетевую папку (б
     if ($submit_res->get_status() !== 200) return false;
 
     // Check that direct CSV files in network folder were updated with new submission
-    $updated_csv = file_get_contents($net_dir . '/протоколы/сводный_протокол.csv');
+    $updated_csv = file_get_contents($net_dir . '/' . $primary_protocol);
+    if (count(glob($net_dir . '/протоколы/*.csv')) !== 1) return false;
     if ($updated_csv === false || !str_contains($updated_csv, 'Второй Участник Автовыгрузки')) {
         return false;
     }
@@ -4362,6 +4366,7 @@ require __DIR__ . '/test-settings-fields.php';
 require __DIR__ . '/test-no-pass-threshold.php';
 require __DIR__ . '/test-export-cleanup.php';
 require __DIR__ . '/test-style-tools.php';
+require __DIR__ . '/test-protocol-export.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);
