@@ -1293,7 +1293,7 @@ $it("Прямой экспорт ответов в сетевую папку (б
     if (!file_exists($net_dir . '/' . $primary_protocol)) return false;
     if (count(glob($net_dir . '/протоколы/*.csv')) !== 1) return false;
     if (!file_exists($net_dir . '/вопросы/список_заданий.csv')) return false;
-    if (!file_exists($net_dir . '/отчёты/руководство_к_протоколам.txt')) return false;
+    if (file_exists($net_dir . '/отчёты')) return false;
 
     // Verify non-Russified folders are NOT created
     if (is_dir($net_dir . '/protocols') || is_dir($net_dir . '/questions') || is_dir($net_dir . '/reports') || is_dir($net_dir . '/attempts')) {
@@ -1308,11 +1308,6 @@ $it("Прямой экспорт ответов в сетевую папку (б
     // Verify sanitize_path preserves backslashes and UNC paths
     if (NetworkExport::sanitize_path('\\\\192.168.1.100\\share\\olympiad') !== '\\\\192.168.1.100\\share\\olympiad') return false;
     if (NetworkExport::sanitize_path('D:\\Shares\\Olympiad') !== 'D:\\Shares\\Olympiad') return false;
-
-    $manifest_content = file_get_contents($net_dir . '/отчёты/руководство_к_протоколам.txt');
-    if ($manifest_content === false || !str_contains($manifest_content, 'Олимпиада Сетевой Экспорт')) {
-        return false;
-    }
 
     // Verify that NO loose export files remain in root outside folders
     $loose_root_protos = glob($net_dir . '/protocol*.csv');
@@ -2337,7 +2332,7 @@ $it('Общие тексты к заданиям (shared_texts, кейсы/па�
     return true;
 });
 
-$it('Структурирование экспорта по папкам (protocols, questions, reports, attempts) и уведомления Anti-Cheat', function () {
+$it('Структурирование экспорта по папкам без отчётов и уведомления Anti-Cheat', function () {
     // 1. Создание олимпиады с участниками и попытками
     $quiz_id = Quiz::create([
         'title'       => 'Олимпиада Папки Экспорта и Античит',
@@ -2406,7 +2401,7 @@ $it('Структурирование экспорта по папкам (protoc
         }
     }
 
-    if (!$has_ru_proto_dir || !$has_ru_quest_dir || !$has_ru_rep_dir || !$has_ru_att_dir) {
+    if (!$has_ru_proto_dir || !$has_ru_quest_dir || $has_ru_rep_dir || !$has_ru_att_dir) {
         return false;
     }
 
@@ -2425,7 +2420,7 @@ $it('Структурирование экспорта по папкам (protoc
     // Проверка физического создания структурированных подпапок на диске
     if (!is_dir($export_test_dir . '/протоколы')) return false;
     if (!is_dir($export_test_dir . '/вопросы')) return false;
-    if (!is_dir($export_test_dir . '/отчёты')) return false;
+    if (file_exists($export_test_dir . '/отчёты')) return false;
     if (!is_dir($export_test_dir . '/попытки')) return false;
 
     // Проверка, что нерусифицированные папки не создаются
@@ -4367,6 +4362,7 @@ require __DIR__ . '/test-no-pass-threshold.php';
 require __DIR__ . '/test-export-cleanup.php';
 require __DIR__ . '/test-style-tools.php';
 require __DIR__ . '/test-protocol-export.php';
+require __DIR__ . '/test-report-export-cleanup.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

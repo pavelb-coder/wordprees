@@ -38,6 +38,9 @@ if (!defined('ABSPATH')) {
                     <?php esc_html_e('Сетевая директория:', 'wp-olympiad'); ?>
                     <code style="background:#f1f5f9; padding:2px 6px; border-radius:3px;"><?php echo esc_html($last_net['destination']); ?></code>
                 </p>
+                <?php if (!empty($last_net['reports_notice'])): ?>
+                    <p style="margin:0 0 8px; color:#92400e;"><?php echo esc_html($last_net['reports_notice']); ?></p>
+                <?php endif; ?>
                 <?php if (!empty($last_net['primary_file'])): ?>
                     <p style="margin:0 0 8px; font-size:13px;">
                         <?php esc_html_e('Основной файл выгрузки:', 'wp-olympiad'); ?>

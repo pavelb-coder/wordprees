@@ -77,7 +77,7 @@ $it('Без проходного процента: ручные баллы и у
     } finally { Quiz::delete($id); }
 });
 
-$it('Без проходного процента: CSV и сетевой манифест содержат баллы/процент, но не зачёт или долю прошедших', function () use ($threshold_assert, $threshold_fixture, $threshold_submit): bool {
+$it('Без проходного процента: обычный и сетевой CSV содержат баллы/процент без зачёта', function () use ($threshold_assert, $threshold_fixture, $threshold_submit): bool {
     [$id, $qid] = $threshold_fixture(); $root = sys_get_temp_dir() . '/wpo_no_threshold_' . wp_generate_password(10, false, false);
     try {
         [, $attempt] = $threshold_submit($id, $qid, 'b');
@@ -85,10 +85,9 @@ $it('Без проходного процента: CSV и сетевой ман�
         $threshold_assert(str_contains($csv, 'Процент (%)') && str_contains($single, 'Статус работы') && str_contains($single, 'Завершено'), 'Numerical/workflow report missing');
         foreach (['Зачёт', 'зачёт', 'Не сдан', 'Пройдено', 'Проходной'] as $text) $threshold_assert(!str_contains($csv, $text) && !str_contains($single, $text), 'Classification leaked into CSV');
         $result = NetworkExport::export_quiz($id, ['type' => 'local', 'path' => $root]); $threshold_assert(!empty($result['success']), 'Network export failed');
-        foreach (glob($root . '/отчёты/*.txt') as $file) {
-            $text = (string)file_get_contents($file); $threshold_assert(!str_contains($text, 'Успешно сдали') && !str_contains($text, 'зачёт'), 'Manifest contains a pass rate');
-        }
-        return true;
+        $network_csv = (string)file_get_contents($root . '/' . $result['primary_file']);
+        $threshold_assert(str_contains($network_csv, 'Процент (%)') && !str_contains($network_csv, 'зачёт'), 'Network CSV changed');
+        return !file_exists($root . '/отчёты');
     } finally { Quiz::delete($id); exec('rm -rf ' . escapeshellarg($root)); }
 });
 

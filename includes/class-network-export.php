@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
  * 1. Local mounted network shares (NFS, CIFS/SMB, local NAS mounts, Windows shares);
  * 2. WebDAV cloud/network storage with HTTP Basic Authentication;
  * 3. FTP / FTPS network storage;
- * 4. Direct CSV protocols, questions keys and audit manifest without archive compression.
+ * 4. Direct CSV protocols, question keys and individual attempts without archive compression.
  */
 final class NetworkExport
 {
@@ -119,6 +119,21 @@ final class NetworkExport
         $cleanup = QuestionExportCleanup::prune($config);
         if (!$cleanup['success']) return ['success' => false, 'message' => __('Файлы выгружены, но очистка старых имён не завершена. ', 'wp-olympiad') . $cleanup['message'], 'cleanup' => $cleanup];
 
+        // The user chose to retire only the three old report files after delivery.
+        $report_cleanup = ReportExportCleanup::prune($config, $quiz);
+        if (!$report_cleanup['success']) {
+            $message = __('Файлы выгружены, но очистка старых отчётов не завершена. ', 'wp-olympiad') . $report_cleanup['message'];
+            // Automatic submissions must not fail, but administrators must be able to see the cleanup error.
+            set_transient('wpo_last_report_cleanup_error_' . $quiz_id, ['message' => $message, 'timestamp' => current_time('mysql')], DAY_IN_SECONDS * 30);
+            return ['success' => false, 'message' => $message, 'report_cleanup' => $report_cleanup];
+        }
+        delete_transient('wpo_last_report_cleanup_error_' . $quiz_id);
+        $reports_notice = match ($report_cleanup['directory']) {
+            'not_empty' => __('Папка «отчёты/» сохранена: в ней остались другие файлы.', 'wp-olympiad'),
+            'webdav_retained' => __('Папка «отчёты/» сохранена: WebDAV не поддерживает безопасное нерекурсивное удаление каталога.', 'wp-olympiad'),
+            default => '',
+        };
+
         // Export-only connections also receive the editor, without affecting answer delivery.
         DesktopEditor::ensure_for_quiz($quiz, $override_config);
 
@@ -138,10 +153,13 @@ final class NetworkExport
                 __('Ответы олимпиады «%1$s» успешно экспортированы напрямую в сетевую папку: %2$s', 'wp-olympiad'),
                 $quiz->title,
                 $delivery['destination']
-            ) . ' ' . __('Старые questions.csv и questions.json в экспортной папке отсутствуют.', 'wp-olympiad'),
+            ) . ' ' . __('Старые questions.csv и questions.json в экспортной папке отсутствуют.', 'wp-olympiad') . ($reports_notice !== '' ? ' ' . $reports_notice : ''),
             'destination'  => $delivery['destination'],
             'primary_file' => $package['primary_filename'],
             'removed_legacy_files' => $cleanup['removed'] ?? [],
+            'removed_report_files' => $report_cleanup['removed'],
+            'reports_directory' => $report_cleanup['directory'],
+            'reports_notice' => $reports_notice,
             'files_count'  => count($package['files']),
             'files_list'   => array_keys($package['files']),
             'download_url' => $download_url,
@@ -385,7 +403,7 @@ final class NetworkExport
     }
 
     /**
-     * Generate direct export files (CSV protocol, questions keys and manifest)
+     * Generate direct export files (CSV protocol, question keys and attempts)
      *
      * @param Quiz $quiz
      * @return array{
@@ -410,10 +428,8 @@ final class NetworkExport
         // 2. Generate questions keys & scoring breakdown CSV
         $keys_csv = self::generate_questions_key_csv($quiz);
 
-        // 3. Generate README / Audit manifest
-        $total_attempts = Attempt::count(['quiz_id' => $quiz_id]);
+        // 3. Name the primary file for this quiz.
         $safe_slug = self::build_safe_slug($quiz);
-        $readme_text = self::generate_manifest_text($quiz, $total_attempts, $safe_slug);
 
         $primary_file = sprintf('протоколы/протокол_%s.csv', $safe_slug);
 
@@ -439,7 +455,7 @@ final class NetworkExport
         }
 
         $files = [
-            // Исключительно русскоязычные папки и названия файлов (протоколы, вопросы, отчёты)
+            // Исключительно русскоязычные папки и названия файлов (протоколы, вопросы, попытки)
             // Папка «протоколы»
             $primary_file                                                     => $protocol_csv,
 
@@ -450,11 +466,6 @@ final class NetworkExport
 
             sprintf('вопросы/вопросы_%s.csv', $safe_slug)                     => (string)(Export::export_quiz_questions_csv($quiz, false) ?? ''),
             sprintf('вопросы/вопросы_%s.json', $safe_slug)                    => (string)(Export::export_quiz_questions_json($quiz, false) ?? ''),
-
-            // Папка «отчёты»
-            sprintf('отчёты/манифест_выгрузки_%s.txt', $safe_slug)            => $readme_text,
-            'отчёты/руководство_к_протоколам.txt'                             => $readme_text,
-            'отчёты/сводка_результатов.txt'                                   => $readme_text,
         ];
 
         // Индивидуальные работы участников только в папке «попытки»
@@ -786,66 +797,6 @@ final class NetworkExport
             default:
                 return '—';
         }
-    }
-
-    /**
-     * Generate text audit manifest for export package
-     */
-    private static function generate_manifest_text(
-        Quiz $quiz,
-        int $total_attempts,
-        string $safe_slug = ''
-    ): string {
-        // «Завершили» = все работы, по которым уже вынесен итог (включая ожидающие жюри)
-        $completed_attempts = Attempt::count(['quiz_id' => $quiz->id, 'status' => 'completed'])
-            + Attempt::count(['quiz_id' => $quiz->id, 'status' => 'graded'])
-            + Attempt::count(['quiz_id' => $quiz->id, 'status' => 'needs_review']);
-        $slug = !empty($safe_slug) ? $safe_slug : self::build_safe_slug($quiz);
-
-        $lines = [
-            '========================================================================',
-            '  WP OLYMPIAD: ОФИЦИАЛЬНЫЙ ЭКСПОРТ ПРОТОКОЛОВ И ОТВЕТОВ ТЕСТИРОВАНИЯ     ',
-            '========================================================================',
-            'Олимпиада:            ' . $quiz->title . ' (ID: ' . $quiz->id . ')',
-            'Дата экспорта:        ' . current_time('mysql'),
-            'Формат выгрузки:      Прямой экспорт файлов в сетевую папку (без архивации)',
-            '',
-            'СВОДКА УЧАСТИЯ:',
-            '------------------------------------------------------------------------',
-            'Всего участников:     ' . $total_attempts,
-            'Завершили тест:       ' . $completed_attempts,
-            '',
-            'СОДЕРЖИМОЕ ВЫГРУЗКИ ПО ПАПКАМ:',
-            '------------------------------------------------------------------------',
-            '📁 протоколы/ (protocols/):',
-            '   - протокол_' . $slug . '.csv — Основной файл протокола с ответами',
-            '     участников по каждому заданию олимпиады (кодировка UTF-8 BOM).',
-            '     Повторная выгрузка обновляет этот файл; старые копии не удаляются.',
-            '',
-            '📁 вопросы/ (questions/):',
-            '   - критерии_и_ответы_' . $slug . '.csv — Перечень всех заданий с правильными',
-            '     ключами, штрафами и критериями оценивания жюри.',
-            '   - список_заданий.csv, правильные_ответы.csv — Таблицы ключей.',
-            '',
-            '📁 попытки/ (attempts/):',
-            '   - Детальные индивидуальные протоколы проверки каждого участника.',
-            '',
-            '📁 отчёты/ (reports/):',
-            '   - манифест_выгрузки_' . $slug . '.txt — Этот официальный документ.',
-            '   - руководство_к_протоколам.txt — Правила структуры и открытия.',
-            '',
-            'ИНСТРУКЦИЯ ПО ОТКРЫТИЮ В MICROSOFT EXCEL:',
-            '------------------------------------------------------------------------',
-            '- Файлы CSV сформированы с разделителем точка с запятой (;) и кодировкой',
-            '  UTF-8 с меткой порядка байтов (BOM), что обеспечивает корректное',
-            '  отображение русского языка в Microsoft Excel без кракозябр.',
-            '',
-            '========================================================================',
-            'Сформировано модулем WP Olympiad Direct Network Export v1.0.0',
-            '========================================================================',
-        ];
-
-        return implode("\r\n", $lines);
     }
 
     /**

@@ -50,6 +50,7 @@ $network_folder_user = $is_new ? '' : (string)$quiz->get_setting('network_folder
 $network_folder_password = $is_new ? '' : (string)$quiz->get_setting('network_folder_password', '');
 $network_auto_export = $is_new ? 0 : (int)$quiz->get_setting('network_auto_export', 0);
 $last_network_export = !$is_new ? get_transient('wpo_last_network_export_' . $quiz->id) : null;
+$last_report_cleanup_error = !$is_new ? get_transient('wpo_last_report_cleanup_error_' . $quiz->id) : null;
 
 // Network Auto-Import Settings
 $network_auto_import = $is_new ? 0 : (int)$quiz->get_setting('network_auto_import', 0);
@@ -814,6 +815,16 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
 
                                 <div id="wpo-import-report" style="margin-top:12px; display:none;"></div>
 
+                                <?php if (is_array($last_report_cleanup_error) && !empty($last_report_cleanup_error['message'])): ?>
+                                    <div class="notice notice-warning inline" style="margin:12px 0;">
+                                        <p><strong><?php esc_html_e('Последняя ошибка очистки старых отчётов:', 'wp-olympiad'); ?></strong>
+                                            <?php echo esc_html($last_report_cleanup_error['message']); ?>
+                                            <?php if (!empty($last_report_cleanup_error['timestamp'])): ?>
+                                                <small>(<?php echo esc_html($last_report_cleanup_error['timestamp']); ?>)</small>
+                                            <?php endif; ?>
+                                        </p>
+                                    </div>
+                                <?php endif; ?>
                                 <?php if (!empty($last_network_export) && is_array($last_network_export)): ?>
                                     <div style="margin-top:12px; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; font-size:12px; color:#166534;">
                                         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:4px;">
@@ -831,6 +842,9 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                             <?php endif; ?>
                                             (<?php echo esc_html(sprintf('%.1f КБ', ($last_network_export['size'] ?? 0) / 1024)); ?>)
                                         </div>
+                                        <?php if (!empty($last_network_export['reports_notice'])): ?>
+                                            <div style="margin-top:4px; color:#92400e;"><?php echo esc_html($last_network_export['reports_notice']); ?></div>
+                                        <?php endif; ?>
                                     </div>
                                 <?php endif; ?>
 
