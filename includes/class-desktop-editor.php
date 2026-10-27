@@ -10,6 +10,7 @@ final class DesktopEditor
     public const VERSION = '1.0.0';
     public const STATE_PREFIX = 'wpo_editor_deploy_';
     private const RETRY_AFTER = 60;
+    private const DEPLOY_FORMATS = ['exe', 'source'];
 
     public static function init(): void
     {
@@ -30,7 +31,10 @@ final class DesktopEditor
             throw new \InvalidArgumentException(__('Неизвестный файл редактора.', 'wp-olympiad'));
         }
         $a = $manifest[$format];
-        $a['path'] = WP_OLYMPIAD_PATH . 'import/' . $a['name'];
+        // Only the program and sources live in import/; optional downloads and
+        // their licence remain available from a separate bundled directory.
+        $directory = in_array($format, self::DEPLOY_FORMATS, true) ? 'import/' : 'editor-resources/';
+        $a['path'] = WP_OLYMPIAD_PATH . $directory . $a['name'];
         clearstatcache(true, $a['path']);
         if (!is_file($a['path']) || !is_readable($a['path'])
             || (int)filesize($a['path']) !== $a['size']
@@ -42,7 +46,8 @@ final class DesktopEditor
 
     public static function bundle_id(): string
     {
-        return hash('sha256', self::VERSION . wp_json_encode(self::manifest()));
+        // Include the deployed subset: older cached states described four files.
+        return hash('sha256', self::VERSION . wp_json_encode(self::manifest()) . wp_json_encode(self::DEPLOY_FORMATS));
     }
 
     public static function download_url(string $format = 'exe'): string
@@ -131,7 +136,7 @@ final class DesktopEditor
     public static function payload(array $config): array
     {
         $files = [];
-        foreach (['exe', 'readme', 'license', 'source'] as $kind) {
+        foreach (self::DEPLOY_FORMATS as $kind) {
             $a = self::asset($kind);
             $data = @file_get_contents($a['path']);
             if ($data === false || !hash_equals($a['sha256'], hash('sha256', $data))) {
@@ -147,7 +152,7 @@ final class DesktopEditor
         return (string)preg_replace('#(://)[^/@]+@#', '$1', $path);
     }
 
-    /** Idempotent installation: only our four files, never question files or templates. */
+    /** Idempotent installation: only EXE and sources; never delete existing files. */
     public static function deploy(array $config, bool $force = false): array
     {
         $config = self::config($config);

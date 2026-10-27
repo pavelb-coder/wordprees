@@ -1001,7 +1001,7 @@ final class ImportTemplate
     }
 
     /**
-     * Human-readable import guide (also deployed into the network folder).
+     * Human-readable import guide bundled with the plugin, not deployed to the network folder.
      */
     public static function readme(): string
     {

@@ -2620,11 +2620,11 @@ $it('Импорт заданий по шаблону из сетевой пап�
 });
 
 // ---------------------------------------------------------------------------
-// 64. Размещение шаблонов импорта вопросов в сетевой папке по отдельной кнопке
+// 64. Шаблон по скачиванию, без автоматического размещения в сетевой import
 // ---------------------------------------------------------------------------
-$it('Размещение только XLSX и инструкции по кнопке; удалённые образцы не создаются', function (): bool {
+$it('Шаблон в import не размещается; вручную добавленный XLSX импортируется', function (): bool {
     $root = sys_get_temp_dir() . '/wpo_xlsx_deploy_' . wp_generate_password(12, false, false);
-    $id = Quiz::create(['title' => 'Только Excel-шаблон', 'settings' => ['network_folder_type' => 'local', 'network_folder_path' => $root]]);
+    $id = Quiz::create(['title' => 'Ручной Excel-шаблон', 'settings' => ['network_folder_type' => 'local', 'network_folder_path' => $root]]);
     $removed = ['questions.csv', 'questions.json', 'questions_template.csv', 'questions_template.json', 'questions_template_macros.xlsm'];
     try {
         $connection = NetworkExport::test_connection(['type' => 'local', 'path' => $root]);
@@ -2633,11 +2633,11 @@ $it('Размещение только XLSX и инструкции по кно�
             if (file_exists($root . '/import/' . $name)) return false;
         }
         $result = NetworkExport::deploy_import_templates_result(['type' => 'local', 'path' => $root]);
-        if (empty($result['success']) || $result['files'] !== ['import/questions_template.xlsx', 'import/README_IMPORT.txt']) return false;
-        foreach ($removed as $name) { if (file_exists($root . '/import/' . $name)) return false; }
-        if (!is_file($root . '/import/questions_template.xlsx') || filesize($root . '/import/questions_template.xlsx') < 5000) return false;
-        if (!is_file($root . '/import/README_IMPORT.txt') || filesize($root . '/import/README_IMPORT.txt') < 100) return false;
-        if (array_filter(glob($root . '/*'), 'is_file')) return false;
+        if (!empty($result['success']) || !str_contains($result['message'], 'отключено')) return false;
+        if (file_exists($root . '/import/questions_template.xlsx') || file_exists($root . '/import/README_IMPORT.txt')) return false;
+        $xlsx = NetworkImport::get_template_xlsx();
+        if (!str_starts_with($xlsx, "PK\x03\x04") || strlen($xlsx) < 5000) return false;
+        file_put_contents($root . '/import/questions_template.xlsx', $xlsx); // User-supplied input.
         $quiz = Quiz::get($id);
         $found = NetworkImport::scan_network_folder_for_import_files($quiz);
         if (array_column($found, 'name') !== ['questions_template.xlsx']) return false;
@@ -4363,6 +4363,7 @@ require __DIR__ . '/test-export-cleanup.php';
 require __DIR__ . '/test-style-tools.php';
 require __DIR__ . '/test-protocol-export.php';
 require __DIR__ . '/test-report-export-cleanup.php';
+require __DIR__ . '/test-import-folder.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

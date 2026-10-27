@@ -27,23 +27,20 @@ $it('Комплект шаблонов: только XLSX и инструкци�
     return true;
 });
 
-$it('Комплект шаблонов: размещаются ровно 2 файла, путь import/import не создаётся, чужие CSV/JSON сохранны', function () use ($pkg_root, $pkg_cleanup, $pkg_removed, $pkg_assert): bool {
+$it('Шаблон: старое размещение отключено и не изменяет существующие файлы import', function () use ($pkg_root, $pkg_cleanup, $pkg_removed, $pkg_assert): bool {
     $root = $pkg_root();
     try {
         $config = ['type' => 'local', 'path' => $root . '/import'];
         $first = NetworkExport::deploy_import_templates_result($config);
-        $pkg_assert(!empty($first['success']) && $first['files'] === ['questions_template.xlsx', 'README_IMPORT.txt'], 'Wrong XLSX deployment manifest');
-        $files = array_values(array_diff(scandir($root . '/import'), ['.', '..'])); sort($files);
-        $pkg_assert($files === ['README_IMPORT.txt', 'questions_template.xlsx'] && !is_dir($root . '/import/import'), 'Unexpected files or nested import');
-        // Old copies and real user files cannot be distinguished just by a name.
-        // A template refresh must not silently erase or overwrite these files.
+        $pkg_assert(empty($first['success']) && ($first['files'] ?? null) === [] && str_contains($first['message'], 'отключено'), 'Legacy deploy is not explicitly disabled');
+        $pkg_assert(count(array_diff(scandir($root . '/import'), ['.', '..'])) === 0 && !is_dir($root . '/import/import'), 'Legacy deploy created files');
         $originals = [];
-        foreach ($pkg_removed as $name) {
+        foreach (array_merge($pkg_removed, ['README_IMPORT.txt', 'questions_template.xlsx', 'README_EDITOR.txt', 'EDITOR_LICENSES.txt']) as $name) {
             $data = 'Пользовательский файл ' . $name; file_put_contents($root . '/import/' . $name, $data); $originals[$name] = $data;
         }
-        $again = NetworkExport::deploy_import_templates_result($config);
-        $pkg_assert(!empty($again['success']) && count($again['files']) === 2, 'Refresh deployed removed samples');
-        foreach ($originals as $name => $data) { $pkg_assert(file_get_contents($root . '/import/' . $name) === $data, 'Template refresh changed a user file: ' . $name); }
+        $message = null;
+        $pkg_assert(!NetworkExport::deploy_import_templates($config, $message) && str_contains((string)$message, 'отключено'), 'Legacy wrapper reports success');
+        foreach ($originals as $name => $data) { $pkg_assert(file_get_contents($root . '/import/' . $name) === $data, 'Old deploy changed a user file: ' . $name); }
         return true;
     } finally { $pkg_cleanup($root); }
 });
@@ -89,7 +86,7 @@ $it('Комплект шаблонов: пользовательские questio
         $csv = NetworkImport::get_template_csv(); $json = NetworkImport::get_template_json();
         file_put_contents($root . '/import/questions.csv', $csv); file_put_contents($root . '/import/questions.json', $json);
         $deploy = NetworkExport::deploy_import_templates_result(['type' => 'local', 'path' => $root]);
-        $pkg_assert(!empty($deploy['success']) && file_get_contents($root . '/import/questions.csv') === $csv && file_get_contents($root . '/import/questions.json') === $json, 'Template placement overwrote genuine inputs');
+        $pkg_assert(empty($deploy['success']) && file_get_contents($root . '/import/questions.csv') === $csv && file_get_contents($root . '/import/questions.json') === $json, 'Disabled template placement changed genuine inputs');
         foreach (['questions.csv', 'questions.json'] as $name) {
             $import = NetworkImport::import_from_network($id, 'import/' . $name, 'replace');
             $pkg_assert(!empty($import['success']) && $import['imported_count'] === 13, 'User input format disabled: ' . $name);
@@ -101,24 +98,18 @@ $it('Комплект шаблонов: пользовательские questio
 });
 
 
-$it('Комплект шаблонов / WebDAV: ровно 2 PUT, нормальные пути и MIME, частичный отказ не считается успехом', function () use ($pkg_assert): bool {
-    $calls = []; $fail = false;
-    $mock = static function ($pre, $args, $url) use (&$calls, &$fail) {
+$it('Шаблон / WebDAV: устаревшее размещение не отправляет сетевые запросы', function () use ($pkg_assert): bool {
+    $calls = [];
+    $mock = static function ($pre, $args, $url) use (&$calls) {
         if (!str_contains($url, 'xlsx-template-qa.invalid')) return $pre;
-        $calls[] = ['url' => $url, 'method' => $args['method'], 'headers' => $args['headers']];
-        $code = $args['method'] === 'MKCOL' ? 405 : (($fail && str_ends_with($url, '/README_IMPORT.txt')) ? 507 : 201);
-        return ['response' => ['code' => $code, 'message' => 'QA'], 'headers' => [], 'body' => '', 'cookies' => []];
+        $calls[] = ['url' => $url, 'method' => $args['method']];
+        return ['response' => ['code' => 201, 'message' => 'QA'], 'headers' => [], 'body' => '', 'cookies' => []];
     };
     try {
         add_filter('pre_http_request', $mock, 10, 3);
         $config = ['type' => 'webdav', 'path' => 'https://xlsx-template-qa.invalid/share', 'user' => 'teacher', 'password' => 'fixture-only'];
-        $ok = NetworkExport::deploy_import_templates_result($config);
-        $puts = array_values(array_filter($calls, static fn($c) => $c['method'] === 'PUT'));
-        $pkg_assert(!empty($ok['success']) && count($puts) === 2, 'Wrong WebDAV template payload');
-        $pkg_assert(array_column($puts, 'url') === ['https://xlsx-template-qa.invalid/share/import/questions_template.xlsx', 'https://xlsx-template-qa.invalid/share/import/README_IMPORT.txt'], 'WebDAV path separator is encoded or a removed file is recreated');
-        $pkg_assert($puts[0]['headers']['Content-Type'] === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'XLSX sent as plain text');
-        $fail = true; $bad = NetworkExport::deploy_import_templates_result($config);
-        $pkg_assert(empty($bad['success']) && str_contains($bad['message'], '507'), 'Partial WebDAV delivery reported success');
-        return true;
+        $result = NetworkExport::deploy_import_templates_result($config);
+        $pkg_assert(empty($result['success']) && str_contains($result['message'], 'отключено'), 'Disabled WebDAV deployment reported success');
+        return $calls === [];
     } finally { remove_filter('pre_http_request', $mock, 10); }
 });

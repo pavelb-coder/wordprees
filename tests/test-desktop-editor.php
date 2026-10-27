@@ -32,6 +32,8 @@ $editor_cleanup = static function (string $dir, array $configs = []): void {
 $it('Редактор ПК: комплект, SHA-256, ZIP, allow-list и контроль повреждённых assets', function (): bool {
     $manifest = DesktopEditor::manifest();
     if (array_keys($manifest) !== ['exe', 'archive', 'source', 'readme', 'license']) return false;
+    $bundled = array_values(array_diff(scandir(WP_OLYMPIAD_PATH . 'import'), ['.', '..'])); sort($bundled);
+    if ($bundled !== ['QuestionStudio.exe', 'question-studio-source-1.0.0.zip']) return false;
     foreach ($manifest as $format => $expected) {
         $asset = DesktopEditor::asset($format);
         if ($asset['size'] !== filesize($asset['path']) || $asset['sha256'] !== hash_file('sha256', $asset['path'])) return false;
@@ -59,7 +61,7 @@ $it('Редактор ПК: комплект, SHA-256, ZIP, allow-list и кон
     return strlen(DesktopEditor::bundle_id()) === 64 && !str_contains(DesktopEditor::manifest()['readme']['name'], '.json');
 });
 
-$it('Редактор ПК: размещение только 4 файлов, идемпотентность и восстановление без изменения вопросов', function () use ($editor_root, $editor_cleanup): bool {
+$it('Редактор ПК: размещение только 2 файлов, идемпотентность и восстановление без изменения вопросов', function () use ($editor_root, $editor_cleanup): bool {
     $root = $editor_root(); $config = ['path' => $root, 'type' => 'local'];
     $question = $root . '/import/вопросы_olympiad-2.csv';
     $draft = $root . '/import/Мой черновик.wpoq';
@@ -69,7 +71,7 @@ $it('Редактор ПК: размещение только 4 файлов, и
     $quiz_id = Quiz::create(['title' => 'Редактор / scanner', 'status' => 'publish']);
     try {
         $first = DesktopEditor::deploy($config);
-        if (empty($first['success']) || $first['written'] !== 4 || count($first['files']) !== 4) return false;
+        if (empty($first['success']) || $first['written'] !== 2 || $first['files'] !== ['import/QuestionStudio.exe', 'import/question-studio-source-1.0.0.zip']) return false;
         $old_time = time() - 1000;
         foreach ($first['files'] as $file) { touch($root . '/' . $file, $old_time); }
         $second = DesktopEditor::deploy($config);
@@ -78,7 +80,7 @@ $it('Редактор ПК: размещение только 4 файлов, и
             clearstatcache(true, $root . '/' . $file);
             if (filemtime($root . '/' . $file) !== $old_time) return false;
         }
-        unlink($root . '/import/README_EDITOR.txt');
+        unlink($root . '/import/question-studio-source-1.0.0.zip');
         file_put_contents($root . '/import/QuestionStudio.exe', 'corrupt');
         $repaired = DesktopEditor::deploy($config);
         if (empty($repaired['success']) || $repaired['written'] !== 2) return false;
@@ -110,18 +112,18 @@ $it('Редактор ПК: import/import, UNC/URL пути, lock, частич�
         $first = DesktopEditor::deploy($config);
         if (empty($first['success']) || is_dir($root . '/import/import')) return false;
         if (get_option($key . '_lock', null) !== null) return false;
-        // An unusable target must not be mistaken for a successful four-file installation.
-        unlink($root . '/import/README_EDITOR.txt');
-        mkdir($root . '/import/README_EDITOR.txt');
+        // An unusable target must not be mistaken for a successful two-file installation.
+        unlink($root . '/import/question-studio-source-1.0.0.zip');
+        mkdir($root . '/import/question-studio-source-1.0.0.zip');
         $partial = DesktopEditor::deploy($config, true);
         if (!empty($partial['success'])) return false;
         if (empty(DesktopEditor::deploy($config)['cached'])) return false;
-        rmdir($root . '/import/README_EDITOR.txt');
+        rmdir($root . '/import/question-studio-source-1.0.0.zip');
         if (empty(DesktopEditor::deploy($config, true)['success'])) return false;
         if (function_exists('symlink')) {
             $outside = $root . '/original.txt'; file_put_contents($outside, 'не менять');
-            unlink($root . '/import/README_EDITOR.txt');
-            if (symlink($outside, $root . '/import/README_EDITOR.txt')) {
+            unlink($root . '/import/question-studio-source-1.0.0.zip');
+            if (symlink($outside, $root . '/import/question-studio-source-1.0.0.zip')) {
                 $blocked = DesktopEditor::deploy($config, true);
                 if (!empty($blocked['success']) || file_get_contents($outside) !== 'не менять') return false;
             }
@@ -143,13 +145,13 @@ $it('Редактор ПК: автоподключение, cron при выкл
         unlink($root . '/import/QuestionStudio.exe');
         NetworkImport::run_scheduled_auto_imports();
         if (!is_file($root . '/import/QuestionStudio.exe')) return false;
-        unlink($root . '/import/README_EDITOR.txt');
+        unlink($root . '/import/question-studio-source-1.0.0.zip');
         $quiz = Quiz::get($quiz_id);
         $quiz->update_setting('network_auto_import', 1);
         $quiz->update_setting('network_auto_import_interval', 'daily');
         $quiz->update_setting('last_network_import_time', time());
         $results = NetworkImport::run_scheduled_auto_imports();
-        if (isset($results[$quiz_id]) || !is_file($root . '/import/README_EDITOR.txt')) return false;
+        if (isset($results[$quiz_id]) || !is_file($root . '/import/question-studio-source-1.0.0.zip')) return false;
         unlink($root . '/import/QuestionStudio.exe');
         $manual = NetworkImport::import_from_network($quiz_id, 'import/учитель.csv', 'append');
         if (empty($manual['success']) || $manual['imported_count'] !== 1 || !is_file($root . '/import/QuestionStudio.exe')) return false;
@@ -168,7 +170,7 @@ $it('Редактор ПК / WebDAV: MKCOL, URL, все PUT, кеш, retry и ч
         if (!str_contains($url, 'editor-nas.invalid')) return $pre;
         $calls[] = ['url' => $url, 'method' => $args['method'], 'headers' => $args['headers'], 'size' => strlen((string)($args['body'] ?? ''))];
         $code = $args['method'] === 'MKCOL' ? 405 : 201;
-        if ($mode === 'partial' && str_contains($url, 'EDITOR_LICENSES.txt')) $code = 507;
+        if ($mode === 'partial' && str_contains($url, 'question-studio-source-1.0.0.zip')) $code = 507;
         if ($mode === 'mkcol' && $args['method'] === 'MKCOL') $code = 403;
         if ($mode === 'exe' && str_ends_with($url, '.exe')) $code = 403;
         if ($args['method'] === 'DELETE') $code = 204;
@@ -177,15 +179,15 @@ $it('Редактор ПК / WebDAV: MKCOL, URL, все PUT, кеш, retry и ч
     add_filter('pre_http_request', $mock, 10, 3);
     try {
         $ok = DesktopEditor::deploy($config);
-        if (empty($ok['success']) || $ok['written'] !== 4 || count($calls) !== 5) return false;
+        if (empty($ok['success']) || $ok['written'] !== 2 || count($calls) !== 3) return false;
         if ($calls[0]['method'] !== 'MKCOL' || $calls[1]['url'] !== 'https://editor-nas.invalid/share/import/QuestionStudio.exe') return false;
         if ($calls[1]['headers']['Authorization'] !== 'Basic ' . base64_encode('teacher:editor-secret')) return false;
         if (str_contains(wp_json_encode(DesktopEditor::status($config)), 'editor-secret')) return false;
         $cached = DesktopEditor::deploy($config);
-        if (empty($cached['cached']) || $cached['written'] !== 0 || count($calls) !== 5) return false;
+        if (empty($cached['cached']) || $cached['written'] !== 0 || count($calls) !== 3) return false;
         $mode = 'partial';
         $partial = DesktopEditor::deploy($config, true);
-        if (!empty($partial['success']) || $partial['written'] !== 2 || !str_contains($partial['message'], '507')) return false;
+        if (!empty($partial['success']) || $partial['written'] !== 1 || !str_contains($partial['message'], '507')) return false;
         $count = count($calls);
         if (empty(DesktopEditor::deploy($config)['cached']) || count($calls) !== $count) return false;
         $mode = 'ok';
@@ -193,7 +195,7 @@ $it('Редактор ПК / WebDAV: MKCOL, URL, все PUT, кеш, retry и ч
         $state = DesktopEditor::status($config); $state['bundle'] = 'old';
         update_option(DesktopEditor::state_key($config), $state, false);
         $count = count($calls);
-        if (empty(DesktopEditor::deploy($config)['success']) || count($calls) !== $count + 5) return false;
+        if (empty(DesktopEditor::deploy($config)['success']) || count($calls) !== $count + 3) return false;
         $mode = 'mkcol';
         $denied = DesktopEditor::deploy($config, true);
         if (!empty($denied['success']) || !str_contains($denied['message'], 'MKCOL')) return false;
@@ -219,7 +221,8 @@ $it('Редактор ПК: шаблоны и экспорт не удаляют
     try {
         if (empty(DesktopEditor::deploy($config)['success'])) return false;
         NetworkExport::cleanup_loose_root_export_files($root, $config);
-        if (!NetworkExport::deploy_import_templates($config)) return false;
+        $message = null;
+        if (NetworkExport::deploy_import_templates($config, $message) || !str_contains((string)$message, 'отключено')) return false;
         if (empty(NetworkExport::export_quiz($quiz_id, $config)['success'])) return false;
         foreach ($user_files as $file => $data) {
             if (!is_file($root . '/' . $file) || hash_file('sha256', $root . '/' . $file) !== hash('sha256', $data)) return false;
@@ -269,7 +272,7 @@ $it('Редактор ПК: скачивание и восстановление
         if (is_file($root . '/import/QuestionStudio.exe')) return false;
         $_POST = $_REQUEST = ['path' => $root, 'type' => 'local', 'nonce' => wp_create_nonce('wp_olympiad_admin_nonce')];
         $allowed = json_decode($invoke([DesktopEditor::class, 'ajax_sync']), true);
-        return !empty($allowed['success']) && !empty($allowed['data']['success']) && $allowed['data']['written'] === 4;
+        return !empty($allowed['success']) && !empty($allowed['data']['success']) && $allowed['data']['written'] === 2;
     } finally {
         remove_filter('wp_die_handler', $handler, PHP_INT_MAX); remove_filter('wp_die_ajax_handler', $handler, PHP_INT_MAX);
         wp_set_current_user($old_uid); $_GET = $old_get; $_POST = $old_post; $_REQUEST = $old_request;
@@ -287,6 +290,7 @@ $it('Редактор ПК: админка, скачивания, импорт-�
         if (!str_contains($html, 'Скачать программу (.exe)') || !str_contains($html, 'aria-live="polite"')) return false;
         ob_start(); require WP_OLYMPIAD_PATH . 'admin/views/quiz-edit.php'; $settings = ob_get_clean();
         if (!str_contains($settings, 'wpo-editor-sync') || !str_contains($settings, 'Windows 10/11 x64')) return false;
+        if (str_contains($html . $settings, 'wpo-btn-deploy-network-templates') || !str_contains(html_entity_decode($html), 'download_question_template&format=xlsx')) return false;
         $admin = file_get_contents(WP_OLYMPIAD_PATH . 'admin/class-admin.php');
         return str_contains($admin, "filemtime(WP_OLYMPIAD_PATH . 'admin/js/admin.js')")
             && str_contains($admin, "filemtime(WP_OLYMPIAD_PATH . 'admin/css/admin.css')")

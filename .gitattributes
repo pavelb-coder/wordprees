@@ -1,6 +1,8 @@
 # Bundled editor assets are verified by exact size and SHA-256 in the plugin.
 # Never normalize their line endings, even when cloning on Windows.
 /import/* -text
+/editor-resources/* -text
+/editor-resources/README_EDITOR.txt whitespace=cr-at-eol
 /templates/*.xlsx -text
 /templates/*.xlsm -text
 /templates/*.csv -text

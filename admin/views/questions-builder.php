@@ -283,9 +283,6 @@ foreach ($questions as $question_obj) {
                             <button type="button" class="button button-secondary" id="wpo-btn-rescan-network" title="<?php esc_attr_e('Найти файлы в сетевой папке', 'wp-olympiad'); ?>">
                                 🔍 <?php esc_html_e('Сканировать', 'wp-olympiad'); ?>
                             </button>
-                            <button type="button" class="button button-secondary" id="wpo-btn-deploy-network-templates-builder" title="<?php esc_attr_e('Поместить шаблоны для импорта вопросов в сетевую папку', 'wp-olympiad'); ?>">
-                                📥 <?php esc_html_e('Поместить шаблон в папку', 'wp-olympiad'); ?>
-                            </button>
                         </div>
                         <span class="description" style="font-size:11px; color:#64748b;">
                             <?php esc_html_e('Файлы ищутся в корне папки, а также внутри подкаталогов import/ и questions/.', 'wp-olympiad'); ?>

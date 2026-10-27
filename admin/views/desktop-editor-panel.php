@@ -21,7 +21,7 @@ $wpo_editor_current = !empty($wpo_editor_state['success']) && ($wpo_editor_state
     <p class="wpo-editor-workflow"><?php esc_html_e('Создайте вопросы на ПК → «Экспорт → Excel / CSV / JSON» → сохраните файл в import сетевой папки или загрузите через «Импорт заданий».', 'wp-olympiad'); ?></p>
     <?php if (empty($wpo_editor_compact)): ?>
         <p class="description"><?php esc_html_e('Все 13 типов, правильные ответы, баллы, проверка и черновики .wpoq. Установка и Excel не нужны. Баллы по каждому вопросу скрыты по умолчанию. Сам .wpoq в плагин не импортируется.', 'wp-olympiad'); ?></p>
-        <p class="description"><?php esc_html_e('При подключении и синхронизации плагин автоматически размещает в import/ программу, инструкцию, лицензии и исходный код. Вопросы и ваши черновики не изменяются. EXE запускается только вами на Windows-ПК, не на сервере.', 'wp-olympiad'); ?></p>
+        <p class="description"><?php esc_html_e('При подключении и синхронизации плагин автоматически размещает в import/ только программу и архив исходного кода. Ранее созданные файлы, вопросы и черновики не удаляются. EXE запускается только вами на Windows-ПК, не на сервере.', 'wp-olympiad'); ?></p>
     <?php endif; ?>
     <div class="wpo-editor-panel-bottom">
         <button type="button" class="button wpo-editor-sync" data-quiz-id="<?php echo esc_attr((string)$wpo_editor_quiz_id); ?>"><?php esc_html_e('Обновить редактор в import', 'wp-olympiad'); ?></button>

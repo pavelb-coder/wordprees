@@ -792,9 +792,6 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                     <button type="button" class="button" id="wpo-btn-test-network">
                                         🔍 <?php esc_html_e('Проверить доступ к папке', 'wp-olympiad'); ?>
                                     </button>
-                                    <button type="button" class="button button-secondary" id="wpo-btn-deploy-network-templates" data-quiz-id="<?php echo esc_attr((string)($quiz ? $quiz->id : 0)); ?>" title="<?php esc_attr_e('Поместить шаблон Excel (.xlsx) и инструкцию в сетевую папку', 'wp-olympiad'); ?>">
-                                        📥 <?php esc_html_e('Поместить шаблон Excel в папку', 'wp-olympiad'); ?>
-                                    </button>
                                     <?php if (!$is_new): ?>
                                         <button type="button" class="button button-secondary" id="wpo-btn-validate-import" data-quiz-id="<?php echo esc_attr((string)$quiz->id); ?>" title="<?php esc_attr_e('Разобрать файл заданий и показать отчёт по каждой строке, не изменяя базу', 'wp-olympiad'); ?>">
                                             ✔ <?php esc_html_e('Проверить файл заданий', 'wp-olympiad'); ?>

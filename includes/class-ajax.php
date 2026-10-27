@@ -354,61 +354,15 @@ final class Ajax
         }
     }
 
+    /** Compatibility response for cached clients; template deployment is disabled. */
     public static function ajax_deploy_network_templates(): void
     {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['message' => __('Доступ запрещён.', 'wp-olympiad')], 403);
         }
         check_ajax_referer('wp_olympiad_admin_nonce', 'nonce');
-
-        $quiz_id = (int)($_POST['quiz_id'] ?? 0);
-        $quiz = $quiz_id > 0 ? Quiz::get($quiz_id) : null;
-        $use_default = !empty($_POST['use_default']);
-
-        $override = [];
-        if (!$use_default && !empty($_POST['path'])) {
-            $override['path'] = NetworkExport::sanitize_path($_POST['path']);
-        } elseif ($use_default) {
-            $override['path'] = NetworkExport::get_default_network_path();
-            $override['type'] = 'local';
-        }
-
-        if (!$use_default && !empty($_POST['type']) && $_POST['type'] !== 'auto') {
-            $override['type'] = sanitize_key($_POST['type']);
-        }
-        if (!empty($_POST['user'])) {
-            $override['user'] = sanitize_text_field(wp_unslash($_POST['user']));
-        }
-        if (!empty($_POST['password'])) {
-            $override['password'] = (string)$_POST['password'];
-        }
-
-        $config = $quiz ? NetworkExport::get_quiz_network_config($quiz, $override) : [
-            'type'     => sanitize_key($_POST['type'] ?? 'auto'),
-            'path'     => NetworkExport::sanitize_path($_POST['path'] ?? ''),
-            'user'     => sanitize_text_field(wp_unslash($_POST['user'] ?? '')),
-            'password' => (string)($_POST['password'] ?? ''),
-        ];
-
-        if (empty($config['path'])) {
-            $config['path'] = NetworkExport::get_default_network_path();
-        }
-
-        $res = NetworkExport::deploy_import_templates_result($config);
-        if ($res['success']) {
-            wp_send_json_success([
-                'message'      => $res['message'],
-                'destination'  => $res['destination'] ?? '',
-                'files'        => $res['files'] ?? [],
-            ]);
-        } else {
-            wp_send_json_error([
-                'message'      => $res['message'],
-                'details'      => $res['details'] ?? '',
-                'target_path'  => $config['path'],
-                'default_path' => NetworkExport::get_default_network_path(),
-            ]);
-        }
+        $result = NetworkExport::deploy_import_templates_result([]);
+        wp_send_json_error(['message' => $result['message'], 'files' => []]);
     }
 
     public static function ajax_export_to_network(): void

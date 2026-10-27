@@ -251,111 +251,24 @@ final class NetworkExport
     }
 
     /**
-     * Deploy question import templates into the network folder on demand
-     *
-     * @param array $config
-     * @param string|null &$error_message Diagnostic message out param
-     * @return bool
+     * Retained for callers of the former template-deployment API. Templates are
+     * now downloaded explicitly; existing files in import/ are never removed.
      */
     public static function deploy_import_templates(array $config, ?string &$error_message = null): bool
     {
-        $res = self::deploy_import_templates_result($config);
-        if (!$res['success']) {
-            $error_message = $res['message'];
-            return false;
-        }
-        return true;
+        $result = self::deploy_import_templates_result($config);
+        $error_message = $result['message'];
+        return false;
     }
 
-    /**
-     * Deploy question import templates with detailed result status and diagnostic reporting
-     *
-     * @param array $config
-     * @return array{success: bool, message: string, destination?: string, files?: array, details?: string}
-     */
+    /** @return array{success: bool, message: string, files: array} */
     public static function deploy_import_templates_result(array $config): array
     {
-        try {
-            $raw_path = trim((string)($config['path'] ?? ''));
-            if ($raw_path === '' || self::is_example_path($raw_path)) {
-                $config['path'] = self::get_default_network_path();
-            }
-
-            $type = self::detect_type($config);
-
-            // Pre-validate filesystem destinations
-            if ($type === 'filesystem') {
-                $dest_dir = self::resolve_local_path($config['path']);
-                if (!file_exists($dest_dir)) {
-                    if (!@wp_mkdir_p($dest_dir)) {
-                        return [
-                            'success' => false,
-                            'message' => sprintf(
-                                __('Папка «%s» не существует и не может быть создана веб-сервером. Создайте её вручную в ОС (mkdir -p "%s" && chmod 777 "%s") или оставьте поле пути пустым для использования папки по умолчанию.', 'wp-olympiad'),
-                                $dest_dir, $dest_dir, $dest_dir
-                            ),
-                            'details' => sprintf(__('Директория %s не создана.', 'wp-olympiad'), $dest_dir),
-                        ];
-                    }
-                    @chmod($dest_dir, 0777);
-                }
-
-                if (!is_writable($dest_dir)) {
-                    $user_info = function_exists('posix_getpwuid') && function_exists('posix_geteuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'веб-сервер') : 'веб-сервер';
-                    return [
-                        'success' => false,
-                        'message' => sprintf(
-                            __('Папка «%s» существует, но защищена от записи для пользователя «%s». Выполните команду: chmod -R 777 "%s" или chown -R %s "%s".', 'wp-olympiad'),
-                            $dest_dir, $user_info, $dest_dir, $user_info, $dest_dir
-                        ),
-                        'details' => sprintf(__('Недостаточно прав на запись в %s.', 'wp-olympiad'), $dest_dir),
-                    ];
-                }
-            }
-
-            // The distribution intentionally contains only XLSX + its guide.
-            // Never recreate CSV/JSON aliases or the removed macro-enabled sample.
-            $xlsx = NetworkImport::get_template_xlsx();
-            if (!str_starts_with($xlsx, "PK\x03\x04")) {
-                return ['success' => false, 'message' => __('Шаблон Excel недоступен. Переустановите актуальный ZIP плагина.', 'wp-olympiad')];
-            }
-            $prefix = DesktopEditor::import_prefix($config);
-            $files = [
-                $prefix . 'questions_template.xlsx' => $xlsx,
-                $prefix . 'README_IMPORT.txt' => NetworkImport::get_template_readme(),
-            ];
-
-            $res = self::deliver_files($files, $config);
-
-            if (empty($res['success'])) {
-                $err = $res['message'] ?? __('Ошибка записи файлов в сетевое хранилище.', 'wp-olympiad');
-                return [
-                    'success' => false,
-                    'message' => sprintf(__('Не удалось поместить шаблоны в сетевую папку «%s»: %s', 'wp-olympiad'), $config['path'], $err),
-                    'details' => $err,
-                ];
-            }
-
-            // No directory-wide cleanup: import may contain the bundled program,
-            // teachers' Cyrillic-named questions, drafts and existing results.
-
-            $deployed_dest = $res['destination'] ?? $config['path'];
-            return [
-                'success'     => true,
-                'destination' => $deployed_dest,
-                'files'       => array_keys($files),
-                'message'     => sprintf(
-                    __('Шаблон Excel и инструкция помещены в сетевую папку: questions_template.xlsx и README_IMPORT.txt. Путь: %s', 'wp-olympiad'),
-                    $deployed_dest
-                ),
-            ];
-        } catch (\Throwable $e) {
-            return [
-                'success' => false,
-                'message' => sprintf(__('Системная ошибка при размещении шаблонов: %s', 'wp-olympiad'), $e->getMessage()),
-                'details' => $e->getMessage(),
-            ];
-        }
+        return [
+            'success' => false,
+            'message' => __('Размещение шаблонов в папку import отключено. Скачайте Excel-шаблон в разделе импорта заданий.', 'wp-olympiad'),
+            'files' => [],
+        ];
     }
 
     /**
