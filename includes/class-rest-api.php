@@ -411,10 +411,12 @@ final class RestApi
             self::dispatch_webhook($webhook_url, $quiz, $attempt, $grading);
         }
 
-        // Automatic export to password-protected network folder if configured
+        // Automatic export to password-protected network folder if configured.
+        // By the owner's decision it delivers protocols and attempts only: the
+        // question files in «вопросы/» are written by the separate button.
         if (!empty($quiz->get_setting('network_auto_export', 0))) {
             try {
-                NetworkExport::export_quiz($quiz->id);
+                NetworkExport::export_quiz($quiz->id, [], false);
             } catch (\Throwable $e) {
                 // Silent catch: network delivery error must never break participant submission
                 error_log('WPOlympiad Auto Network Export Error: ' . $e->getMessage());

@@ -732,8 +732,9 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <td>
                                 <label>
                                     <input type="checkbox" name="network_auto_export" value="1" <?php checked($network_auto_export, 1); ?>>
-                                    <?php esc_html_e('Автоматически выгружать файлы протоколов (CSV) напрямую в сетевую папку при каждом завершении тестирования участником', 'wp-olympiad'); ?>
+                                    <?php esc_html_e('Автоматически выгружать файлы протоколов и попыток (CSV) напрямую в сетевую папку при каждом завершении тестирования участником', 'wp-olympiad'); ?>
                                 </label>
+                                <p class="description"><?php esc_html_e('Задания в «вопросы/» этой выгрузкой не создаются и не обновляются — для них предназначена кнопка «Экспортировать вопросы в сетевую папку». Ранее созданные файлы остаются на месте и автоматически не удаляются.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
                         <tr>
@@ -841,6 +842,11 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         </div>
                                         <?php if (!empty($last_network_export['reports_notice'])): ?>
                                             <div style="margin-top:4px; color:#92400e;"><?php echo esc_html($last_network_export['reports_notice']); ?></div>
+                                        <?php endif; ?>
+                                        <?php if (array_key_exists('questions_included', $last_network_export) && empty($last_network_export['questions_included'])): ?>
+                                            <div style="margin-top:4px; color:#166534;">
+                                                <?php esc_html_e('Файлы заданий в «вопросы/» этой выгрузкой не создавались и не изменялись — для них предназначена кнопка «Экспортировать вопросы в сетевую папку».', 'wp-olympiad'); ?>
+                                            </div>
                                         <?php endif; ?>
                                     </div>
                                 <?php endif; ?>

@@ -4359,6 +4359,7 @@ require __DIR__ . '/test-protocol-export.php';
 require __DIR__ . '/test-report-export-cleanup.php';
 require __DIR__ . '/test-import-folder.php';
 require __DIR__ . '/test-import-search.php';
+require __DIR__ . '/test-auto-export-scope.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);
