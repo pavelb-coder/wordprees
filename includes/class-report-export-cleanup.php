@@ -12,6 +12,91 @@ final class ReportExportCleanup
 {
     private const DIRECTORY = 'отчёты';
 
+    /** SMB answers that mean "this exact path does not exist". */
+    public const MISSING_STATUSES = [
+        'NT_STATUS_NO_SUCH_FILE',
+        'NT_STATUS_OBJECT_NAME_NOT_FOUND',
+        'NT_STATUS_OBJECT_PATH_NOT_FOUND',
+    ];
+
+    /**
+     * Parse the `attributes:` line that smbclient prints for `allinfo`. Null means the
+     * server did not answer in a usable form.
+     */
+    public static function smb_attributes(string $text): ?int
+    {
+        if (preg_match('/attributes:\s*[^\r\n]*\(\s*(?:0x)?([0-9a-f]{1,8})\s*\)/i', $text, $flags)) {
+            return (int) hexdec($flags[1]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Classify a directory probe. Only a positive "not a reparse point" answer counts as
+     * verified; 'unsupported' means the server cannot tell, so nothing may be deleted.
+     *
+     * @return string absent|plain|link|unsupported
+     */
+    public static function judge_smb_directory(int $code, array $errors, string $text): string
+    {
+        $errors = array_values(array_unique($errors));
+        if ($errors && !array_diff($errors, self::MISSING_STATUSES)) {
+            return 'absent';
+        }
+        if ($code !== 0 && $errors === ['NT_STATUS_NOT_A_REPARSE_POINT']) {
+            return 'plain';
+        }
+        if ($code === 0 && preg_match('/->\s*\S/', $text)) {
+            return 'link';
+        }
+
+        return 'unsupported';
+    }
+
+    /**
+     * Classify one legacy report file. Reparse and directory attribute bits always refuse
+     * the target, and "plain" still requires an answered reparse query.
+     *
+     * @return string absent|plain|dangerous|unsupported
+     */
+    public static function judge_smb_target(int $code, array $errors, string $text, ?int $attributes = null): string
+    {
+        $errors = array_values(array_unique($errors));
+        if ($errors && !array_diff($errors, self::MISSING_STATUSES)) {
+            return 'absent';
+        }
+        // 0x400 = reparse point, 0x10 = directory: nothing may be removed through such a target.
+        if ($attributes !== null && ($attributes & 0x410) !== 0) {
+            return 'dangerous';
+        }
+        if ($code === 0 && preg_match('/->\s*\S/', $text)) {
+            return 'dangerous';
+        }
+        if ($code !== 0 && $errors === ['NT_STATUS_NOT_A_REPARSE_POINT']) {
+            return 'plain';
+        }
+
+        return 'unsupported';
+    }
+
+    /**
+     * The transport could not prove that removal is safe. Nothing is deleted and the export
+     * itself is not a failure: only the cosmetic retirement of the old reports is skipped.
+     */
+    private static function skipped(string $reason): array
+    {
+        return [
+            'success'   => true,
+            'removed'   => [],
+            'absent'    => [],
+            'directory' => 'unverified',
+            'reason'    => $reason,
+            'message'   => $reason,
+        ];
+    }
+
+
     /**
      * Run only after a successful full export. There is deliberately no arbitrary
      * path parameter, wildcard deletion, or recursive directory deletion.
@@ -151,12 +236,28 @@ final class ReportExportCleanup
         if ($children === false) {
             clearstatcache(true, $dir);
             if (!file_exists($dir) && !is_link($dir)) return self::result($removed, $absent, 'absent');
-            return self::error(self::DIRECTORY, __('Не удалось проверить содержимое каталога.', 'wp-olympiad'));
+            // The report files are already gone; an unreadable folder is only retained.
+            return self::result($removed, $absent, 'retained');
         }
         if (array_diff($children, ['.', '..'])) {
             return self::result($removed, $absent, 'not_empty');
         }
-        return self::error(self::DIRECTORY, __('Не удалось удалить пустой каталог.', 'wp-olympiad'));
+        return self::result($removed, $absent, 'retained');
+    }
+
+    /** Read the strong entity tag from the response headers; null means "cannot be verified". */
+    private static function dav_head_etag(string $url, array $headers): ?string
+    {
+        $response = wp_remote_request($url, [
+            'method' => 'HEAD', 'headers' => $headers, 'timeout' => 15,
+            'redirection' => 0, 'sslverify' => false,
+        ]);
+        if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
+            return null;
+        }
+        $etag = trim((string) wp_remote_retrieve_header($response, 'etag'));
+
+        return preg_match('/\A"[^"\r\n]*"\z/', $etag) ? $etag : null;
     }
 
     private static function dav_url(string $base, string $relative): string
@@ -234,7 +335,7 @@ final class ReportExportCleanup
             $headers['Authorization'] = 'Basic ' . base64_encode(($config['user'] ?? '') . ':' . ($config['password'] ?? ''));
         }
         $directory = self::dav_info(self::dav_url($base, self::DIRECTORY), $headers, self::DIRECTORY);
-        if (!$directory['success']) return $directory;
+        if (!$directory['success']) return self::skipped($directory['message']);
         if (!$directory['exists']) {
             return self::result([], array_map(static fn($name) => self::DIRECTORY . '/' . $name, $names), 'absent');
         }
@@ -247,7 +348,7 @@ final class ReportExportCleanup
             $rel = self::DIRECTORY . '/' . $name;
             $url = self::dav_url($base, $rel);
             $info = self::dav_info($url, $headers, $rel);
-            if (!$info['success']) return $info;
+            if (!$info['success']) return self::skipped($info['message']);
             if (!$info['exists']) {
                 $absent[] = $rel;
                 continue;
@@ -256,10 +357,17 @@ final class ReportExportCleanup
                 return self::error($rel, __('Это каталог; его содержимое не удаляется.', 'wp-olympiad'));
             }
             // A conditional DELETE prevents removing a replacement resource.
-            if (!preg_match('/\A"[^"\r\n]*"\z/', $info['etag'])) {
-                return self::error($rel, __('WebDAV не предоставил надёжный ETag файла.', 'wp-olympiad'));
+            // A conditional DELETE prevents removing a replacement resource. Some servers
+            // expose the entity tag in the response headers only, so a HEAD probe is tried
+            // before giving up; without a strong ETag the file simply stays where it is.
+            $etag = (string) $info['etag'];
+            if (!preg_match('/\A"[^"\r\n]*"\z/', $etag)) {
+                $etag = (string) (self::dav_head_etag($url, $headers) ?? '');
+                if ($etag === '') {
+                    return self::skipped(sprintf(__('WebDAV не предоставил надёжный ETag файла «%s».', 'wp-olympiad'), $name));
+                }
             }
-            $existing[] = ['relative' => $rel, 'url' => $url, 'etag' => $info['etag']];
+            $existing[] = ['relative' => $rel, 'url' => $url, 'etag' => $etag];
         }
         $removed = [];
         foreach ($existing as $file) {
@@ -309,7 +417,7 @@ final class ReportExportCleanup
             }
         }
         if (count($matches) !== 1) return null;
-        return match ($matches[0][0] ?? '') { 'd' => 'dir', '-' => 'file', default => null };
+        return match ($matches[0][0] ?? '') { 'd' => 'dir', '-' => 'file', 'l' => 'link', default => null };
     }
 
     private static function ftp(array $config, array $names): array
@@ -332,18 +440,35 @@ final class ReportExportCleanup
             $base = @ftp_pwd($connection);
             if ($base === false) return self::error(self::DIRECTORY, __('FTP не подтвердил корень.', 'wp-olympiad'));
             $root_entries = self::ftp_entries($connection, '.');
-            if ($root_entries === null) return self::error(self::DIRECTORY, __('FTP не подтвердил типы файлов (MLSD).', 'wp-olympiad'));
+            if ($root_entries === null) return self::skipped(__('FTP не отвечает на запрос типов файлов (MLSD); папка «отчёты/» не изменена.', 'wp-olympiad'));
             if (!array_key_exists(self::DIRECTORY, $root_entries)) {
                 return self::result([], array_map(static fn($name) => self::DIRECTORY . '/' . $name, $names), 'absent');
             }
-            if ($root_entries[self::DIRECTORY] !== 'dir' || self::ftp_listed_kind($connection, self::DIRECTORY) !== 'dir' || !@ftp_chdir($connection, self::DIRECTORY)) {
+            $listed_kind = self::ftp_listed_kind($connection, self::DIRECTORY);
+            if (in_array($listed_kind, ['file', 'link'], true)) {
+                return self::error(self::DIRECTORY, __('Папка отчётов является ссылкой или файлом; её содержимое не затрагивается.', 'wp-olympiad'));
+            }
+            if ($root_entries[self::DIRECTORY] !== 'dir' || !@ftp_chdir($connection, self::DIRECTORY)) {
                 return self::error(self::DIRECTORY, __('FTP не подтвердил обычный каталог без ссылки.', 'wp-olympiad'));
             }
+            if ($listed_kind !== 'dir') {
+                return self::skipped(__('LIST не подтвердил тип папки «отчёты»; она не изменена.', 'wp-olympiad'));
+            }
             $entries = self::ftp_entries($connection, '.');
-            if ($entries === null) return self::error(self::DIRECTORY, __('FTP не подтвердил типы файлов (MLSD).', 'wp-olympiad'));
+            if ($entries === null) return self::skipped(__('FTP не отвечает на запрос типов файлов (MLSD); папка «отчёты/» не изменена.', 'wp-olympiad'));
             foreach ($names as $name) {
-                if (isset($entries[$name]) && ($entries[$name] !== 'file' || self::ftp_listed_kind($connection, $name) !== 'file')) {
-                    return self::error(self::DIRECTORY . '/' . $name, __('Это не подтверждённый обычный файл; ссылки и каталоги не удаляются.', 'wp-olympiad'));
+                if (!isset($entries[$name])) {
+                    continue;
+                }
+                if ($entries[$name] !== 'file') {
+                    return self::error(self::DIRECTORY . '/' . $name, __('Это не обычный файл; ссылки и каталоги не удаляются.', 'wp-olympiad'));
+                }
+                $kind = self::ftp_listed_kind($connection, $name);
+                if ($kind === null) {
+                    return self::skipped(sprintf(__('LIST не подтвердил тип файла «%s»; папка «отчёты/» не изменена.', 'wp-olympiad'), $name));
+                }
+                if ($kind !== 'file') {
+                    return self::error(self::DIRECTORY . '/' . $name, __('Это не обычный файл; ссылки и каталоги не удаляются.', 'wp-olympiad'));
                 }
             }
             $removed = [];
@@ -365,7 +490,7 @@ final class ReportExportCleanup
                 $removed[] = $rel;
             }
             $remaining = self::ftp_entries($connection, '.');
-            if ($remaining === null || !@ftp_chdir($connection, $base)) return self::error(self::DIRECTORY, __('FTP не подтвердил содержимое каталога.', 'wp-olympiad'));
+            if ($remaining === null || !@ftp_chdir($connection, $base)) return self::result($removed, $absent, 'retained');
             if ($remaining) return self::result($removed, $absent, 'not_empty');
             if (@ftp_rmdir($connection, self::DIRECTORY)) return self::result($removed, $absent, 'removed');
             $fresh_root = self::ftp_entries($connection, '.');
@@ -374,7 +499,7 @@ final class ReportExportCleanup
                 $fresh = self::ftp_entries($connection, '.');
                 if (is_array($fresh) && $fresh) return self::result($removed, $absent, 'not_empty');
             }
-            return self::error(self::DIRECTORY, __('FTP не удалил пустой каталог.', 'wp-olympiad'));
+            return self::result($removed, $absent, 'retained');
         } finally {
             @ftp_close($connection);
         }
@@ -411,13 +536,17 @@ final class ReportExportCleanup
                 preg_match_all('/NT_STATUS_[A-Z0-9_]+/', $text, $matches);
                 return [$exit, array_values(array_unique($matches[0])), $text];
             };
-            $missing = ['NT_STATUS_NO_SUCH_FILE', 'NT_STATUS_OBJECT_NAME_NOT_FOUND', 'NT_STATUS_OBJECT_PATH_NOT_FOUND'];
-            [$code, $errors] = $run('readlink "' . self::DIRECTORY . '"');
-            if ($errors && !array_diff($errors, $missing)) {
+            $missing = self::MISSING_STATUSES;
+            [$code, $errors, $text] = $run('readlink "' . self::DIRECTORY . '"');
+            $state = self::judge_smb_directory($code, $errors, $text);
+            if ($state === 'absent') {
                 return self::result([], array_map(static fn($name) => self::DIRECTORY . '/' . $name, $names), 'absent');
             }
-            if ($code === 0 || $errors !== ['NT_STATUS_NOT_A_REPARSE_POINT']) {
-                return self::error(self::DIRECTORY, __('SMB не подтвердил каталог без ссылки.', 'wp-olympiad'));
+            if ($state === 'link') {
+                return self::error(self::DIRECTORY, __('Папка отчётов является ссылкой; её содержимое не затрагивается.', 'wp-olympiad'));
+            }
+            if ($state === 'unsupported') {
+                return self::skipped(__('SMB не отвечает на проверку каталога на ссылку; папка «отчёты/» не изменена.', 'wp-olympiad'));
             }
             $present = [];
             $absent = [];
@@ -425,30 +554,32 @@ final class ReportExportCleanup
             foreach ($names as $name) {
                 $rel = self::DIRECTORY . '/' . $name;
                 $remote = self::DIRECTORY . '\\' . $name;
-                [$code, $errors] = $run('readlink "' . $remote . '"');
+                [$code, $errors, $text] = $run('readlink "' . $remote . '"');
                 if ($errors && !array_diff($errors, $missing)) {
                     $absent[] = $rel;
                     continue;
                 }
-                if ($code === 0 || $errors !== ['NT_STATUS_NOT_A_REPARSE_POINT']) {
-                    return self::error($rel, __('SMB не подтвердил файл без ссылки.', 'wp-olympiad'));
-                }
                 [, , $info] = $run('allinfo "' . $remote . '"');
-                if (!preg_match('/^attributes:\s*[^\r\n]*\(([0-9a-f]+)\)/mi', $info, $flags) || (hexdec($flags[1]) & 0x410) !== 0) {
-                    return self::error($rel, __('SMB не подтвердил обычный файл.', 'wp-olympiad'));
+                $state = self::judge_smb_target($code, $errors, $text, self::smb_attributes($info));
+                if ($state === 'dangerous') {
+                    return self::error($rel, __('SMB не подтвердил обычный файл: это ссылка или каталог.', 'wp-olympiad'));
+                }
+                if ($state === 'unsupported') {
+                    return self::skipped(sprintf(__('SMB не подтвердил тип файла «%s»; папка «отчёты/» не изменена.', 'wp-olympiad'), $name));
                 }
                 $present[] = $name;
             }
             $removed = [];
             foreach ($present as $index => $name) {
-                [$dir_code, $dir_errors] = $run('readlink "' . self::DIRECTORY . '"');
-                if ($dir_errors && !array_diff($dir_errors, $missing)) {
-                    foreach (array_slice($present, $index) as $remaining) $absent[] = self::DIRECTORY . '/' . $remaining;
-                    return self::result($removed, $absent, 'absent');
-                }
-                if ($dir_code === 0 || $dir_errors !== ['NT_STATUS_NOT_A_REPARSE_POINT']) {
-                    return self::error(self::DIRECTORY, __('Папка отчётов изменилась во время очистки SMB.', 'wp-olympiad'));
-                }
+            [$dir_code, $dir_errors, $dir_text] = $run('readlink "' . self::DIRECTORY . '"');
+            $dir_state = self::judge_smb_directory($dir_code, $dir_errors, $dir_text);
+            if ($dir_state === 'absent') {
+                foreach (array_slice($present, $index) as $remaining) $absent[] = self::DIRECTORY . '/' . $remaining;
+                return self::result($removed, $absent, 'absent');
+            }
+            if ($dir_state !== 'plain') {
+                return self::error(self::DIRECTORY, __('Папка отчётов изменилась во время очистки SMB.', 'wp-olympiad'));
+            }
                 $rel = self::DIRECTORY . '/' . $name;
                 [$code, $errors] = $run('del "' . self::DIRECTORY . '\\' . $name . '"');
                 if ($errors && !array_diff($errors, $missing)) {
@@ -459,9 +590,10 @@ final class ReportExportCleanup
                     return self::error($rel, __('SMB не подтвердил удаление файла.', 'wp-olympiad'));
                 }
             }
-            [$dir_code, $dir_errors] = $run('readlink "' . self::DIRECTORY . '"');
-            if ($dir_errors && !array_diff($dir_errors, $missing)) return self::result($removed, $absent, 'absent');
-            if ($dir_code === 0 || $dir_errors !== ['NT_STATUS_NOT_A_REPARSE_POINT']) {
+            [$dir_code, $dir_errors, $dir_text] = $run('readlink "' . self::DIRECTORY . '"');
+            $dir_state = self::judge_smb_directory($dir_code, $dir_errors, $dir_text);
+            if ($dir_state === 'absent') return self::result($removed, $absent, 'absent');
+            if ($dir_state !== 'plain') {
                 return self::error(self::DIRECTORY, __('Папка отчётов изменилась во время очистки SMB.', 'wp-olympiad'));
             }
             // SMB rmdir is non-recursive; a concurrent or hidden file prevents removal.
@@ -469,7 +601,8 @@ final class ReportExportCleanup
             if ($errors && !array_diff($errors, $missing)) return self::result($removed, $absent, 'absent');
             if ($errors && !array_diff($errors, ['NT_STATUS_DIRECTORY_NOT_EMPTY'])) return self::result($removed, $absent, 'not_empty');
             if ($code === 0 && !$errors) return self::result($removed, $absent, 'removed');
-            return self::error(self::DIRECTORY, __('SMB не подтвердил удаление пустого каталога.', 'wp-olympiad'));
+            // The report files are already gone; an empty folder that survives is only retained.
+            return self::result($removed, $absent, 'retained');
         } finally {
             if (is_string($authfile)) @unlink($authfile);
         }

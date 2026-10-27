@@ -158,7 +158,10 @@ $it('Отчёты / WebDAV: без ETag и при ошибке PUT старые 
     try {
         add_filter('pre_http_request', $mock, 10, 3); $config = ['type' => 'webdav', 'path' => 'https://reports-safety.invalid/share'];
         $bad = NetworkExport::export_quiz($id, $config);
-        $reports_assert(empty($bad['success']) && str_contains($bad['message'], 'ETag'), 'Missing ETag accepted');
+        // Неизвестный ETag = нельзя удалять безопасно, но и выгрузка не считается неудачной.
+        $reports_assert(!empty($bad['success']) && ($bad['reports_directory'] ?? '') === 'unverified'
+            && str_contains((string)($bad['reports_notice'] ?? ''), 'ETag'), 'Unverifiable ETag must warn instead of failing the export');
+        $reports_assert(get_transient('wpo_last_report_cleanup_error_' . $id) === false, 'Unverifiable transport stored a cleanup error');
         $reports_assert(!array_filter($calls, static fn($c) => $c['method'] === 'DELETE' && str_starts_with($c['path'], '/share/отчёты')), 'Unsafe report deletion');
         $calls = []; $put_fail = true; $bad = NetworkExport::export_quiz($id, $config);
         return empty($bad['success']) && !array_filter($calls, static fn($c) => $c['method'] === 'PROPFIND' && str_starts_with($c['path'], '/share/отчёты'));
@@ -251,4 +254,56 @@ $it('Отчёты: ошибка автоочистки сохраняется д
     } finally {
         delete_transient('wpo_last_report_cleanup_error_' . $id); $reports_dispose($root, $id);
     }
+});
+
+$it('Отчёты: недопустимая проверка транспорта — предупреждение, папка и файлы остаются', function () use ($reports_assert): bool {
+    $id = Quiz::create(['title' => 'DAV report unverifiable probe']);
+    $slug = NetworkExport::build_safe_slug(Quiz::get($id));
+    $paths = ['/share/отчёты/манифест_выгрузки_' . $slug . '.txt', '/share/отчёты/руководство_к_протоколам.txt', '/share/отчёты/сводка_результатов.txt'];
+    $calls = [];
+    $mock = static function ($pre, $args, $url) use (&$calls, $paths) {
+        if (!str_starts_with($url, 'https://reports-unverifiable.invalid/share')) return $pre;
+        $path = rtrim(rawurldecode((string)parse_url($url, PHP_URL_PATH)), '/'); $method = $args['method'];
+        $calls[] = ['method' => $method, 'path' => $path];
+        // Сервер отвечает на PROPFIND папки отчётов некорректно: проверить безопасность нельзя.
+        if ($method === 'PROPFIND' && $path === '/share/отчёты') return ['headers' => [], 'body' => '', 'response' => ['code' => 501, 'message' => 'No'], 'cookies' => []];
+        if ($method === 'PROPFIND' && in_array($path, $paths, true)) return ['headers' => [], 'body' => '', 'response' => ['code' => 404, 'message' => 'No'], 'cookies' => []];
+        if ($method === 'DELETE') return ['headers' => [], 'body' => '', 'response' => ['code' => 404, 'message' => 'No'], 'cookies' => []];
+        return ['headers' => [], 'body' => '', 'response' => ['code' => $method === 'MKCOL' ? 405 : 201, 'message' => 'QA'], 'cookies' => []];
+    };
+    try {
+        add_filter('pre_http_request', $mock, 10, 3);
+        $res = NetworkExport::export_quiz($id, ['type' => 'webdav', 'path' => 'https://reports-unverifiable.invalid/share']);
+        $reports_assert(!empty($res['success']), 'Unverifiable probe failed the export: ' . (string)($res['message'] ?? ''));
+        $reports_assert(($res['reports_directory'] ?? '') === 'unverified' && ($res['removed_report_files'] ?? []) === [], 'Cleanup was not reported as skipped');
+        $reports_assert(str_contains((string)($res['message'] ?? ''), 'не удалены'), 'Export message lacks the retention notice');
+        $reports_assert(get_transient('wpo_last_report_cleanup_error_' . $id) === false, 'Skipped cleanup stored an error');
+        $last = get_transient('wpo_last_network_export_' . $id);
+        return is_array($last) && !empty($last['success']) && !array_filter($calls, static fn($c) => $c['method'] === 'DELETE' && str_starts_with($c['path'], '/share/отчёты'));
+    } finally { remove_filter('pre_http_request', $mock, 10); Quiz::delete($id); }
+});
+
+$it('Отчёты / SMB: классификация ответов сервера разделяет отказ и непроверяемый ответ', function () use ($reports_assert): bool {
+    $reports_assert(\WPOlympiad\ReportExportCleanup::smb_attributes('  attributes:         D (10)') === 0x10, 'Directory attributes not parsed');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::smb_attributes('  attributes:           (80)') === 0x80, 'Normal file attributes not parsed');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::smb_attributes('attributes: A (0x20)') === 0x20, 'Prefixed hex not parsed');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::smb_attributes('nothing useful') === null, 'Missing attributes treated as a proof');
+
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_directory(1, ['NT_STATUS_NOT_A_REPARSE_POINT'], '') === 'plain', 'Samba readlink answer not accepted');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_directory(1, ['NT_STATUS_INVALID_DEVICE_REQUEST'], 'NT_STATUS_INVALID_DEVICE_REQUEST linking') === 'unsupported', 'Server without reparse support must be unverifiable');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_directory(1, [], '') === 'unsupported', 'Silent refusal treated as a proof');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_directory(0, [], '\\share\\отчёты -> other') === 'link', 'Link answer must refuse');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_directory(1, ['NT_STATUS_OBJECT_PATH_NOT_FOUND'], '') === 'absent', 'Missing folder must be absent');
+
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_target(1, ['NT_STATUS_NOT_A_REPARSE_POINT'], '', 0x80) === 'plain', 'Plain file rejected');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_target(1, ['NT_STATUS_NOT_A_REPARSE_POINT'], '', 0x10) === 'dangerous', 'Directory accepted as a file');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_target(1, ['NT_STATUS_NOT_A_REPARSE_POINT'], '', 0x410) === 'dangerous', 'Reparse point accepted as a file');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_target(0, [], '\\share\\отчёты\\файл.txt -> hidden') === 'dangerous', 'File link accepted');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_target(1, ['NT_STATUS_IO_TIMEOUT'], '', null) === 'unsupported', 'Unanswered probe treated as a proof');
+    $reports_assert(\WPOlympiad\ReportExportCleanup::judge_smb_target(1, ['NT_STATUS_NO_SUCH_FILE'], '', null) === 'absent', 'Missing file not absent');
+
+    $export = file_get_contents(WP_OLYMPIAD_PATH . 'includes/class-network-export.php');
+    $reports_assert(str_contains((string)$export, "'unverified' =>"), 'Export does not explain the skipped cleanup');
+    $reports_assert(str_contains((string)$export, "'retained' =>"), 'Export does not explain a retained folder');
+    return true;
 });
