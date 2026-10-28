@@ -156,20 +156,26 @@ $it('Расписание: начатая до окончания попытка
         $wpdb->update(\WPOlympiad\DB::attempts_table(), ['started_at' => $back_to_now], ['id' => $attempt->id]);
         $attempt->started_at = $back_to_now;
 
-        // Собственный таймер участка работает независимо от окна.
-        Quiz::get($id)->update(['settings' => ['end_time' => '', 'time_limit' => 1]]);
+        // Снятие с публикации, пока участник писал, тоже не лишает написанного:
+        // регламент закрывает старт, а не сдачу начатой работы.
+        Quiz::get($id)->update(['status' => 'draft', 'settings' => ['end_time' => '', 'time_limit' => 0]]);
+        $just_now = date('Y-m-d H:i:s', current_time('timestamp'));
+        $wpdb->update(\WPOlympiad\DB::attempts_table(), ['started_at' => $just_now], ['id' => $attempt->id]);
+        $attempt->started_at = $just_now;
+        $unpublished = AntiCheat::validate_submission_time($attempt, Quiz::get($id));
+        $rules($unpublished['valid'] === true, 'Снятие с публикации лишило написанного: ' . $unpublished['error']);
+
+        // Собственный таймер участника работает независимо от окна и статуса.
+        Quiz::get($id)->update(['status' => 'publish', 'settings' => ['time_limit' => 1]]);
         $over_limit = date('Y-m-d H:i:s', current_time('timestamp') - 600);
         $wpdb->update(\WPOlympiad\DB::attempts_table(), ['started_at' => $over_limit], ['id' => $attempt->id]);
         $attempt->started_at = $over_limit;
         $expired = AntiCheat::validate_submission_time($attempt, Quiz::get($id));
         $rules($expired['valid'] === false && str_contains($expired['error'], 'Время на выполнение'), 'Истёкший личный таймер не блокирует сдачу');
-
-        // Неопубликованная олимпиада не «прощает» сдачу, хотя время окончания не при чём.
-        Quiz::get($id)->update(['status' => 'draft']);
-        $unpublished = AntiCheat::validate_submission_time($attempt, Quiz::get($id));
-        $rules($unpublished['valid'] === false, 'Сдача черновика разрешена');
         return true;
     } finally {
+        global $wpdb;
+        $wpdb->delete(\WPOlympiad\DB::attempts_table(), ['quiz_id' => $id], ['%d']);
         wp_set_current_user($previous_user);
         Quiz::delete($id);
     }
@@ -334,6 +340,130 @@ $it('Регламент: форма настроек объясняет часо
         } else {
             $_GET['schedule_error'] = $previous;
         }
+        Quiz::delete($id);
+    }
+});
+
+$it('Сдача начатой работы не зависит от того, чем именно закрыли олимпиаду', function () use ($rules): bool {
+    $previous_user = get_current_user_id();
+    wp_set_current_user(0);
+    $token = strtolower(wp_generate_password(8, false, false));
+    $tz = function_exists('wp_timezone') ? wp_timezone() : new \DateTimeZone('UTC');
+    $now = new \DateTimeImmutable('now', $tz);
+    $id = Quiz::create([
+        'title' => 'Rules decline ' . $token,
+        'status' => 'publish',
+        'settings' => [
+            'time_limit' => 0,
+            'start_time' => $now->modify('-2 hours')->format('Y-m-d H:i'),
+            'end_time' => $now->modify('+30 minutes')->format('Y-m-d H:i'),
+            'allow_guest' => 1,
+        ],
+    ]);
+    global $wpdb;
+    try {
+        $attempt = Attempt::start($id, ['name' => 'Участник ' . $token, 'email' => 'dec-' . $token . '@example.invalid']);
+        $rules($attempt instanceof Attempt, 'Попытка не создана');
+
+        // Пять минут назад участник начал, а теперь олимпиаду закрывают разными способами.
+        $started = date('Y-m-d H:i:s', current_time('timestamp') - 300);
+        $wpdb->update(\WPOlympiad\DB::attempts_table(), ['started_at' => $started], ['id' => $attempt->id]);
+        $attempt->started_at = $started;
+
+        Quiz::get($id)->update(['status' => 'draft']);
+        $rules(Quiz::get($id)->is_active_now()['code'] === 'not_published', 'Снятие с публикации не распознано');
+        $rules(AntiCheat::validate_submission_time($attempt, Quiz::get($id))['valid'] === true, 'Снятая с публикации олимпиада лишила написанное');
+
+        Quiz::get($id)->update(['status' => 'publish', 'settings' => ['start_time' => $now->modify('+2 hours')->format('Y-m-d H:i')]]);
+        $rules(Quiz::get($id)->is_active_now()['code'] === 'before_start', 'Передвинутым началом не тот код причины');
+        $rules(AntiCheat::validate_submission_time($attempt, Quiz::get($id))['valid'] === true, 'Передвинутое начало лишило написанное');
+
+        Quiz::get($id)->update(['settings' => [
+            'start_time' => $now->modify('-2 hours')->format('Y-m-d H:i'),
+            'end_time' => $now->modify('-1 minute')->format('Y-m-d H:i'),
+        ]]);
+        $rules(AntiCheat::validate_submission_time($attempt, Quiz::get($id))['valid'] === true, 'Окончание приёма лишило начатую работу');
+
+        // Поздний старт (обход правил организатором) прощение не получает.
+        $late = date('Y-m-d H:i:s', current_time('timestamp') + 3600);
+        $wpdb->update(\WPOlympiad\DB::attempts_table(), ['started_at' => $late], ['id' => $attempt->id]);
+        $attempt->started_at = $late;
+        $late_val = AntiCheat::validate_submission_time($attempt, Quiz::get($id));
+        $rules($late_val['valid'] === false && $late_val['error'] === 'Олимпиада завершена. Приём ответов закрыт.', 'Поздний старт принят как обычная сдача');
+
+        // Личный лимит времени по-прежнему решает всё.
+        $started = date('Y-m-d H:i:s', current_time('timestamp') - 600);
+        $wpdb->update(\WPOlympiad\DB::attempts_table(), ['started_at' => $started], ['id' => $attempt->id]);
+        $attempt->started_at = $started;
+        Quiz::get($id)->update(['settings' => ['time_limit' => 1, 'end_time' => $now->modify('+30 minutes')->format('Y-m-d H:i')]]);
+        $own = AntiCheat::validate_submission_time($attempt, Quiz::get($id));
+        $rules($own['valid'] === false && str_contains($own['error'], 'Время на выполнение'), 'Личный лимит времени перестал блокировать сдачу');
+        return true;
+    } finally {
+        $wpdb->delete(\WPOlympiad\DB::attempts_table(), ['quiz_id' => $id], ['%d']);
+        wp_set_current_user($previous_user);
+        Quiz::delete($id);
+    }
+});
+
+$it('Отказ в сдаче сохраняет написанное организатору на проверку', function () use ($rules): bool {
+    $previous_user = get_current_user_id();
+    wp_set_current_user(0);
+    $token = strtolower(wp_generate_password(8, false, false));
+    $id = Quiz::create([
+        'title' => 'Rules rescue ' . $token,
+        'status' => 'publish',
+        'settings' => ['time_limit' => 1, 'allow_guest' => 1, 'show_results_mode' => 'immediate'],
+    ]);
+    global $wpdb;
+    try {
+        $qid = \WPOlympiad\Question::create([
+            'quiz_id' => $id,
+            'question_type' => 'single',
+            'title' => 'Сколько будет 2 + 2?',
+            'points' => 3,
+            'options' => ['choices' => [
+                ['id' => 'c1', 'text' => '4', 'is_correct' => 1],
+                ['id' => 'c2', 'text' => '5', 'is_correct' => 0],
+            ]],
+        ]);
+        $attempt = Attempt::start($id, ['name' => 'Участник ' . $token, 'email' => 'res-' . $token . '@example.invalid']);
+        $rules($attempt instanceof Attempt, 'Попытка не создана');
+
+        // Личное время истекло: сдача отклоняется, но написанное должно сохраниться.
+        $late = date('Y-m-d H:i:s', current_time('timestamp') - 900);
+        $wpdb->update(\WPOlympiad\DB::attempts_table(), ['started_at' => $late], ['id' => $attempt->id]);
+
+        $request = new \WP_REST_Request('POST', '/wp-olympiad/v1/submit');
+        $request->set_param('token', $attempt->token);
+        $request->set_param('answers', [$qid => 'c1']);
+        $res = \WPOlympiad\RestApi::handle_submit($request);
+        $rules(is_wp_error($res) && $res->get_error_code() === 'time_expired', 'Отказ в сдаче не вернулся ошибкой');
+        if (is_wp_error($res)) {
+            $rules(str_contains($res->get_error_message(), 'передано организатору на проверку'), 'Участнику не сказано, что написанное сохранено: ' . $res->get_error_message());
+        }
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            'SELECT user_answer, awarded_points, is_correct, needs_manual_review FROM ' . \WPOlympiad\DB::responses_table() . ' WHERE attempt_id = %d',
+            (int)$attempt->id
+        ), ARRAY_A);
+        $rules(is_array($row), 'Ответ участника не сохранён при отказе');
+        if (is_array($row)) {
+            $rules((string)$row['user_answer'] === 'c1', 'Сохранён не тот ответ', (string)$row['user_answer']);
+            // save_responses пишет is_correct через %s, поэтому NULL превращается в 0 —
+            // важно, что баллов нет, а ответ помечен на ручную проверку.
+            $rules((int)$row['awarded_points'] === 0, 'Отказ начислил баллы', (string)$row['awarded_points']);
+            $rules((int)$row['needs_manual_review'] === 1, 'Ответ не помечен на ручную проверку');
+        }
+
+        $fresh = Attempt::get_by_token($attempt->token);
+        $rules($fresh && $fresh->status === 'expired' && (float)$fresh->score === 0.0, 'Попытка не помечена истёкшей без баллов');
+        return true;
+    } finally {
+        $wpdb->delete(\WPOlympiad\DB::responses_table(), ['attempt_id' => (int)($attempt->id ?? 0)], ['%d']);
+        $wpdb->delete(\WPOlympiad\DB::attempts_table(), ['quiz_id' => $id], ['%d']);
+        $wpdb->delete(\WPOlympiad\DB::questions_table(), ['quiz_id' => $id], ['%d']);
+        wp_set_current_user($previous_user);
         Quiz::delete($id);
     }
 });
