@@ -61,6 +61,7 @@ final class Quiz
             'end_time'            => '',        // Y-m-d H:i
             'max_attempts'        => 1,         // 1 = strict olympiad, 0 = unlimited
             'rules_strict_for_admins' => 0,    // 1 = apply schedule and attempt limits to organizers too
+            'show_schedule_to_participants' => 0, // 1 = print start/end on the participant page
             'shuffle_questions'   => 0,         // 1 = random order
             'shuffle_answers'     => 1,         // 1 = shuffle choices
             'show_question_points'=> 1,         // 1 = show points per question, 0 = hide points during test
@@ -816,21 +817,13 @@ final class Quiz
         } elseif ($bounds['start'] !== null && $now < $bounds['start']) {
             $block = [
                 'code'   => 'before_start',
-                // translators: 1: start date and time, 2: timezone label
-                'reason' => sprintf(
-                    __('Олимпиада ещё не началась. Время начала: %1$s (%2$s)', 'wp-olympiad'),
-                    $bounds['start']->format('d.m.Y H:i'),
-                    self::schedule_timezone_label()
-                ),
+                // Точное время участнику не сообщается: организатор сообщает его сам.
+                'reason' => __('Олимпиада ещё не началась — вход откроет организатор.', 'wp-olympiad'),
             ];
         } elseif ($bounds['end'] !== null && $now > $bounds['end']) {
             $block = [
                 'code'   => 'after_end',
-                'reason' => sprintf(
-                    // translators: 1: end date and time
-                    __('Олимпиада завершена %s. Приём ответов закрыт.', 'wp-olympiad'),
-                    $bounds['end']->format('d.m.Y H:i')
-                ),
+                'reason' => __('Олимпиада завершена. Приём ответов закрыт.', 'wp-olympiad'),
             ];
         }
 
@@ -887,6 +880,52 @@ final class Quiz
     public function rules_strict_for_admins(): bool
     {
         return (bool)$this->get_setting('rules_strict_for_admins', 0);
+    }
+
+    /**
+     * Whether the participant page prints the start and the acceptance deadline.
+     * Hidden by default: the schedule is compared anyway, it is simply not shown.
+     */
+    public function shows_schedule_to_participants(): bool
+    {
+        return (bool)$this->get_setting('show_schedule_to_participants', 0);
+    }
+
+    /**
+     * Расписание строкой для организатора: на странице олимпиады оно участнику
+     * не показывается, но тому, кто его задавал, полезно видеть его сразу.
+     */
+    public function schedule_organizer_line(): string
+    {
+        $bounds = $this->schedule_boundaries();
+        $parts = [];
+
+        if ($bounds['start'] instanceof \DateTimeImmutable) {
+            $parts[] = sprintf(
+                // translators: 1: date and time
+                __('начало %1$s', 'wp-olympiad'),
+                $bounds['start']->format('d.m.Y H:i')
+            );
+        }
+
+        if ($bounds['end'] instanceof \DateTimeImmutable) {
+            $parts[] = sprintf(
+                // translators: 1: date and time
+                __('приём ответов до %1$s', 'wp-olympiad'),
+                $bounds['end']->format('d.m.Y H:i')
+            );
+        }
+
+        if (!$parts) {
+            return '';
+        }
+
+        return sprintf(
+            // translators: 1: schedule parts, 2: timezone label
+            __('Расписание сайта: %1$s (%2$s).', 'wp-olympiad'),
+            implode(', ', $parts),
+            self::schedule_timezone_label()
+        );
     }
 
     /** Bypass of the rules for people who manage the site (preview of the page). */

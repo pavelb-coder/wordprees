@@ -34,6 +34,7 @@ $link_alias = $is_new ? '' : $quiz->get_link_alias();
 $schedule_tz_label = \WPOlympiad\Quiz::schedule_timezone_label();
 $schedule_error = sanitize_key($_GET['schedule_error'] ?? '');
 $rules_strict_for_admins = $is_new ? 0 : (int)$quiz->get_setting('rules_strict_for_admins', 0);
+$show_schedule_to_participants = $is_new ? 0 : (int)$quiz->get_setting('show_schedule_to_participants', 0);
 $link_home_url = home_url('/');
 $link_alias_error = sanitize_key($_GET['link_alias_error'] ?? '');
 
@@ -323,7 +324,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                         <?php
                         printf(
                             /* translators: 1: timezone label */
-                            esc_html__('Время начала и окончания задаётся в часовом поясе сайта — сейчас это %s. Изменить пояс: «Настройки → Время». Участникам расписание показывается на стартовой странице олимпиады.', 'wp-olympiad'),
+                            esc_html__('Время начала и окончания задаётся в часовом поясе сайта — сейчас это %s. Изменить пояс: «Настройки → Время». Участникам расписание не показывается — по умолчанию страница его не выводит.', 'wp-olympiad'),
                             '<strong>' . esc_html($schedule_tz_label) . '</strong>'
                         );
                         ?>
@@ -381,6 +382,17 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                 </label>
                                 <p class="description"><?php esc_html_e('По умолчанию выключено: организатор может открыть даже закрытую олимпиаду, чтобы проверить страницу. Когда эта ссылка открыта, на странице показывается предупреждение, что регламент к вам не применён, и ссылка «Проверить глазами участника».', 'wp-olympiad'); ?></p>
                                 <p class="description"><?php esc_html_e('Включите, например, на время самой олимпиады, чтобы ни у кого не было доступа вне расписания.', 'wp-olympiad'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Расписание участникам:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <label for="show_schedule_to_participants">
+                                    <input type="checkbox" name="show_schedule_to_participants" id="show_schedule_to_participants" value="1" <?php checked($show_schedule_to_participants, 1); ?>>
+                                    <?php esc_html_e('Показывать время начала и окончания на странице олимпиады', 'wp-olympiad'); ?>
+                                </label>
+                                <p class="description"><?php esc_html_e('По умолчанию выключено: участник не видит ни «Начало: …», ни «Приём ответов до: …», а сообщения о блокировке не содержат точного времени. Расписание при этом работает как задано — скрытие не отменяет ограничение.', 'wp-olympiad'); ?></p>
+                                <p class="description"><?php esc_html_e('Включите, если нужно, чтобы участники сами видели, когда откроется вход и до какого момента принимаются ответы: строки появятся в блоке сведений на стартовой странице.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
                         <tr>

@@ -62,6 +62,10 @@ final class Shortcodes
      */
     private static function schedule_meta_lines(Quiz $quiz): array
     {
+        if (!$quiz->shows_schedule_to_participants()) {
+            return [];
+        }
+
         $bounds = $quiz->schedule_boundaries();
         $lines = [];
 
@@ -276,6 +280,11 @@ final class Shortcodes
                     'Регламент к вам не применяется, так как вы администратор сайта.',
                     'wp-olympiad'
                 ) . ' ' . self::organizer_note_link($quiz, true);
+            // Участнику точное время не показывается, организатору — можно.
+            $schedule_line = $quiz->schedule_organizer_line();
+            if ($schedule_line !== '') {
+                $organizer_notes[] = esc_html($schedule_line);
+            }
         } elseif ($strict_rules) {
             $organizer_notes[] = esc_html__(
                 'Вы смотрите страницу глазами участника: расписание и лимит попыток применяются полностью.',

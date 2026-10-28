@@ -483,18 +483,11 @@ final class RestApi
             }
             $response_data['breakdown'] = $breakdown;
         } elseif ($mode === 'after_end') {
-            $bounds = $quiz->schedule_boundaries();
-            $end_label = $bounds['end'] instanceof \DateTimeImmutable
-                ? sprintf(
-                    // translators: 1: end date and time, 2: timezone label
-                    __('%1$s (%2$s)', 'wp-olympiad'),
-                    $bounds['end']->format('d.m.Y H:i'),
-                    Quiz::schedule_timezone_label()
-                )
-                : '';
-            $response_data['message'] = sprintf(
-                __('Ваш ответ успешно принят! Правильные ответы и итоговые результаты будут опубликованы после окончания олимпиады: %s.', 'wp-olympiad'),
-                $end_label ?: __('после подведения итогов', 'wp-olympiad')
+            // Время окончания участнику не сообщается — только факт, что результаты
+            // появятся позже. Точную дату организатор видит в карточке регламента.
+            $response_data['message'] = __(
+                'Ваш ответ успешно принят! Правильные ответы и итоговые результаты будут опубликованы после окончания олимпиады.',
+                'wp-olympiad'
             );
         } elseif ($mode === 'manual' || $grading['has_essay']) {
             $response_data['message'] = __('Ответы приняты. В тесте присутствуют задания с развёрнутым ответом, которые проверяются жюри. Итоговая оценка появится после проверки.', 'wp-olympiad');

@@ -167,6 +167,8 @@ final class Admin
                     'end_time'          => sanitize_text_field($_POST['end_time'] ?? ''),
                     // Расписание и лимит попыток для организаторов: 0 = привычный предпросмотр.
                     'rules_strict_for_admins' => !empty($_POST['rules_strict_for_admins']) ? 1 : 0,
+                    // Расписание участнику по умолчанию не показывается.
+                    'show_schedule_to_participants' => !empty($_POST['show_schedule_to_participants']) ? 1 : 0,
                     'max_attempts'      => max(0, (int)($_POST['max_attempts'] ?? 1)),
                     'shuffle_questions' => !empty($_POST['shuffle_questions']) ? 1 : 0,
                     // Retired card: absent/stale POST fields must not reset
