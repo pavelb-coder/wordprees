@@ -30,6 +30,10 @@ $direct_url = $is_new ? '' : $quiz->get_direct_url();
 $embed_code = $is_new ? '' : $quiz->get_embed_code();
 // Имя прямой внешней ссылки: латиница/цифры/дефис, пусто = ссылка по номеру олимпиады.
 $link_alias = $is_new ? '' : $quiz->get_link_alias();
+// Расписание оценивается в часовом поясе сайта — подпись поля обязана это говорить честно.
+$schedule_tz_label = \WPOlympiad\Quiz::schedule_timezone_label();
+$schedule_error = sanitize_key($_GET['schedule_error'] ?? '');
+$rules_strict_for_admins = $is_new ? 0 : (int)$quiz->get_setting('rules_strict_for_admins', 0);
 $link_home_url = home_url('/');
 $link_alias_error = sanitize_key($_GET['link_alias_error'] ?? '');
 
@@ -302,6 +306,28 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
 
                 <div class="wpo-card" id="wpo-rules-card">
                     <h2><?php esc_html_e('Регламент и расписание олимпиады', 'wp-olympiad'); ?></h2>
+                    <?php if ($schedule_error !== ''): ?>
+                        <div class="notice notice-warning inline" style="margin:0 0 12px;padding:10px 12px;">
+                            <p style="margin:0;">
+                                <?php
+                                printf(
+                                    /* translators: 1: field label */
+                                    esc_html__('Значение поля «%s» не распознано, поэтому прежнее время сохранено и расписание работает как раньше. Введите, например, 2026-10-15 10:00 или 15.10.2026 10:00.', 'wp-olympiad'),
+                                    $schedule_error === 'end_time' ? esc_html__('Окончание олимпиады', 'wp-olympiad') : esc_html__('Начало олимпиады', 'wp-olympiad')
+                                );
+                                ?>
+                            </p>
+                        </div>
+                    <?php endif; ?>
+                    <p class="description" style="margin-bottom:12px;">
+                        <?php
+                        printf(
+                            /* translators: 1: timezone label */
+                            esc_html__('Время начала и окончания задаётся в часовом поясе сайта — сейчас это %s. Изменить пояс: «Настройки → Время». Участникам расписание показывается на стартовой странице олимпиады.', 'wp-olympiad'),
+                            '<strong>' . esc_html($schedule_tz_label) . '</strong>'
+                        );
+                        ?>
+                    </p>
                     <table class="form-table">
                         <tr>
                             <th scope="row"><?php esc_html_e('Доступ участников:', 'wp-olympiad'); ?></th>
@@ -323,17 +349,18 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             </td>
                         </tr>
                         <tr>
-                            <th scope="row"><label for="start_time"><?php esc_html_e('Начало олимпиады (МСК):', 'wp-olympiad'); ?></label></th>
+                            <th scope="row"><label for="start_time"><?php echo esc_html(sprintf(__('Начало олимпиады (%s):', 'wp-olympiad'), $schedule_tz_label)); ?></label></th>
                             <td>
-                                <input type="text" name="start_time" id="start_time" value="<?php echo esc_attr($start_time); ?>" class="regular-text" placeholder="2026-10-15 10:00">
-                                <p class="description"><?php esc_html_e('Формат: ГГГГ-ММ-ДД ЧЧ:ММ (до этого времени вход будет заблокирован). Оставьте пустым для мгновенного доступа.', 'wp-olympiad'); ?></p>
+                                <input type="text" name="start_time" id="start_time" value="<?php echo esc_attr($start_time); ?>" class="regular-text" placeholder="2026-10-15 10:00" autocomplete="off">
+                                <p class="description"><?php esc_html_e('Подходит 2026-10-15 10:00, 2026-10-15T10:00 или 15.10.2026 10:00. До этого времени вход заблокирован. Оставьте пустым для мгновенного доступа; если указать только дату — начало в 00:00 этого дня.', 'wp-olympiad'); ?></p>
+                                <p class="description wpo-schedule-tz-hint"><?php echo esc_html(sprintf(__('Часовой пояс сайта: %s.', 'wp-olympiad'), $schedule_tz_label)); ?></p>
                             </td>
                         </tr>
                         <tr>
-                            <th scope="row"><label for="end_time"><?php esc_html_e('Окончание олимпиады (МСК):', 'wp-olympiad'); ?></label></th>
+                            <th scope="row"><label for="end_time"><?php echo esc_html(sprintf(__('Окончание олимпиады (%s):', 'wp-olympiad'), $schedule_tz_label)); ?></label></th>
                             <td>
-                                <input type="text" name="end_time" id="end_time" value="<?php echo esc_attr($end_time); ?>" class="regular-text" placeholder="2026-10-15 18:00">
-                                <p class="description"><?php esc_html_e('После этого времени приём новых попыток прекращается.', 'wp-olympiad'); ?></p>
+                                <input type="text" name="end_time" id="end_time" value="<?php echo esc_attr($end_time); ?>" class="regular-text" placeholder="2026-10-15 18:00" autocomplete="off">
+                                <p class="description"><?php esc_html_e('После этого времени начать олимпиаду больше нельзя. Написанную работу это не аннулирует: начатая до окончания попытка сдаётся в пределах своего таймера. Если указать только дату — приём открыт до 23:59 этого дня.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
 
@@ -342,6 +369,18 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <td>
                                 <input type="number" name="max_attempts" id="max_attempts" value="<?php echo esc_attr((string)$max_attempts); ?>" min="0" max="10" step="1" class="small-text">
                                 <p class="description"><?php esc_html_e('1 — для строгих олимпиад и экзаменов. 0 — неограниченно.', 'wp-olympiad'); ?></p>
+                                <p class="description"><?php esc_html_e('Участнику без учётной записи попытки считаются по e-mail: при выключенном или необязательном e-mail лимит его не остановит.', 'wp-olympiad'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Строгий регламент:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <label for="rules_strict_for_admins">
+                                    <input type="checkbox" name="rules_strict_for_admins" id="rules_strict_for_admins" value="1" <?php checked($rules_strict_for_admins, 1); ?>>
+                                    <?php esc_html_e('Проверять расписание и лимит попыток также у администраторов сайта', 'wp-olympiad'); ?>
+                                </label>
+                                <p class="description"><?php esc_html_e('По умолчанию выключено: организатор может открыть даже закрытую олимпиаду, чтобы проверить страницу. Когда эта ссылка открыта, на странице показывается предупреждение, что регламент к вам не применён, и ссылка «Проверить глазами участника».', 'wp-olympiad'); ?></p>
+                                <p class="description"><?php esc_html_e('Включите, например, на время самой олимпиады, чтобы ни у кого не было доступа вне расписания.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
                         <tr>

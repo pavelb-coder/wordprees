@@ -60,6 +60,7 @@ final class Quiz
             'start_time'          => '',        // Y-m-d H:i
             'end_time'            => '',        // Y-m-d H:i
             'max_attempts'        => 1,         // 1 = strict olympiad, 0 = unlimited
+            'rules_strict_for_admins' => 0,    // 1 = apply schedule and attempt limits to organizers too
             'shuffle_questions'   => 0,         // 1 = random order
             'shuffle_answers'     => 1,         // 1 = shuffle choices
             'show_question_points'=> 1,         // 1 = show points per question, 0 = hide points during test
@@ -793,80 +794,217 @@ final class Quiz
     /**
      * Check if Olympiad is currently open based on start/end dates
      *
-     * @return array{active: bool, reason: string}
+     * Organizers who may manage the site are allowed to open a closed olympiad for
+     * checking, but that bypass is now visible: the result carries «admin_preview»
+     * and the reason a participant would see. Pass $strict = true (or turn on the
+     * «strict rules» setting) to evaluate the rules exactly as for a participant.
+     *
+     * @return array{active: bool, reason: string, code: string, admin_preview: bool, blocked_reason?: string}
      */
-    public function is_active_now(): array
+    public function is_active_now(bool $strict = false): array
     {
-        $user_id = get_current_user_id();
-        // Administrators can always preview and test the Olympiad
-        if ($user_id > 0 && user_can($user_id, 'manage_options')) {
-            return ['active' => true, 'reason' => ''];
-        }
+        $bounds = $this->schedule_boundaries();
+        $now = new \DateTimeImmutable('now', $bounds['tz']);
+
+        $block = null;
 
         if ($this->status !== 'publish' && $this->status !== 'published') {
-            return [
-                'active' => false,
+            $block = [
+                'code'   => 'not_published',
                 'reason' => __('Олимпиада в настоящее время не опубликована.', 'wp-olympiad'),
+            ];
+        } elseif ($bounds['start'] !== null && $now < $bounds['start']) {
+            $block = [
+                'code'   => 'before_start',
+                // translators: 1: start date and time, 2: timezone label
+                'reason' => sprintf(
+                    __('Олимпиада ещё не началась. Время начала: %1$s (%2$s)', 'wp-olympiad'),
+                    $bounds['start']->format('d.m.Y H:i'),
+                    self::schedule_timezone_label()
+                ),
+            ];
+        } elseif ($bounds['end'] !== null && $now > $bounds['end']) {
+            $block = [
+                'code'   => 'after_end',
+                'reason' => sprintf(
+                    // translators: 1: end date and time
+                    __('Олимпиада завершена %s. Приём ответов закрыт.', 'wp-olympiad'),
+                    $bounds['end']->format('d.m.Y H:i')
+                ),
             ];
         }
 
+        if ($block === null) {
+            return ['active' => true, 'reason' => '', 'code' => '', 'admin_preview' => false];
+        }
+
+        if (!$strict && $this->allows_organizer_bypass() && is_user_logged_in() && current_user_can('manage_options')) {
+            return [
+                'active'         => true,
+                'reason'         => '',
+                'code'           => $block['code'],
+                'admin_preview'  => true,
+                'blocked_reason' => $block['reason'],
+            ];
+        }
+
+        return ['active' => false, 'reason' => $block['reason'], 'code' => $block['code'], 'admin_preview' => false];
+    }
+
+    /**
+     * Parsed schedule boundaries in the site timezone.
+     *
+     * A value that cannot be parsed is ignored instead of blocking everybody — legacy
+     * rows may hold free text. The settings form refuses to store such values since
+     * 1.0.18, so normally every stored schedule is canonical «Y-m-d H:i».
+     *
+     * @return array{tz: \DateTimeZone, start: ?\DateTimeImmutable, end: ?\DateTimeImmutable}
+     */
+    public function schedule_boundaries(): array
+    {
         $tz = function_exists('wp_timezone') ? wp_timezone() : new \DateTimeZone('UTC');
-        $now = new \DateTimeImmutable('now', $tz);
-        $start_time = (string)$this->get_setting('start_time', '');
-        $end_time = (string)$this->get_setting('end_time', '');
 
-        if (!empty($start_time)) {
-            try {
-                $start_dt = new \DateTimeImmutable($start_time, $tz);
-                if ($now < $start_dt) {
-                    return [
-                        'active' => false,
-                        'reason' => sprintf(
-                            __('Олимпиада ещё не началась. Время начала: %s (МСК)', 'wp-olympiad'),
-                            $start_dt->format('d.m.Y H:i')
-                        ),
-                    ];
-                }
-            } catch (\Throwable) {
-                // Ignore parse errors
+        $parse = static function ($raw) use ($tz): ?\DateTimeImmutable {
+            $raw = trim((string)$raw);
+            if ($raw === '') {
+                return null;
             }
+            try {
+                return new \DateTimeImmutable($raw, $tz);
+            } catch (\Throwable $e) {
+                return null;
+            }
+        };
+
+        return [
+            'tz'    => $tz,
+            'start' => $parse($this->get_setting('start_time', '')),
+            'end'   => $parse($this->get_setting('end_time', '')),
+        ];
+    }
+
+    /** Whether schedule and attempt limits are enforced for organizers as well. */
+    public function rules_strict_for_admins(): bool
+    {
+        return (bool)$this->get_setting('rules_strict_for_admins', 0);
+    }
+
+    /** Bypass of the rules for people who manage the site (preview of the page). */
+    public function allows_organizer_bypass(): bool
+    {
+        return !$this->rules_strict_for_admins() && !self::is_participant_preview();
+    }
+
+    /**
+     * The «see it as a participant» switch used on the olympiad page. Only honored
+     * for administrators, so for everybody else the request is a no-op.
+     */
+    public static function is_participant_preview(): bool
+    {
+        if (!isset($_GET['wpo_as_participant']) || !is_scalar($_GET['wpo_as_participant'])) {
+            return false;
+        }
+        if ((string)$_GET['wpo_as_participant'] !== '1') {
+            return false;
         }
 
-        if (!empty($end_time)) {
-            try {
-                $end_dt = new \DateTimeImmutable($end_time, $tz);
-                if ($now > $end_dt) {
-                    return [
-                        'active' => false,
-                        'reason' => sprintf(
-                            __('Олимпиада завершена %s. Приём ответов закрыт.', 'wp-olympiad'),
-                            $end_dt->format('d.m.Y H:i')
-                        ),
-                    ];
-                }
-            } catch (\Throwable) {
-                // Ignore parse errors
-            }
+        return is_user_logged_in() && current_user_can('manage_options');
+    }
+
+    /**
+     * Timezone the schedule is measured in, spelled the way an organizer reads it.
+     *
+     * The form labels used to promise «МСК» unconditionally, while the plugin has
+     * always compared the times with the *site* timezone — that mismatch is what
+     * made a schedule look ignored.
+     */
+    public static function schedule_timezone_label(): string
+    {
+        $tz = function_exists('wp_timezone_string') ? wp_timezone_string() : 'UTC';
+        if ($tz === 'Europe/Moscow') {
+            return __('МСК', 'wp-olympiad');
+        }
+        if ($tz === 'UTC') {
+            return 'UTC';
         }
 
-        return ['active' => true, 'reason' => ''];
+        $offset = (new \DateTimeZone($tz))->getOffset(new \DateTimeImmutable('now', new \DateTimeZone('UTC')));
+        $sign = $offset < 0 ? '-' : '+';
+
+        return sprintf('%s (UTC%s%d)', $tz, $sign, (int)(abs($offset) / 3600));
+    }
+
+    /**
+     * Canonical form of a schedule value typed by an administrator.
+     *
+     * Accepts «Y-m-d H:i[:s]», «Y-m-d», «d.m.Y [H:i]» and the ISO "T" separator.
+     * A date without a time is the beginning of that day — or its last minute for
+     * the end of the olympiad, so «2026-10-31» no longer closes the contest at 00:00.
+     * Slash formats (10/11/2026) are rejected instead of being read the American way.
+     *
+     * @return string|null canonical «Y-m-d H:i», '' when empty, null when unusable
+     */
+    public static function normalize_schedule_time($raw, bool $end_of_day = false): ?string
+    {
+        if (!is_scalar($raw)) {
+            return '';
+        }
+
+        $value = trim((string)$raw);
+        if ($value === '') {
+            return '';
+        }
+
+        $year = $month = $day = 0;
+        $hour = null;
+        $minute = null;
+
+        if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::\d{2})?)?$/', $value, $m)) {
+            $year = (int)$m[1];
+            $month = (int)$m[2];
+            $day = (int)$m[3];
+            if (isset($m[4]) && $m[4] !== '') {
+                $hour = (int)$m[4];
+                $minute = (int)$m[5];
+            }
+        } elseif (preg_match('/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?: (\d{1,2}):(\d{2})(?::\d{2})?)?$/', $value, $m)) {
+            $day = (int)$m[1];
+            $month = (int)$m[2];
+            $year = (int)$m[3];
+            if (isset($m[4]) && $m[4] !== '') {
+                $hour = (int)$m[4];
+                $minute = (int)$m[5];
+            }
+        } else {
+            return null;
+        }
+
+        if (!checkdate($month, $day, $year)) {
+            return null;
+        }
+
+        if ($hour === null) {
+            return $end_of_day ? sprintf('%04d-%02d-%02d 23:59', $year, $month, $day)
+                               : sprintf('%04d-%02d-%02d 00:00', $year, $month, $day);
+        }
+
+        if ($hour > 23 || $minute > 59) {
+            return null;
+        }
+
+        return sprintf('%04d-%02d-%02d %02d:%02d', $year, $month, $day, $hour, $minute);
     }
 
     /**
      * Check if a participant can attempt this quiz (based on max_attempts)
      *
-     * @return array{allowed: bool, reason: string, count: int}
+     * @return array{allowed: bool, reason: string, count: int, admin_preview: bool, blocked_reason?: string}
      */
-    public function can_user_attempt(int $user_id, string $email = ''): array
+    public function can_user_attempt(int $user_id, string $email = '', bool $strict = false): array
     {
-        // Administrators can always test the quiz without being locked out by attempt limits
-        if ($user_id > 0 && user_can($user_id, 'manage_options')) {
-            return ['allowed' => true, 'reason' => '', 'count' => 0];
-        }
-
         $max_attempts = (int)$this->get_setting('max_attempts', 1);
         if ($max_attempts <= 0) {
-            return ['allowed' => true, 'reason' => '', 'count' => 0];
+            return ['allowed' => true, 'reason' => '', 'count' => 0, 'admin_preview' => false];
         }
 
         global $wpdb;
@@ -887,17 +1025,27 @@ final class Quiz
             ));
         }
 
-        if ($count >= $max_attempts) {
+        if ($count < $max_attempts) {
+            return ['allowed' => true, 'reason' => '', 'count' => $count, 'admin_preview' => false];
+        }
+
+        $reason = sprintf(
+            __('Вы исчерпали лимит попыток для этой олимпиады (максимум: %d).', 'wp-olympiad'),
+            $max_attempts
+        );
+
+        // Как и с расписанием, организатор может посмотреть страницу сверх лимита,
+        // но обход больше не незаметен, а строгий режим отключает его.
+        if (!$strict && $this->allows_organizer_bypass() && $user_id > 0 && user_can($user_id, 'manage_options')) {
             return [
-                'allowed' => false,
-                'reason'  => sprintf(
-                    __('Вы исчерпали лимит попыток для этой олимпиады (максимум: %d).', 'wp-olympiad'),
-                    $max_attempts
-                ),
-                'count'   => $count,
+                'allowed'        => true,
+                'reason'         => '',
+                'count'          => $count,
+                'admin_preview'  => true,
+                'blocked_reason' => $reason,
             ];
         }
 
-        return ['allowed' => true, 'reason' => '', 'count' => $count];
+        return ['allowed' => false, 'reason' => $reason, 'count' => $count, 'admin_preview' => false];
     }
 }

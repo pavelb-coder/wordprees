@@ -17,7 +17,7 @@ final class AntiCheat
      *
      * @return array{valid: bool, error: string}
      */
-    public static function validate_submission_time(Attempt $attempt, Quiz $quiz): array
+    public static function validate_submission_time(Attempt $attempt, Quiz $quiz, bool $strict = false): array
     {
         $time_limit = (int)$quiz->get_setting('time_limit', 0);
         $grace_seconds = 45; // 45 seconds tolerance for network latency
@@ -30,8 +30,15 @@ final class AntiCheat
         }
 
         // Check overall olympiad window
-        $active_status = $quiz->is_active_now();
+        $active_status = $quiz->is_active_now($strict);
         if (!$active_status['active']) {
+            // Расписание закрывает *старт* попытки. Если участник начал писать, пока
+            // приём был открыт, окончание времени олимпиады не аннулирует его ответ —
+            // иначе сдача в последнюю минуту обнуляла бы реально написанную работу.
+            if (($active_status['code'] ?? '') === 'after_end' && self::started_within_window($attempt, $quiz)) {
+                return ['valid' => true, 'error' => ''];
+            }
+
             return [
                 'valid' => false,
                 'error' => $active_status['reason'],
@@ -39,6 +46,30 @@ final class AntiCheat
         }
 
         return ['valid' => true, 'error' => ''];
+    }
+
+    /**
+     * Whether the attempt was started before the acceptance deadline of the olympiad.
+     */
+    private static function started_within_window(Attempt $attempt, Quiz $quiz): bool
+    {
+        $bounds = $quiz->schedule_boundaries();
+        if (!($bounds['end'] instanceof \DateTimeImmutable)) {
+            return true;
+        }
+
+        $started = trim((string)$attempt->started_at);
+        if ($started === '') {
+            return false;
+        }
+
+        try {
+            $started_at = new \DateTimeImmutable($started, $bounds['tz']);
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        return $started_at <= $bounds['end'];
     }
 
     /**

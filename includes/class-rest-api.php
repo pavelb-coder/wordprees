@@ -161,8 +161,10 @@ final class RestApi
             return new WP_Error('login_required', __('Для участия войдите на сайт или попросите организатора включить гостевой доступ.', 'wp-olympiad'), ['status' => 401]);
         }
 
-        // Active time window check
-        $active = $quiz->is_active_now();
+        // Active time window check (the organizer preview link evaluates the rules
+        // exactly as they apply to a participant).
+        $strict_rules = Quiz::is_participant_preview();
+        $active = $quiz->is_active_now($strict_rules);
         if (!$active['active']) {
             return new WP_Error('quiz_inactive', $active['reason'], ['status' => 403]);
         }
@@ -220,7 +222,7 @@ final class RestApi
 
         // Attempt limit check
         $user_id = get_current_user_id();
-        $attempt_check = $quiz->can_user_attempt($user_id, $participant_email);
+        $attempt_check = $quiz->can_user_attempt($user_id, $participant_email, $strict_rules);
         if (!$attempt_check['allowed']) {
             return new WP_Error('max_attempts_exceeded', $attempt_check['reason'], ['status' => 403]);
         }
@@ -325,7 +327,7 @@ final class RestApi
         }
 
         // Validate time and window
-        $time_val = AntiCheat::validate_submission_time($attempt, $quiz);
+        $time_val = AntiCheat::validate_submission_time($attempt, $quiz, Quiz::is_participant_preview());
         if (!$time_val['valid']) {
             $attempt->complete(0.0, $quiz->get_total_points(), 'expired');
             return new WP_Error('time_expired', $time_val['error'], ['status' => 400]);
@@ -481,10 +483,18 @@ final class RestApi
             }
             $response_data['breakdown'] = $breakdown;
         } elseif ($mode === 'after_end') {
-            $end_time = $quiz->get_setting('end_time', '');
+            $bounds = $quiz->schedule_boundaries();
+            $end_label = $bounds['end'] instanceof \DateTimeImmutable
+                ? sprintf(
+                    // translators: 1: end date and time, 2: timezone label
+                    __('%1$s (%2$s)', 'wp-olympiad'),
+                    $bounds['end']->format('d.m.Y H:i'),
+                    Quiz::schedule_timezone_label()
+                )
+                : '';
             $response_data['message'] = sprintf(
                 __('Ваш ответ успешно принят! Правильные ответы и итоговые результаты будут опубликованы после окончания олимпиады: %s.', 'wp-olympiad'),
-                $end_time ?: __('после подведения итогов', 'wp-olympiad')
+                $end_label ?: __('после подведения итогов', 'wp-olympiad')
             );
         } elseif ($mode === 'manual' || $grading['has_essay']) {
             $response_data['message'] = __('Ответы приняты. В тесте присутствуют задания с развёрнутым ответом, которые проверяются жюри. Итоговая оценка появится после проверки.', 'wp-olympiad');

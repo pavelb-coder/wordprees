@@ -24,6 +24,75 @@ final class Shortcodes
     }
 
     /**
+     * Ссылка «глазами участника» / «вернуться» для того же экрана олимпиады.
+     */
+    private static function organizer_note_link(Quiz $quiz, bool $enable): string
+    {
+        $label = $enable
+            ? __('Проверить глазами участника', 'wp-olympiad')
+            : __('Вернуть обычный вид', 'wp-olympiad');
+
+        return '<a href="' . esc_url(self::participant_preview_url($enable, $quiz)) . '">' . esc_html($label) . '</a>';
+    }
+
+    /**
+     * URL той же страницы с флагом просмотра регламента глазами участника.
+     */
+    private static function participant_preview_url(bool $enable, Quiz $quiz): string
+    {
+        if (function_exists('is_singular') && is_singular() && function_exists('get_permalink')) {
+            $base = (string)get_permalink();
+            if ($base !== '') {
+                return $enable
+                    ? add_query_arg('wpo_as_participant', '1', $base)
+                    : remove_query_arg('wpo_as_participant', $base);
+            }
+        }
+
+        $key = $quiz->get_link_alias() !== '' ? $quiz->get_link_alias() : (string)$quiz->id;
+        $url = add_query_arg('wpo_runner', $key, home_url('/'));
+
+        return $enable
+            ? add_query_arg('wpo_as_participant', '1', $url)
+            : remove_query_arg('wpo_as_participant', $url);
+    }
+
+    /**
+     * Расписание олимпиады для участника: когда начать и до какого момента принимаются ответы.
+     */
+    private static function schedule_meta_lines(Quiz $quiz): array
+    {
+        $bounds = $quiz->schedule_boundaries();
+        $lines = [];
+
+        if ($bounds['start'] instanceof \DateTimeImmutable) {
+            $lines[] = sprintf(
+                // translators: 1: date and time
+                __('Начало: %s', 'wp-olympiad'),
+                $bounds['start']->format('d.m.Y H:i')
+            );
+        }
+
+        if ($bounds['end'] instanceof \DateTimeImmutable) {
+            $lines[] = sprintf(
+                // translators: 1: date and time
+                __('Приём ответов до: %s', 'wp-olympiad'),
+                $bounds['end']->format('d.m.Y H:i')
+            );
+        }
+
+        if ($lines && function_exists('wp_timezone_string') && wp_timezone_string() !== 'UTC') {
+            $lines[] = sprintf(
+                // translators: 1: timezone label
+                __('Часовой пояс: %s', 'wp-olympiad'),
+                Quiz::schedule_timezone_label()
+            );
+        }
+
+        return $lines;
+    }
+
+    /**
      * Render standalone fullscreen test runner for direct links and external iframe embedding
      */
     public static function handle_standalone_runner(): void
@@ -165,7 +234,10 @@ final class Shortcodes
 
         self::enqueue_assets();
 
-        $active_status = $quiz->is_active_now();
+        // Регламент оценивается так же, как для участника, по ссылке «глазами
+        // участника»; иначе администратор видит закрытую олимпиаду открытой.
+        $strict_rules = Quiz::is_participant_preview();
+        $active_status = $quiz->is_active_now($strict_rules);
         $is_logged_in = is_user_logged_in();
         $current_user = wp_get_current_user();
 
@@ -182,11 +254,33 @@ final class Shortcodes
         }
 
         // Attempt limit check for logged-in users
+        $organizer_notes = [];
         if ($is_logged_in) {
-            $attempt_check = $quiz->can_user_attempt((int)$current_user->ID, $user_email);
+            $attempt_check = $quiz->can_user_attempt((int)$current_user->ID, $user_email, $strict_rules);
             if (!$attempt_check['allowed']) {
                 return '<div class="wpo-alert wpo-alert-warning">' . esc_html($attempt_check['reason']) . '</div>';
             }
+            if (!empty($attempt_check['admin_preview'])) {
+                $organizer_notes[] = esc_html__(
+                    'Лимит попыток для вас не применяется, так как вы администратор сайта. У участника эта страница была бы закрыта.',
+                    'wp-olympiad'
+                ) . ' ' . self::organizer_note_link($quiz, true);
+            }
+        }
+
+        if (!empty($active_status['admin_preview'])) {
+            $reason = isset($active_status['blocked_reason']) ? (string)$active_status['blocked_reason'] : '';
+            $organizer_notes[] = ($reason !== ''
+                ? sprintf('%s ', esc_html($reason))
+                : '') . esc_html__(
+                    'Регламент к вам не применяется, так как вы администратор сайта.',
+                    'wp-olympiad'
+                ) . ' ' . self::organizer_note_link($quiz, true);
+        } elseif ($strict_rules) {
+            $organizer_notes[] = esc_html__(
+                'Вы смотрите страницу глазами участника: расписание и лимит попыток применяются полностью.',
+                'wp-olympiad'
+            ) . ' ' . self::organizer_note_link($quiz, false);
         }
 
         $time_limit = (int)$quiz->get_setting('time_limit', 0);
@@ -300,9 +394,23 @@ final class Shortcodes
                             </div>
                         <?php endif; ?>
 
+                        <?php foreach (self::schedule_meta_lines($quiz) as $wpo_schedule_line): ?>
+                            <div class="wpo-meta-item">
+                                <span class="wpo-meta-icon">📅</span>
+                                <div class="wpo-meta-content">
+                                    <span class="wpo-meta-val"><?php echo esc_html($wpo_schedule_line); ?></span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
 
                     </div>
                 <?php endif; ?>
+
+                <?php foreach ($organizer_notes as $wpo_note): ?>
+                    <div class="wpo-alert wpo-alert-warning">
+                        <?php echo wp_kses_post($wpo_note); ?>
+                    </div>
+                <?php endforeach; ?>
 
                 <?php if (!$active_status['active']): ?>
                     <div class="wpo-alert wpo-alert-warning">

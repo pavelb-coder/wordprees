@@ -165,6 +165,8 @@ final class Admin
                     'time_limit'        => max(0, (int)($_POST['time_limit'] ?? 0)),
                     'start_time'        => sanitize_text_field($_POST['start_time'] ?? ''),
                     'end_time'          => sanitize_text_field($_POST['end_time'] ?? ''),
+                    // Расписание и лимит попыток для организаторов: 0 = привычный предпросмотр.
+                    'rules_strict_for_admins' => !empty($_POST['rules_strict_for_admins']) ? 1 : 0,
                     'max_attempts'      => max(0, (int)($_POST['max_attempts'] ?? 1)),
                     'shuffle_questions' => !empty($_POST['shuffle_questions']) ? 1 : 0,
                     // Retired card: absent/stale POST fields must not reset
@@ -253,9 +255,7 @@ final class Admin
             // A stale cached form without the link name field must not reset a name
             // an administrator has already chosen.
             $link_alias_error = '';
-            if (!isset($_POST['link_alias']) || !is_scalar($_POST['link_alias'])) {
-                unset($data['settings']['link_alias']);
-            } else {
+            if (isset($_POST['link_alias']) && is_scalar($_POST['link_alias'])) {
                 // Name of the public runner link: checked against the format and against
                 // names of other olympiads. On failure the rest of the settings is saved
                 // and the previous link name stays untouched.
@@ -264,6 +264,33 @@ final class Admin
                     unset($data['settings']['link_alias']);
                 } else {
                     $data['settings']['link_alias'] = $link_alias_clean;
+                }
+            } else {
+                unset($data['settings']['link_alias']);
+            }
+
+            // Schedule: a value is either stored in the canonical form or not changed
+            // at all — an unparseable date must never silently disable the time window.
+            $schedule_error = '';
+            foreach (['start_time' => false, 'end_time' => true] as $wpo_field => $wpo_end_of_day) {
+                if (!isset($_POST[$wpo_field]) || !is_scalar($_POST[$wpo_field])) {
+                    unset($data['settings'][$wpo_field]);
+                    continue;
+                }
+
+                $wpo_posted = trim(sanitize_text_field((string)$_POST[$wpo_field]));
+                if ($wpo_posted === '') {
+                    continue;
+                }
+
+                $wpo_normalized = Quiz::normalize_schedule_time($wpo_posted, $wpo_end_of_day);
+                if ($wpo_normalized === null) {
+                    if ($schedule_error === '') {
+                        $schedule_error = $wpo_field;
+                    }
+                    unset($data['settings'][$wpo_field]);
+                } else {
+                    $data['settings'][$wpo_field] = $wpo_normalized;
                 }
             }
 
@@ -287,8 +314,14 @@ final class Admin
                     if (!empty($data['settings']['network_auto_import'])) {
                         NetworkImport::auto_import_for_quiz($quiz, false);
                     }
-                    if ($link_alias_error !== '') {
-                        wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . '&link_alias_error=' . $link_alias_error));
+                    $settings_errors = array_filter([
+                        'link_alias_error' => $link_alias_error,
+                        'schedule_error'   => $schedule_error,
+                    ]);
+                    if ($settings_errors) {
+                        $settings_errors['page'] = 'wp-olympiad-edit';
+                        $settings_errors['quiz_id'] = $quiz_id;
+                        wp_safe_redirect(admin_url(add_query_arg($settings_errors, 'admin.php')));
                         exit;
                     }
                     wp_safe_redirect(admin_url('admin.php?page=wp-olympiad&updated=1'));
@@ -301,8 +334,14 @@ final class Admin
                 if ($quiz && !empty($data['settings']['network_auto_import'])) {
                     NetworkImport::auto_import_for_quiz($quiz, false);
                 }
-                if ($link_alias_error !== '') {
-                    wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $new_id . '&link_alias_error=' . $link_alias_error));
+                $settings_errors = array_filter([
+                    'link_alias_error' => $link_alias_error,
+                    'schedule_error'   => $schedule_error,
+                ]);
+                if ($settings_errors) {
+                    $settings_errors['page'] = 'wp-olympiad-edit';
+                    $settings_errors['quiz_id'] = $new_id;
+                    wp_safe_redirect(admin_url(add_query_arg($settings_errors, 'admin.php')));
                     exit;
                 }
                 wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-questions&quiz_id=' . $new_id . '&created=1'));
