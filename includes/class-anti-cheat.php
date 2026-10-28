@@ -29,16 +29,12 @@ final class AntiCheat
             ];
         }
 
-        // Check overall olympiad window
+        // Регламент закрывает *старт* попытки, а не сдачу уже начатой работы:
+        // иначе снятая с публикации олимпиада или передвинутая дата окончания
+        // обнуляли бы реально написанный ответ. Личный лимит времени при этом
+        // проверяется выше и остаётся единственным основанием для «time_expired».
         $active_status = $quiz->is_active_now($strict);
-        if (!$active_status['active']) {
-            // Расписание закрывает *старт* попытки. Если участник начал писать, пока
-            // приём был открыт, окончание времени олимпиады не аннулирует его ответ —
-            // иначе сдача в последнюю минуту обнуляла бы реально написанную работу.
-            if (($active_status['code'] ?? '') === 'after_end' && self::started_within_window($attempt, $quiz)) {
-                return ['valid' => true, 'error' => ''];
-            }
-
+        if (!$active_status['active'] && !self::attempt_started_allowed($attempt, $quiz, (string)($active_status['code'] ?? ''))) {
             return [
                 'valid' => false,
                 'error' => $active_status['reason'],
@@ -49,10 +45,25 @@ final class AntiCheat
     }
 
     /**
-     * Whether the attempt was started before the acceptance deadline of the olympiad.
+     * Was this attempt started while the rules allowed it? If yes, the current
+     * state of the schedule must not invalidate the submission.
+     *
+     * Only an attempt begun after the acceptance deadline (for instance created
+     * by an organizer who bypasses the rules) is refused — that is not a participant
+     * losing work, it is a late start.
      */
-    private static function started_within_window(Attempt $attempt, Quiz $quiz): bool
+    private static function attempt_started_allowed(Attempt $attempt, Quiz $quiz, string $code): bool
     {
+        if ($attempt->status !== 'in_progress') {
+            return false;
+        }
+
+        if ($code !== 'after_end') {
+            // «ещё не опубликована» и «ещё не началась» не могут быть виной участника:
+            // попытка уже идёт, значит организатор разрешил её начать.
+            return true;
+        }
+
         $bounds = $quiz->schedule_boundaries();
         if (!($bounds['end'] instanceof \DateTimeImmutable)) {
             return true;

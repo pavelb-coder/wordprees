@@ -329,8 +329,16 @@ final class RestApi
         // Validate time and window
         $time_val = AntiCheat::validate_submission_time($attempt, $quiz, Quiz::is_participant_preview());
         if (!$time_val['valid']) {
+            $declined_message = (string)$time_val['error'];
+            if (self::preserve_declined_answers($attempt, $quiz, $request->get_param('answers'))) {
+                $declined_message .= ' ' . __(
+                    'Написанное сохранено без баллов и передано организатору на проверку.',
+                    'wp-olympiad'
+                );
+            }
+
             $attempt->complete(0.0, $quiz->get_total_points(), 'expired');
-            return new WP_Error('time_expired', $time_val['error'], ['status' => 400]);
+            return new WP_Error('time_expired', $declined_message, ['status' => 400]);
         }
 
         $user_answers = $request->get_param('answers');
@@ -580,6 +588,40 @@ final class RestApi
         }
 
         return $quiz;
+    }
+
+    /**
+     * Отказ в сдаче не должен означать потерю работы. Ответы сохраняются как есть,
+     * но без баллов и с пометкой на ручную проверку: попытка остаётся «Истекло
+     * время», а организатор видит, что именно написал участник, и может оценить.
+     *
+     * @return bool сохранены ли ответы
+     */
+    private static function preserve_declined_answers(Attempt $attempt, Quiz $quiz, mixed $user_answers): bool
+    {
+        if (!is_array($user_answers) || $user_answers === []) {
+            return false;
+        }
+
+        try {
+            $grading = Grader::grade($quiz, $attempt, $user_answers);
+            $responses = [];
+            foreach ($grading['responses'] as $resp) {
+                $resp['awarded_points'] = 0;
+                $resp['is_correct'] = null;
+                $resp['needs_manual_review'] = 1;
+                $responses[] = $resp;
+            }
+
+            if (!$responses) {
+                return false;
+            }
+
+            Grader::save_responses((int)$attempt->id, $responses);
+            return true;
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     /**

@@ -1335,9 +1335,9 @@
             }
 
             this.isSubmitting = true;
+            const finishLabel = this.btnFinish ? this.btnFinish.textContent : '';
 
-            clearInterval(this.timerInterval);
-            clearInterval(this.heartbeatInterval);
+            this.pauseSubmitTimers();
 
             if (this.btnFinish) {
                 this.btnFinish.disabled = true;
@@ -1352,7 +1352,7 @@
 
                 if (!res.success) {
                     alert(res.message || (res.data && res.data.message) || 'Ошибка при отправке ответов.');
-                    this.isSubmitting = false;
+                    this.afterFailedSubmit(finishLabel);
                     return;
                 }
 
@@ -1360,8 +1360,56 @@
                 this.renderResults(data);
             } catch (err) {
                 console.error(err);
-                alert('Сетевая ошибка при отправке результатов.');
-                this.isSubmitting = false;
+                alert('Сетевая ошибка при отправке результатов. Проверьте соединение и нажмите «Завершить» ещё раз — ответы сохранены на этой странице.');
+                this.afterFailedSubmit(finishLabel);
+            }
+        }
+
+        // Отправка не должна быть точкой невозврата: если сервер не принял работу
+        // (сеть моргнула, страница устарела), участник обязан иметь возможность
+        // отправить её повторно, не потеряв ответы.
+        pauseSubmitTimers() {
+            if (this.timerInterval) {
+                clearInterval(this.timerInterval);
+                this.timerInterval = null;
+            }
+            if (this.heartbeatInterval) {
+                clearInterval(this.heartbeatInterval);
+                this.heartbeatInterval = null;
+            }
+        }
+
+        afterFailedSubmit(finishLabel) {
+            this.isSubmitting = false;
+
+            if (this.btnFinish) {
+                this.btnFinish.disabled = false;
+                this.btnFinish.textContent = finishLabel || 'Завершить';
+            }
+
+            this.resumeSubmitTimers();
+        }
+
+        resumeSubmitTimers() {
+            if (!this.timerInterval && this.timeLimit > 0 && this.remainingSeconds > 0) {
+                this.updateTimerDisplay();
+                this.timerInterval = setInterval(() => {
+                    this.remainingSeconds--;
+                    this.updateTimerDisplay();
+
+                    if (this.remainingSeconds <= 0) {
+                        clearInterval(this.timerInterval);
+                        this.timerInterval = null;
+                        alert(config.i18n ? config.i18n.timeExpired : 'Время вышло! Ваши ответы автоматически отправляются...');
+                        this.submitAnswers(true);
+                    }
+                }, 1000);
+            }
+
+            if (!this.heartbeatInterval) {
+                this.heartbeatInterval = setInterval(() => {
+                    this.sendHeartbeat(false);
+                }, 30000);
             }
         }
 
