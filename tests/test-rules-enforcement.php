@@ -211,7 +211,7 @@ $it('Регламент: лимит попыток для администрат
     }
 });
 
-$it('Регламент: участник видит расписание на стартовой странице', function () use ($rules): bool {
+$it('Регламент: расписание участникам по умолчанию скрыто и показывается по настройке', function () use ($rules): bool {
     $token = strtolower(wp_generate_password(8, false, false));
     $id = Quiz::create([
         'title' => 'Rules visible ' . $token,
@@ -224,11 +224,71 @@ $it('Регламент: участник видит расписание на �
         ],
     ]);
     try {
-        $html = Shortcodes::render_quiz(['id' => $id]);
-        $rules(str_contains($html, 'Начало: 01.11.2026 09:30'), 'Стартовая страница не показывает время начала');
-        $rules(str_contains($html, 'Приём ответов до: 01.12.2026 23:59'), 'Стартовая страница не показывает окончание приёма');
+        $quiz = Quiz::get($id);
+        $rules($quiz->shows_schedule_to_participants() === false, 'Расписание участникам показано по умолчанию');
+
+        $hidden = Shortcodes::render_quiz(['id' => $id]);
+        $rules(!str_contains($hidden, 'Начало:'), 'Скрытое расписание всё равно выводится');
+        $rules(!str_contains($hidden, 'Приём ответов до:'), 'Скрытое окончание приёма всё равно выводится');
+        $rules(!str_contains($hidden, 'Часовой пояс:'), 'Скрытое расписание тянет за собой строку о поясе');
+
+        $quiz->update(['settings' => ['show_schedule_to_participants' => 1]]);
+        $shown = Shortcodes::render_quiz(['id' => $id]);
+        $rules(str_contains($shown, 'Начало: 01.11.2026 09:30'), 'Стартовая страница не показывает время начала');
+        $rules(str_contains($shown, 'Приём ответов до: 01.12.2026 23:59'), 'Стартовая страница не показывает окончание приёма');
+        $rules(str_contains($shown, 'Часовой пояс:'), 'Время показано без часового пояса');
         return true;
     } finally {
+        Quiz::delete($id);
+    }
+});
+
+$it('Регламент: участник не получает точное время, организатор — получает', function () use ($rules): bool {
+    $previous_user = get_current_user_id();
+    wp_set_current_user(0);
+    $token = strtolower(wp_generate_password(8, false, false));
+    $tz = function_exists('wp_timezone') ? wp_timezone() : new \DateTimeZone('UTC');
+    $now = new \DateTimeImmutable('now', $tz);
+    $id = Quiz::create([
+        'title' => 'Rules silent ' . $token,
+        'status' => 'publish',
+        'settings' => [
+            'start_time' => $now->modify('-2 hours')->format('Y-m-d H:i'),
+            'end_time' => $now->modify('-10 minutes')->format('Y-m-d H:i'),
+            'allow_guest' => 1,
+            'show_meta_grid' => 1,
+        ],
+    ]);
+    try {
+        $quiz = Quiz::get($id);
+        $status = $quiz->is_active_now();
+        $rules($status['active'] === false && $status['code'] === 'after_end', 'Закрытое окно не распознано');
+        $rules(!preg_match('/\d{1,2}:\d{2}|\d{2}\.\d{2}\.\d{4}/', $status['reason']), 'Участнику названо точное время: ' . $status['reason']);
+        $rules($status['reason'] === 'Олимпиада завершена. Приём ответов закрыт.', 'Формулировка блокировки изменилась не так, как ожидается: ' . $status['reason']);
+
+        $quiz->update(['settings' => ['start_time' => $now->modify('+2 hours')->format('Y-m-d H:i'), 'end_time' => '']]);
+        $before = Quiz::get($id)->is_active_now();
+        $rules($before['code'] === 'before_start' && !preg_match('/\d/', $before['reason']), 'До начала участнику названо время: ' . $before['reason']);
+
+        // Расписание без значений — организатору тоже нечего показывать.
+        Quiz::get($id)->update(['settings' => ['start_time' => '', 'end_time' => '']]);
+        $rules(Quiz::get($id)->schedule_organizer_line() === '', 'Пустое расписание дало строку для организатора');
+
+        // ...а когда оно задано, организатор видит время на странице, участник — нет.
+        Quiz::get($id)->update(['settings' => ['start_time' => '2026-11-01 09:30', 'end_time' => '2026-12-01 18:00']]);
+        $line = Quiz::get($id)->schedule_organizer_line();
+        $rules(str_contains($line, 'начало 01.11.2026 09:30') && str_contains($line, 'приём ответов до 01.12.2026 18:00'), 'Строка для организатора неполная: ' . $line);
+
+        $guest_html = Shortcodes::render_quiz(['id' => $id]);
+        $rules(!str_contains($guest_html, 'Расписание сайта:'), 'Гостю показана строка расписания для организатора');
+
+        wp_set_current_user(1);
+        $admin_html = Shortcodes::render_quiz(['id' => $id]);
+        $rules(str_contains($admin_html, 'Регламент к вам не применяется'), 'Организатору не показано объяснение обхода');
+        $rules(str_contains($admin_html, 'Расписание сайта:'), 'Организатор не видит время на своей странице');
+        return true;
+    } finally {
+        wp_set_current_user($previous_user);
         Quiz::delete($id);
     }
 });
@@ -252,6 +312,10 @@ $it('Регламент: форма настроек объясняет часо
         $rules(str_contains($html, 'name="rules_strict_for_admins"'), 'Переключатель строгого регламента отсутствует');
         $checked = preg_match('/<input[^>]*name="rules_strict_for_admins"[^>]*checked[^>]*>/i', $html) === 1;
         $rules($checked, 'Строгий режим не отмечен по сохранённой настройке');
+        $hidden_box = preg_match('/<input[^>]*name="show_schedule_to_participants"[^>]*>/i', $html) === 1;
+        $rules($hidden_box, 'В форме нет переключателя показа расписания');
+        $rules(!preg_match('/<input[^>]*name="show_schedule_to_participants"[^>]*checked[^>]*>/i', $html), 'Расписание участникам включено по умолчанию');
+        $rules(str_contains($html, 'Расписание участникам:'), 'Новая настройка подписана нечеловеческим языком');
         $rules(str_contains($html, 'Начало олимпиады ('), 'Подпись поля начала не указывает часовой пояс');
         $rules(str_contains($html, 'Часовой пояс сайта:'), 'Форма не показывает часовой пояс сайта');
         $rules(!str_contains($html, 'Начало олимпиады (МСК):') || str_contains($html, 'Часовой пояс сайта: МСК'), 'Подпись обещает МСК без оговорки о поясе сайта');
