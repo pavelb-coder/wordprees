@@ -254,6 +254,28 @@ final class Admin
             // Missing fields in cached/partial forms must not disable guest access.
             $data['settings'] = array_merge($data['settings'], Quiz::guest_access_patch($_POST));
 
+            // 1.0.21: репидеры анкеты и групп вопросов отдают JSON скрытых полей.
+            foreach (['custom_fields', 'question_groups'] as $wpo_struct_key) {
+                if (!isset($_POST[$wpo_struct_key]) || !is_scalar($_POST[$wpo_struct_key])) {
+                    // Форма без редактора (устаревший кэш) — сохранённые настройки не трогаем.
+                    unset($data['settings'][$wpo_struct_key]);
+                    continue;
+                }
+
+                $wpo_struct_decoded = json_decode(wp_unslash((string)$_POST[$wpo_struct_key]), true);
+                if (is_array($wpo_struct_decoded)) {
+                    $data['settings'][$wpo_struct_key] = $wpo_struct_decoded;
+                } else {
+                    unset($data['settings'][$wpo_struct_key]);
+                }
+            }
+
+            if (isset($_POST['questions_per_page'])) {
+                $data['settings']['questions_per_page'] = max(0, min(50, (int)$_POST['questions_per_page']));
+            } else {
+                unset($data['settings']['questions_per_page']);
+            }
+
             // A stale cached form without the link name field must not reset a name
             // an administrator has already chosen.
             $link_alias_error = '';

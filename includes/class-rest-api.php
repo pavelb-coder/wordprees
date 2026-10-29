@@ -236,6 +236,21 @@ final class RestApi
             $full_org = $full_org ? "{$full_org}, тел: {$participant_phone}" : "Тел: {$participant_phone}";
         }
 
+        // 1.0.21: дополнительные поля анкеты проверяются так же строго, как ФИО.
+        $custom_fields = $quiz->get_custom_fields();
+        $custom_values = [];
+        if ($custom_fields && $enable_intro_page) {
+            $posted = $request->get_param('custom_fields');
+            if (!is_array($posted)) {
+                $posted = [];
+            }
+            $checked = ParticipantFields::clean_values($custom_fields, $posted);
+            if ($checked['errors']) {
+                return new WP_Error('invalid_custom_fields', implode(' ', $checked['errors']), ['status' => 400]);
+            }
+            $custom_values = $checked['values'];
+        }
+
         // Start attempt session with all participant questionnaire data
         $attempt = Attempt::start($quiz_id, [
             'name'  => $participant_name,
@@ -243,6 +258,7 @@ final class RestApi
             'org'   => $participant_org ?: $full_org,
             'phone' => $participant_phone,
             'city'  => $participant_city,
+            'custom_fields' => $custom_values,
         ]);
 
         if (!$attempt) {
@@ -254,6 +270,17 @@ final class RestApi
         $shuffle_a = (bool)$quiz->get_setting('shuffle_answers', 1);
 
         $questions_raw = $quiz->get_questions($shuffle_q);
+
+        // Участник идёт по группам: задания одного раздела стоят рядом.
+        $question_groups = $quiz->get_question_groups();
+        if ($question_groups && $questions_raw) {
+            $questions_raw = QuestionGroups::order($questions_raw, $question_groups);
+            $first_group = QuestionGroups::normalize_name((string)($questions_raw[0]->options['group_name'] ?? ''));
+            if ($first_group !== '') {
+                $attempt->mark_group_opened($first_group);
+            }
+        }
+
         $questions_data = [];
 
         foreach ($questions_raw as $q) {
@@ -279,6 +306,9 @@ final class RestApi
             'show_question_points' => (bool)$quiz->get_setting('show_question_points', 1),
             'questions'            => $questions_data,
             'shared_texts'         => $shared_texts_dict,
+            'custom_fields'        => $enable_intro_page ? $custom_fields : [],
+            'question_groups'      => QuestionGroups::client_payload($question_groups),
+            'questions_per_page'   => $quiz->get_questions_per_page(),
             'anti_cheat'=> [
                 'copy'             => (bool)$quiz->get_setting('anti_cheat_copy', 1),
                 'blur'             => (bool)$quiz->get_setting('anti_cheat_blur', 1),
@@ -286,6 +316,28 @@ final class RestApi
                 'popup_warnings'   => (bool)$quiz->get_setting('anti_cheat_popup_warnings', 1),
             ],
         ], 200);
+    }
+
+    /**
+     * Анкета участника для REST-описания попытки: [id, label, type, value].
+     *
+     * @return array<int,array<string,string>>
+     */
+    public static function custom_field_pairs(Quiz $quiz, Attempt $attempt): array
+    {
+        $values = $attempt->custom_field_values();
+        $pairs = [];
+
+        foreach ($quiz->get_custom_fields() as $def) {
+            $pairs[] = [
+                'id'    => (string)$def['id'],
+                'label' => (string)$def['label'],
+                'type'  => (string)$def['type'],
+                'value' => ParticipantFields::format_value($def, $values[$def['id']] ?? ''),
+            ];
+        }
+
+        return $pairs;
     }
 
     public static function handle_heartbeat(WP_REST_Request $request): WP_REST_Response|WP_Error
@@ -303,9 +355,45 @@ final class RestApi
         }
 
         $tab_switched = (bool)$request->get_param('tab_switched');
+
+        // 1.0.21: отметка открытия группы запускает её таймер на сервере.
+        $group_name = QuestionGroups::normalize_name((string)($request->get_param('group') ?? ''));
+        if ($group_name !== '') {
+            $attempt->mark_group_opened($group_name);
+        }
+
         $result = AntiCheat::process_heartbeat($attempt, $quiz, $tab_switched);
 
         return new WP_REST_Response($result, 200);
+    }
+
+    /**
+     * Задания тех групп, чьё время вышло: [id вопроса => название группы].
+     *
+     * @return array<int,string>
+     */
+    private static function overdue_group_questions(Quiz $quiz, Attempt $attempt): array
+    {
+        $groups = $quiz->get_question_groups();
+        if (!$groups) {
+            return [];
+        }
+
+        $overdue = QuestionGroups::overdue_groups($groups, $attempt->groups_opened(), (int)current_time('timestamp'));
+        if (!$overdue) {
+            return [];
+        }
+
+        $overdue_keys = array_map([QuestionGroups::class, 'key'], $overdue);
+        $locked = [];
+        foreach ($quiz->get_questions(false) as $question) {
+            $name = QuestionGroups::normalize_name((string)($question->options['group_name'] ?? ''));
+            if ($name !== '' && in_array(QuestionGroups::key($name), $overdue_keys, true)) {
+                $locked[(int)$question->id] = $name;
+            }
+        }
+
+        return $locked;
     }
 
     public static function handle_submit(WP_REST_Request $request): WP_REST_Response|WP_Error
@@ -346,10 +434,17 @@ final class RestApi
             $user_answers = [];
         }
 
+        // 1.0.21: у группы может быть собственный лимит времени.
+        $locked_questions = self::overdue_group_questions($quiz, $attempt);
+
         // Validate required questions
         $questions = Question::get_by_quiz($quiz->id);
         $missing_required = [];
         foreach ($questions as $idx => $q) {
+            // Требуемый ответ из группы с истёкшим временем не блокирует сдачу.
+            if (isset($locked_questions[$q->id])) {
+                continue;
+            }
             if ($q->is_required()) {
                 $ans = $user_answers[$q->id] ?? null;
                 $is_empty = false;
@@ -393,7 +488,7 @@ final class RestApi
         }
 
         // Grade attempt
-        $grading = Grader::grade($quiz, $attempt, $user_answers);
+        $grading = Grader::grade($quiz, $attempt, $user_answers, $locked_questions);
 
         // Atomic DB transaction for saving responses and updating attempt
         global $wpdb;
@@ -768,7 +863,7 @@ final class RestApi
         }
 
         $inner = new WP_REST_Request('POST', '/' . self::NAMESPACE . '/start');
-        foreach (['participant_name', 'participant_email', 'participant_org', 'participant_phone', 'participant_city'] as $field) {
+        foreach (['participant_name', 'participant_email', 'participant_org', 'participant_phone', 'participant_city', 'custom_fields'] as $field) {
             $inner->set_param($field, $request->get_param($field));
         }
         $inner->set_param('quiz_id', $quiz->id);
@@ -891,6 +986,9 @@ final class RestApi
                 'is_correct'          => $is_correct,
                 'needs_manual_review' => !empty($row['needs_manual_review']),
                 'review_comment'      => (string)($row['review_comment'] ?? ''),
+                'group_name'          => $question
+                    ? QuestionGroups::normalize_name((string)($question->options['group_name'] ?? ''))
+                    : '',
             ];
         }
 
@@ -906,6 +1004,7 @@ final class RestApi
                 'participant_org'   => $attempt->participant_org,
                 'participant_phone' => $attempt->participant_phone,
                 'participant_city'  => $attempt->participant_city,
+                'custom_fields'     => self::custom_field_pairs($quiz, $attempt),
                 'status'            => $attempt->status,
                 'score'             => (int)$attempt->score,
                 'max_score'         => (int)$attempt->max_score,

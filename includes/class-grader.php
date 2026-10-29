@@ -27,7 +27,7 @@ final class Grader
      *     responses: array<int, array>
      * }
      */
-    public static function grade(Quiz $quiz, Attempt $attempt, array $user_answers): array
+    public static function grade(Quiz $quiz, Attempt $attempt, array $user_answers, array $locked_questions = []): array
     {
         $questions = $quiz->get_questions(false);
         $total_score = 0;
@@ -41,6 +41,21 @@ final class Grader
 
             $eval = self::grade_question($q, $raw_answer);
             if ($eval['needs_manual_review']) {
+                $has_essay = true;
+            }
+
+            // Время группы вышло: ответ сохранён, но не оценивается —
+            // организатор решает сам на странице проверки работы.
+            if (isset($locked_questions[$q->id]) && $raw_answer !== null && $raw_answer !== '' && $raw_answer !== []) {
+                $group_label = (string)$locked_questions[$q->id];
+                $eval['awarded_points'] = 0;
+                $eval['is_correct'] = null;
+                $eval['needs_manual_review'] = 1;
+                $note = $group_label !== ''
+                    ? sprintf(/* translators: %s: group name */ __('Время на группу «%s» истекло — ответ сохранён, но не оценивается.', 'wp-olympiad'), $group_label)
+                    : __('Время на группу истекло — ответ сохранён, но не оценивается.', 'wp-olympiad');
+                $existing = trim((string)($eval['review_comment'] ?? ''));
+                $eval['review_comment'] = $existing !== '' ? $existing . ' ' . $note : $note;
                 $has_essay = true;
             }
 

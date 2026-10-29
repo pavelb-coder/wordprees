@@ -3,7 +3,7 @@
  * Plugin Name: WP Olympiad & Testing Master
  * Plugin URI: https://github.com/wp-olympiad/wp-olympiad
  * Description: Современный высокопроизводительный плагин для проведения олимпиад, экзаменов, контрольных работ и тренировочных тестов на WordPress с защитой от списывания, серверным таймером, рейтинговой таблицей и экспортом протоколов.
- * Version: 1.0.20
+ * Version: 1.0.21
  * Author: WP Olympiad Team
  * Author URI: https://arena.ai
  * License: GPL-2.0-or-later
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WP_OLYMPIAD_VERSION', '1.0.20');
+define('WP_OLYMPIAD_VERSION', '1.0.21');
 define('WP_OLYMPIAD_FILE', __FILE__);
 define('WP_OLYMPIAD_PATH', plugin_dir_path(__FILE__));
 define('WP_OLYMPIAD_URL', plugin_dir_url(__FILE__));
@@ -44,6 +44,8 @@ spl_autoload_register(function (string $class): void {
         'Question'     => 'includes/class-question.php',
         'Attempt'       => 'includes/class-attempt.php',
         'Grader'        => 'includes/class-grader.php',
+        'ParticipantFields' => 'includes/class-participant-fields.php',
+        'QuestionGroups'    => 'includes/class-question-groups.php',
         'AntiCheat'     => 'includes/class-anti-cheat.php',
         'Export'        => 'includes/class-export.php',
         'NetworkExport' => 'includes/class-network-export.php',

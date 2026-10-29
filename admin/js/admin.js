@@ -2178,5 +2178,226 @@
                 render();
             });
         })();
+
+        /**
+         * 1.0.21: редактор дополнительных полей анкеты и групп вопросов.
+         * Данные собираются в скрытые JSON-поля формы, дальше их чистит PHP.
+         */
+        (function wpoStructuresEditor() {
+            var root = document.getElementById('wpo-structures-editor');
+            if (!root) {
+                return;
+            }
+
+            var data = window.wpoQuizStructures || {};
+            var MAX_FIELDS = 10;
+            var MAX_GROUPS = 20;
+            var TYPES = [
+                ['text', 'Одна строка'],
+                ['textarea', 'Многострочный текст'],
+                ['number', 'Число'],
+                ['select', 'Выпадающий список'],
+                ['multiselect', 'Несколько вариантов'],
+                ['checkbox', 'Да / нет (согласие)'],
+                ['date', 'Дата']
+            ];
+
+            var $cfRows = $('#wpo-cf-rows');
+            var $grRows = $('#wpo-gr-rows');
+
+            function esc(value) {
+                return String(value === null || value === undefined ? '' : value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            function rowStyle() {
+                return 'display:flex; gap:6px; align-items:flex-start; flex-wrap:wrap; padding:8px 0; border-bottom:1px dashed #e2e8f0;';
+            }
+
+            function fieldTypeOptions(selected) {
+                return TYPES.map(function (pair) {
+                    return '<option value="' + pair[0] + '"' + (pair[0] === selected ? ' selected' : '') + '>' + esc(pair[1]) + '</option>';
+                }).join('');
+            }
+
+            function fieldRow(field) {
+                field = field || {};
+                var type = field.type || 'text';
+                var html = '<div class="wpo-cf-row" style="' + rowStyle() + '">'
+                    + '<input type="hidden" class="wpo-cf-id" value="' + esc(field.id) + '">'
+                    + '<select class="wpo-cf-type" style="width:170px;">' + fieldTypeOptions(type) + '</select>'
+                    + '<input type="text" class="wpo-cf-label regular-text" placeholder="Название поля (например: Класс)' + '" value="' + esc(field.label) + '">'
+                    + '<input type="text" class="wpo-cf-placeholder regular-text" placeholder="Подсказка в поле" value="' + esc(field.placeholder) + '">'
+                    + '<label style="font-size:12px; display:flex; align-items:center; gap:4px; margin-top:6px;">'
+                    + '<input type="checkbox" class="wpo-cf-required"' + (field.required ? ' checked' : '') + '> обязательно</label>'
+                    + '<input type="number" class="wpo-cf-max small-text" min="1" max="2000" step="1" style="margin-top:2px;" title="Максимальная длина ответа" value="' + esc(field.max_length) + '">'
+                    + '<button type="button" class="button-link wpo-cf-del" title="Удалить поле" style="color:#b32d2e; margin-top:4px;">🗑</button>'
+                    + '<textarea class="wpo-cf-options" rows="2" style="width:100%; display:none;" placeholder="Варианты ответа — по одному в строке"></textarea>'
+                    + '</div>';
+                var $row = $(html);
+                $row.find('.wpo-cf-options').val((field.options || []).join('\n'));
+                toggleOptions($row);
+
+                return $row;
+            }
+
+            function groupRow(group) {
+                group = group || {};
+                var html = '<div class="wpo-gr-row" style="' + rowStyle() + '">'
+                    + '<input type="text" class="wpo-gr-name regular-text" list="wpo-settings-group-names" placeholder="Название группы (как в карточке задания)" value="' + esc(group.name) + '">'
+                    + '<input type="text" class="wpo-gr-title regular-text" placeholder="Заголовок на странице (по умолчанию = название)" value="' + esc(group.title) + '">'
+                    + '<label style="font-size:12px; display:flex; align-items:center; gap:4px; margin-top:6px;">лимит</label>'
+                    + '<input type="number" class="wpo-gr-time small-text" min="0" max="600" step="1" style="margin-top:2px;" title="Минуты на группу; 0 — без лимита" value="' + esc(group.time_limit) + '">'
+                    + '<label style="font-size:12px; display:flex; align-items:center; gap:4px; margin-top:6px;">порядок</label>'
+                    + '<input type="number" class="wpo-gr-pos small-text" min="0" max="99" step="1" style="margin-top:2px;" title="0 — по порядку появления заданий" value="' + esc(group.position) + '">'
+                    + '<button type="button" class="button-link wpo-gr-del" title="Удалить группу" style="color:#b32d2e; margin-top:4px;">🗑</button>'
+                    + '<textarea class="wpo-gr-instruction" rows="2" style="width:100%;" placeholder="Инструкция под заголовком группы"></textarea>'
+                    + '</div>';
+                var $row = $(html);
+                $row.find('.wpo-gr-instruction').val(group.instruction || '');
+
+                return $row;
+            }
+
+            function toggleOptions($row) {
+                var type = $row.find('.wpo-cf-type').val();
+                var needsOptions = type === 'select' || type === 'multiselect';
+                $row.find('.wpo-cf-options').css('display', needsOptions ? 'block' : 'none');
+
+                var needsLength = type === 'text' || type === 'textarea';
+                $row.find('.wpo-cf-max').prop('disabled', !needsLength)
+                    .css('opacity', needsLength ? 1 : 0.45);
+            }
+
+            function readFields() {
+                var out = [];
+                $cfRows.children('.wpo-cf-row').each(function () {
+                    var $row = $(this);
+                    var label = $.trim($row.find('.wpo-cf-label').val());
+                    if (label === '') {
+                        return;
+                    }
+                    var options = $.map(String($row.find('.wpo-cf-options').val() || '').split('\n'), function (line) {
+                        return $.trim(line);
+                    }).filter(function (line) {
+                        return line !== '';
+                    });
+
+                    out.push({
+                        id: $row.find('.wpo-cf-id').val() || '',
+                        type: $row.find('.wpo-cf-type').val(),
+                        label: label,
+                        placeholder: $.trim($row.find('.wpo-cf-placeholder').val()),
+                        required: $row.find('.wpo-cf-required').is(':checked') ? 1 : 0,
+                        max_length: parseInt($row.find('.wpo-cf-max').val(), 10) || 0,
+                        options: options
+                    });
+                });
+
+                return out;
+            }
+
+            function readGroups() {
+                var out = [];
+                $grRows.children('.wpo-gr-row').each(function () {
+                    var $row = $(this);
+                    var name = $.trim($row.find('.wpo-gr-name').val());
+                    if (name === '') {
+                        return;
+                    }
+
+                    out.push({
+                        name: name,
+                        title: $.trim($row.find('.wpo-gr-title').val()),
+                        instruction: $row.find('.wpo-gr-instruction').val(),
+                        time_limit: parseInt($row.find('.wpo-gr-time').val(), 10) || 0,
+                        position: parseInt($row.find('.wpo-gr-pos').val(), 10) || 0
+                    });
+                });
+
+                return out;
+            }
+
+            function sync() {
+                $('#wpo-custom-fields-json').val(JSON.stringify(readFields()));
+                $('#wpo-question-groups-json').val(JSON.stringify(readGroups()));
+                $('#wpo-cf-count').text($cfRows.children('.wpo-cf-row').length);
+            }
+
+            function note(message) {
+                var $note = $('#wpo-structures-note');
+                if (!$note.length) {
+                    return;
+                }
+                $note.text(message || '');
+                if (message) {
+                    window.setTimeout(function () {
+                        $note.text('');
+                    }, 4000);
+                }
+            }
+
+            function addRowAt($container, builder, item, max, limitMessage) {
+                if ($container.children().length >= max) {
+                    note(limitMessage);
+                    return;
+                }
+                $container.append(builder(item));
+                sync();
+            }
+
+            (Array.isArray(data.custom_fields) ? data.custom_fields : []).forEach(function (field) {
+                $cfRows.append(fieldRow(field));
+            });
+            (Array.isArray(data.question_groups) ? data.question_groups : []).forEach(function (group) {
+                $grRows.append(groupRow(group));
+            });
+
+            // Группы, уже используемые в заданиях, но без настроек — добавляем пустыми строками.
+            var existingNames = Array.isArray(data.existing_groups) ? data.existing_groups : [];
+            var known = {};
+            $grRows.children('.wpo-gr-row').each(function () {
+                known[$.trim($(this).find('.wpo-gr-name').val()).toLowerCase()] = true;
+            });
+            existingNames.forEach(function (name) {
+                if (name && !known[String(name).trim().toLowerCase()]) {
+                    $grRows.append(groupRow({ name: name }));
+                    known[String(name).trim().toLowerCase()] = true;
+                }
+            });
+
+            $('#wpo-cf-add').on('click', function () {
+                addRowAt($cfRows, fieldRow, {}, MAX_FIELDS, 'Больше ' + MAX_FIELDS + ' полей анкеты добавить нельзя.');
+            });
+            $('#wpo-gr-add').on('click', function () {
+                addRowAt($grRows, groupRow, {}, MAX_GROUPS, 'Больше ' + MAX_GROUPS + ' групп добавить нельзя.');
+            });
+
+            root.addEventListener('click', function (event) {
+                var target = event.target;
+                if (target.classList.contains('wpo-cf-del')) {
+                    $(target).closest('.wpo-cf-row').remove();
+                    sync();
+                } else if (target.classList.contains('wpo-gr-del')) {
+                    $(target).closest('.wpo-gr-row').remove();
+                    sync();
+                }
+            });
+
+            root.addEventListener('change', function (event) {
+                if (event.target.classList.contains('wpo-cf-type')) {
+                    toggleOptions($(event.target).closest('.wpo-cf-row'));
+                }
+                sync();
+            });
+            root.addEventListener('input', function () {
+                sync();
+            });
+
+            sync();
+        })();
     });
 })(jQuery);

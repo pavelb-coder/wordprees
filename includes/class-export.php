@@ -73,10 +73,18 @@ final class Export
             'IP-адрес',
         ];
 
+        // 1.0.21: столбцы дополнительной анкеты — сразу за данными участника.
+        $custom_fields = $quiz->get_custom_fields();
+        foreach ($custom_fields as $cf_def) {
+            $headers[] = sprintf('Анкета: %s', $cf_def['label']);
+        }
+
         foreach ($questions as $idx => $q) {
             $q_num = $idx + 1;
             $q_title_short = mb_substr(strip_tags($q->title), 0, 45, 'UTF-8');
-            $headers[] = sprintf('Вопрос %d: %s [Ответ]', $q_num, $q_title_short);
+            $group_label = QuestionGroups::normalize_name((string)($q->options['group_name'] ?? ''));
+            $group_suffix = $group_label !== '' ? sprintf(' — %s', $group_label) : '';
+            $headers[] = sprintf('Вопрос %d%s: %s [Ответ]', $q_num, $group_suffix, $q_title_short);
             $headers[] = sprintf('Вопрос %d: Балл (из %d)', $q_num, (int)$q->points);
         }
 
@@ -132,6 +140,12 @@ final class Export
                 $status,
                 $att->ip_address ?: '—',
             ];
+
+            $cf_values = $att->custom_field_values();
+            foreach ($custom_fields as $cf_def) {
+                $cf_text = ParticipantFields::format_value($cf_def, $cf_values[$cf_def['id']] ?? '');
+                $row[] = $cf_text !== '' ? $cf_text : '—';
+            }
 
             foreach ($questions as $q) {
                 $resp = $responses_by_attempt[$att->id][$q->id] ?? null;
@@ -216,6 +230,13 @@ final class Export
         fputcsv($output, ['Телефон', $attempt->participant_phone ?: '—'], ';', '"', "\\");
         fputcsv($output, ['Город / Населённый пункт', $attempt->participant_city ?: '—'], ';', '"', "\\");
         fputcsv($output, ['Организация / Класс', $attempt->participant_org ?: '—'], ';', '"', "\\");
+
+        // 1.0.21: ответы дополнительной анкеты этого участника.
+        $attempt_cf_values = $attempt->custom_field_values();
+        foreach ($quiz->get_custom_fields() as $cf_def) {
+            $cf_text = ParticipantFields::format_value($cf_def, $attempt_cf_values[$cf_def['id']] ?? '');
+            fputcsv($output, ['Анкета: ' . $cf_def['label'], $cf_text !== '' ? $cf_text : '—'], ';', '"', "\\");
+        }
         fputcsv($output, ['IP-адрес', $attempt->ip_address ?: '—'], ';', '"', "\\");
         fputcsv($output, ['Дата старта', $attempt->started_at], ';', '"', "\\");
         fputcsv($output, ['Дата сдачи', $attempt->submitted_at ?: '—'], ';', '"', "\\");

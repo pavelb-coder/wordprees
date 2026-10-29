@@ -25,6 +25,14 @@
             this.antiCheat = { copy: true, blur: true, max_tab_switches: 5 };
             this.sharedTexts = {};
             this.collapsedSharedTexts = new Set();
+            // 1.0.21: вывод по группам вопросов и постраничный показ пачками.
+            this.questionsPerPage = 1;
+            this.pages = [];
+            this.questionGroups = [];
+            this.groupDefs = {};
+            this.groupOpened = {};
+            this.expiredGroups = {};
+            this.groupTimerInterval = null;
 
             this.initDOM();
             this.bindEvents();
@@ -63,10 +71,10 @@
             }
 
             if (this.btnPrev) {
-                this.btnPrev.addEventListener('click', () => this.navigate(this.currentIndex - 1));
+                this.btnPrev.addEventListener('click', () => this.navigate(this.currentIndex - this.pageStep));
             }
             if (this.btnNext) {
-                this.btnNext.addEventListener('click', () => this.navigate(this.currentIndex + 1));
+                this.btnNext.addEventListener('click', () => this.navigate(this.currentIndex + this.pageStep));
             }
             if (this.btnFinish) {
                 this.btnFinish.addEventListener('click', () => this.confirmSubmit());
@@ -129,6 +137,20 @@
             const cityInput = this.wrapper.querySelector('input[name="participant_city"]');
             const agreementInput = this.wrapper.querySelector('input[name="agreement"]');
 
+            // 1.0.21: значения дополнительных полей анкеты.
+            const customValues = {};
+            this.wrapper.querySelectorAll('[data-wpo-custom]').forEach((el) => {
+                const key = el.getAttribute('data-wpo-custom');
+                if (!key) return;
+                if (el.type === 'checkbox') {
+                    customValues[key] = el.checked ? '1' : '';
+                } else if (el.type === 'select-multiple') {
+                    customValues[key] = Array.from(el.options).filter((o) => o.selected).map((o) => o.value).filter((v) => v !== '');
+                } else {
+                    customValues[key] = typeof el.value === 'string' ? el.value.trim() : el.value;
+                }
+            });
+
             const origBtnText = this.startBtn ? this.startBtn.textContent : '';
 
             const payload = {
@@ -139,6 +161,7 @@
                 participant_phone: phoneInput ? phoneInput.value.trim() : '',
                 participant_city: cityInput ? cityInput.value.trim() : '',
                 agreement: agreementInput ? (agreementInput.checked ? 1 : 0) : 1,
+                custom_fields: customValues,
             };
 
             if (this.startBtn) {
@@ -169,6 +192,14 @@
                 this.questions = data.questions || [];
                 this.sharedTexts = data.shared_texts || {};
                 this.antiCheat = data.anti_cheat || this.antiCheat;
+                const perPage = parseInt(data.questions_per_page, 10);
+                this.questionsPerPage = perPage > 1 ? perPage : 1;
+                this.questionGroups = Array.isArray(data.question_groups) ? data.question_groups : [];
+                this.groupDefs = {};
+                this.questionGroups.forEach((g) => {
+                    if (g && g.key) this.groupDefs[g.key] = g;
+                });
+                this.buildPages();
 
                 if (this.questions.length === 0) {
                     const noQMsg = 'В этой олимпиаде пока нет вопросов.';
@@ -194,8 +225,10 @@
 
                 this.initAntiCheat();
                 this.initTimer();
+                this.initGroupTimers();
                 this.renderNavStrip();
                 this.renderQuestion(0);
+                this.openCurrentGroup();
             } catch (err) {
                 console.error(err);
                 const errMsg = 'Сетевая ошибка при запуске олимпиады.';
@@ -301,10 +334,13 @@
         async sendHeartbeat(tabSwitched) {
             if (!this.token || this.isSubmitting) return;
             try {
-                const res = await this.apiPost('/heartbeat', {
+                const hbPayload = {
                     token: this.token,
-                    tab_switched: tabSwitched ? 1 : 0
-                }, 'wp_olympiad_heartbeat');
+                    tab_switched: tabSwitched ? 1 : 0,
+                };
+                const currentGroup = this.groupOf(this.currentIndex);
+                if (currentGroup) hbPayload.group = currentGroup;
+                const res = await this.apiPost('/heartbeat', hbPayload, 'wp_olympiad_heartbeat');
 
                 const data = res.data || res;
                 if (data.disqualified) {
@@ -436,8 +472,12 @@
             if (this.btnPrev) {
                 this.btnPrev.disabled = this.currentIndex === 0;
             }
+            if (this.counterTotal && this.questionsPerPage > 1 && this.pages.length) {
+                const page = this.currentPageIndex;
+                this.counterTotal.textContent = `${this.questions.length} (стр. ${page + 1} из ${this.pages.length})`;
+            }
 
-            const isLast = this.currentIndex === this.questions.length - 1;
+            const isLast = this.currentIndex + this.pageStep >= this.questions.length;
             if (this.btnNext) {
                 this.btnNext.style.display = isLast ? 'none' : 'inline-flex';
             }
@@ -477,12 +517,99 @@
         navigate(newIndex) {
             if (newIndex < 0 || newIndex >= this.questions.length) return;
             this.currentIndex = newIndex;
-            this.renderQuestion(newIndex);
+            this.renderCurrent();
         }
 
-        renderQuestion(index) {
+        /** Шаг перелистывания: один вопрос или вся страница пачки. */
+        get pageStep() {
+            return this.questionsPerPage > 1 ? this.questionsPerPage : 1;
+        }
+
+        buildPages() {
+            this.pages = [];
+            if (this.questionsPerPage <= 1) return;
+            for (let i = 0; i < this.questions.length; i += this.questionsPerPage) {
+                const slice = [];
+                for (let j = i; j < Math.min(i + this.questionsPerPage, this.questions.length); j++) {
+                    slice.push(j);
+                }
+                this.pages.push(slice);
+            }
+        }
+
+        get currentPageIndex() {
+            if (this.questionsPerPage <= 1) return this.currentIndex;
+            return Math.min(
+                this.pages.length - 1,
+                Math.max(0, Math.floor(this.currentIndex / this.questionsPerPage))
+            );
+        }
+
+        renderCurrent() {
+            if (this.questionsPerPage > 1) {
+                this.renderPage(this.currentPageIndex);
+                return;
+            }
+            this.renderQuestion(this.currentIndex);
+            this.openCurrentGroup();
+        }
+
+        renderPage(pageIndex) {
+            if (!this.qContainer) return;
+            const indexes = this.pages[pageIndex];
+            if (!indexes || !indexes.length) return;
+
+            this.currentIndex = indexes[0];
+
+            let html = '';
+            indexes.forEach((idx) => {
+                html += `<div class="wpo-page-slot" data-q-index="${idx}"></div>`;
+            });
+            this.qContainer.innerHTML = html;
+
+            this.qContainer.querySelectorAll('.wpo-page-slot').forEach((slot) => {
+                const idx = parseInt(slot.getAttribute('data-q-index'), 10);
+                if (!isNaN(idx)) this.renderQuestion(idx, slot);
+            });
+
+            this.updateNavState();
+            this.openCurrentGroup();
+        }
+
+        /** Название группы текущего задания ('' — вне групп). */
+        groupOf(index) {
             const q = this.questions[index];
-            if (!q || !this.qContainer) return;
+            if (!q || !q.group_name) return '';
+            return String(q.group_name).trim();
+        }
+
+        groupKey(name) {
+            return String(name || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        }
+
+        isFirstOfGroup(index) {
+            const name = this.groupOf(index);
+            if (name === '') return false;
+            return this.groupOf(index - 1) !== name;
+        }
+
+        /** С этого момента на сервере идёт таймер группы. */
+        openCurrentGroup() {
+            this.openGroup(this.groupOf(this.currentIndex));
+        }
+
+        openGroup(name) {
+            if (!name) return;
+            const key = this.groupKey(name);
+            if (!this.groupDefs[key] || this.groupOpened[key]) return;
+            this.groupOpened[key] = Date.now();
+            this.apiPost('/heartbeat', { token: this.token, group: name }, 'wp_olympiad_heartbeat').catch(() => {});
+        }
+
+        renderQuestion(index, root) {
+            const q = this.questions[index];
+            const container = root || this.qContainer;
+            if (!q || !container) return;
 
             const renderImageHtml = () => {
                 if (!q.image_url) return '';
@@ -512,6 +639,28 @@
 
             // Question group badge
             const groupBadge = (q.group_name && q.group_name.trim()) ? `<div class="wpo-question-group-badge">📁 ${this.escapeHtml(q.group_name.trim())}</div>` : '';
+
+            // 1.0.21: шапка группы — название, инструкция и отсчёт времени группы.
+            const groupNameHere = this.groupOf(index);
+            const groupDefHere = groupNameHere ? this.groupDefs[this.groupKey(groupNameHere)] : null;
+            let groupBannerHtml = '';
+            if (groupNameHere && this.isFirstOfGroup(index) && groupDefHere) {
+                const gTitle = groupDefHere.title || groupNameHere;
+                const gLimit = parseInt(groupDefHere.time_limit, 10) || 0;
+                const gInstruction = groupDefHere.instruction
+                    ? `<div class="wpo-group-instruction">${this.escapeHtml(groupDefHere.instruction)}</div>`
+                    : '';
+                const gTimer = gLimit > 0
+                    ? `<span class="wpo-group-timer" data-group-timer="${this.escapeHtml(this.groupKey(groupNameHere))}"></span>`
+                    : '';
+                groupBannerHtml = `<div class="wpo-group-banner" data-group-key="${this.escapeHtml(this.groupKey(groupNameHere))}" data-group-name="${this.escapeHtml(groupNameHere)}">
+                    <div class="wpo-group-banner-head">
+                        <span class="wpo-group-banner-title">📁 ${this.escapeHtml(gTitle)}</span>
+                        ${gTimer}
+                    </div>
+                    ${gInstruction}
+                </div>`;
+            }
 
             // Question shared text / common passage
             let sharedText = q.shared_text;
@@ -543,7 +692,8 @@
             }
 
             let html = `
-                <div class="wpo-question-card-inner" data-id="${q.id}">
+                <div class="wpo-question-card-inner" data-id="${q.id}" data-group-key="${this.escapeHtml(this.groupKey(groupNameHere))}">
+                    ${groupBannerHtml}
                     ${groupBadge}
                     ${sharedTextHtml}
                     <div class="wpo-question-prompt">${q.title} ${reqStar}</div>
@@ -850,14 +1000,89 @@
             }
 
             html += '</div>';
-            this.qContainer.innerHTML = html;
+            container.innerHTML = html;
 
-            this.bindQuestionInputs(q);
+            this.bindQuestionInputs(q, container);
+            this.applyGroupLock(container);
+            this.updateGroupTimers();
             this.updateNavState();
         }
 
-        bindQuestionInputs(q) {
-            const inner = this.qContainer.querySelector('.wpo-question-card-inner');
+        /** Задания группы с истёкшим временем становятся неактивными. */
+        applyGroupLock(scope) {
+            const root = scope || this.qContainer;
+            if (!root) return;
+            const expired = this.expiredGroups || {};
+            root.querySelectorAll('.wpo-question-card-inner').forEach((card) => {
+                const key = card.getAttribute('data-group-key') || '';
+                if (!key || !expired[key]) return;
+                card.classList.add('is-group-expired');
+                card.querySelectorAll('input, select, textarea, button').forEach((el) => {
+                    el.disabled = true;
+                });
+            });
+        }
+
+        initGroupTimers() {
+            if (this.groupTimerInterval) return;
+            if (!this.questionGroups.length) return;
+            this.groupTimerInterval = setInterval(() => this.updateGroupTimers(), 1000);
+        }
+
+        stopGroupTimers() {
+            if (this.groupTimerInterval) {
+                clearInterval(this.groupTimerInterval);
+                this.groupTimerInterval = null;
+            }
+        }
+
+        updateGroupTimers() {
+            if (!this.qContainer || !this.questionGroups.length) return;
+            const now = Date.now();
+            const that = this;
+            this.qContainer.querySelectorAll('.wpo-group-banner').forEach((banner) => {
+                const key = banner.getAttribute('data-group-key') || '';
+                const def = that.groupDefs[key];
+                if (!def) return;
+                const limit = (parseInt(def.time_limit, 10) || 0) * 60;
+                if (limit <= 0) return;
+
+                if (!that.groupOpened[key]) {
+                    that.groupOpened[key] = now;
+                    that.apiPost('/heartbeat', { token: that.token, group: def.name }, 'wp_olympiad_heartbeat').catch(() => {});
+                }
+
+                const spent = Math.floor((now - that.groupOpened[key]) / 1000);
+                const left = limit - spent;
+                const out = banner.querySelector('[data-group-timer]');
+                if (out) {
+                    if (left > 0) {
+                        const m = Math.floor(left / 60);
+                        const sec = left % 60;
+                        out.textContent = `⏳ Осталось ${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+                        out.className = left <= 60 ? 'wpo-group-timer danger' : 'wpo-group-timer';
+                    } else {
+                        out.textContent = '⛔ Время группы вышло';
+                        out.className = 'wpo-group-timer danger';
+                    }
+                }
+
+                if (left <= 0 && !that.expiredGroups[key]) {
+                    that.expiredGroups[key] = true;
+                    banner.classList.add('is-expired');
+                    that.applyGroupLock(that.qContainer);
+                    const msg = `Время на группу «${def.title || def.name}» вышло. Ответы этой группы сохранятся, но не пойдут в зачёт — их проверит организатор.`;
+                    if (typeof that.showAntiCheatToast === 'function') {
+                        that.showAntiCheatToast('⛔', 'Время группы вышло', msg);
+                    } else {
+                        alert(msg);
+                    }
+                }
+            });
+        }
+
+        bindQuestionInputs(q, root) {
+            const inner = (root || this.qContainer).querySelector('.wpo-question-card-inner');
             if (!inner) return;
 
             // Image zoom lightbox handler
@@ -1373,6 +1598,7 @@
                 clearInterval(this.timerInterval);
                 this.timerInterval = null;
             }
+            this.stopGroupTimers();
             if (this.heartbeatInterval) {
                 clearInterval(this.heartbeatInterval);
                 this.heartbeatInterval = null;
@@ -1391,6 +1617,7 @@
         }
 
         resumeSubmitTimers() {
+            this.initGroupTimers();
             if (!this.timerInterval && this.timeLimit > 0 && this.remainingSeconds > 0) {
                 this.updateTimerDisplay();
                 this.timerInterval = setInterval(() => {

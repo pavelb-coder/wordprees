@@ -63,6 +63,13 @@ final class Ajax
         $req->set_param('participant_city', sanitize_text_field($_POST['participant_city'] ?? ''));
         $req->set_param('agreement', isset($_POST['agreement']) ? (int)$_POST['agreement'] : 1);
 
+        // 1.0.21: значения дополнительной анкеты приходят JSON-строкой (fallback-мост).
+        $raw_custom = $_POST['custom_fields'] ?? [];
+        if (is_string($raw_custom)) {
+            $raw_custom = json_decode(stripslashes($raw_custom), true) ?: [];
+        }
+        $req->set_param('custom_fields', (array)$raw_custom);
+
         $res = RestApi::handle_start($req);
         if (is_wp_error($res)) {
             wp_send_json_error(['message' => $res->get_error_message()], $res->get_error_data()['status'] ?? 400);
@@ -78,6 +85,8 @@ final class Ajax
         $req = new WP_REST_Request('POST', '/wp-olympiad/v1/heartbeat');
         $req->set_param('token', sanitize_text_field($_POST['token'] ?? ''));
         $req->set_param('tab_switched', !empty($_POST['tab_switched']));
+        // 1.0.21: группа, которую участник открыл (нужна для её лимита времени).
+        $req->set_param('group', sanitize_text_field($_POST['group'] ?? ''));
 
         $res = RestApi::handle_heartbeat($req);
         if (is_wp_error($res)) {

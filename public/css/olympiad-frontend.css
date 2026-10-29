@@ -1654,3 +1654,96 @@
 }
 
 
+
+/* 1.0.21: дополнительные поля анкеты */
+.wpo-custom-fields {
+    margin: 18px 0 0;
+    padding: 16px 16px 4px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}
+.wpo-custom-fields-title {
+    margin: 0 0 12px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: #475569;
+}
+.wpo-cf-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #475569;
+}
+.wpo-cf-check input {
+    margin-top: 2px;
+}
+.wpo-cf-multiselect select,
+.wpo-cf-select select {
+    min-height: 96px;
+}
+
+/* 1.0.21: вывод вопросов по группам */
+.wpo-group-banner {
+    margin: 0 0 18px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, #eef2ff, #f5f3ff);
+    border: 1px solid #c7d2fe;
+    border-radius: 10px;
+}
+.wpo-group-banner + .wpo-question-group-badge {
+    display: none;
+}
+.wpo-group-banner-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.wpo-group-banner-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #3730a3;
+}
+.wpo-group-instruction {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #475569;
+    white-space: pre-line;
+}
+.wpo-group-timer {
+    font-size: 13px;
+    font-weight: 600;
+    color: #4338ca;
+    background: #fff;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    padding: 3px 10px;
+    white-space: nowrap;
+}
+.wpo-group-timer.danger {
+    color: #b91c1c;
+    border-color: #fecaca;
+    background: #fef2f2;
+}
+.wpo-group-banner.is-expired {
+    background: #fef2f2;
+    border-color: #fecaca;
+}
+.wpo-group-banner.is-expired .wpo-group-banner-title {
+    color: #991b1b;
+}
+.wpo-question-card-inner.is-group-expired {
+    opacity: .72;
+}
+.wpo-page-slot + .wpo-page-slot {
+    margin-top: 22px;
+    padding-top: 22px;
+    border-top: 1px dashed #cbd5e1;
+}

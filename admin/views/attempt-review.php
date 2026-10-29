@@ -61,6 +61,21 @@ foreach ($questions as $q) {
                         <span style="margin-left:8px; color:#64748b;">📍 <?php echo esc_html($attempt->participant_city); ?></span>
                     <?php endif; ?>
                 </div>
+                <?php
+                $wpo_cf_defs = $quiz ? $quiz->get_custom_fields() : [];
+                $wpo_cf_values = $attempt->custom_field_values();
+                if ($wpo_cf_defs): ?>
+                    <div class="wpo-review-custom-fields" style="margin-top:8px; padding:8px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;">
+                        <span class="description"><strong><?php esc_html_e('Дополнительная анкета:', 'wp-olympiad'); ?></strong></span>
+                        <?php foreach ($wpo_cf_defs as $wpo_cf):
+                            $wpo_cf_text = \WPOlympiad\ParticipantFields::format_value($wpo_cf, $wpo_cf_values[$wpo_cf['id']] ?? ''); ?>
+                            <div style="margin-top:3px; font-size:13px;">
+                                <strong><?php echo esc_html($wpo_cf['label']); ?>:</strong>
+                                <span><?php echo esc_html($wpo_cf_text !== '' ? $wpo_cf_text : '—'); ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             </div>
             <div>
                 <span class="description"><?php esc_html_e('Время сдачи и нарушения:', 'wp-olympiad'); ?></span>
@@ -108,6 +123,10 @@ foreach ($questions as $q) {
                         <span class="wpo-qcard-index">#<?php echo esc_html((string)($idx + 1)); ?></span>
                         <strong style="font-size:15px;"><?php echo esc_html($title); ?></strong>
                         <span class="wpo-badge" style="margin-left:8px;"><?php echo esc_html($type); ?></span>
+                        <?php $wpo_q_group = $q ? \WPOlympiad\QuestionGroups::normalize_name((string)($q->options['group_name'] ?? '')) : ''; ?>
+                        <?php if ($wpo_q_group !== ''): ?>
+                            <span class="wpo-badge" style="margin-left:6px; background:#e0f2fe; color:#0369a1;"><?php echo esc_html($wpo_q_group); ?></span>
+                        <?php endif; ?>
                     </div>
                     <div style="display:flex; gap:12px; align-items:center;">
                         <strong><?php esc_html_e('Макс. балл:', 'wp-olympiad'); ?> <?php echo esc_html((string)$max_points); ?></strong>

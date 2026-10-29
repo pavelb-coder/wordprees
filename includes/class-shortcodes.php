@@ -339,6 +339,9 @@ final class Shortcodes
         $city_label = (string)$quiz->get_setting('field_city_label', __('Город / Населённый пункт:', 'wp-olympiad'));
         $city_ph = (string)$quiz->get_setting('field_city_placeholder', __('Москва', 'wp-olympiad'));
 
+        // 1.0.21: дополнительные поля анкеты, которые добавил организатор.
+        $custom_fields = $enable_intro_page ? $quiz->get_custom_fields() : [];
+
         $req_agreement = (bool)$quiz->get_setting('require_agreement', 0);
         $agreement_text = (string)$quiz->get_setting('agreement_text', __('Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.', 'wp-olympiad'));
 
@@ -477,6 +480,15 @@ final class Shortcodes
                                     <?php if ($city_req): ?><span class="wpo-required">*</span><?php endif; ?>
                                 </label>
                                 <input type="text" id="wpo-city-<?php echo esc_attr((string)$quiz_id); ?>" name="participant_city" class="wpo-input" <?php echo $city_req ? 'required' : ''; ?> placeholder="<?php echo esc_attr($city_ph); ?>">
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if ($custom_fields): ?>
+                            <div class="wpo-custom-fields">
+                                <p class="wpo-custom-fields-title"><?php esc_html_e('Дополнительные сведения', 'wp-olympiad'); ?></p>
+                                <?php foreach ($custom_fields as $wpo_cf): ?>
+                                    <?php echo ParticipantFields::control_html($wpo_cf, 'custom_fields'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped; ?>
+                                <?php endforeach; ?>
                             </div>
                         <?php endif; ?>
 

@@ -78,6 +78,31 @@ final class Webhook
     /**
      * Payload события attempt_completed (структура совместима с прежней версией плагина).
      */
+    /**
+     * 1.0.21: значения дополнительной анкеты, подписанные так же, как в протоколе.
+     *
+     * @return array<string,string>
+     */
+    private static function custom_field_pairs(Attempt $attempt): array
+    {
+        $quiz = Quiz::get($attempt->quiz_id);
+        if (!$quiz) {
+            return [];
+        }
+
+        $values = $attempt->custom_field_values();
+        $pairs = [];
+        foreach ($quiz->get_custom_fields() as $def) {
+            $text = ParticipantFields::format_value($def, $values[$def['id']] ?? '');
+            if ($text === '') {
+                continue;
+            }
+            $pairs[(string)$def['label']] = $text;
+        }
+
+        return $pairs;
+    }
+
     public static function build_payload(Quiz $quiz, Attempt $attempt): array
     {
         return [
@@ -96,6 +121,7 @@ final class Webhook
                 'participant_org'   => $attempt->participant_org,
                 'participant_phone' => $attempt->participant_phone,
                 'participant_city'  => $attempt->participant_city,
+                'custom_fields'     => self::custom_field_pairs($attempt),
                 'score'             => (int)round($attempt->score),
                 'max_score'         => (int)round($attempt->max_score),
                 'percentage'        => $attempt->percentage,

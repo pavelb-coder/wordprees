@@ -21,6 +21,8 @@ final class Attempt
     public string $participant_org = '';
     public string $participant_phone = '';
     public string $participant_city = '';
+    /** JSON: значения дополнительных полей анкеты и отметки открытия групп. */
+    public string $participant_meta = '';
     public string $started_at = '';
     public ?string $submitted_at = null;
     public int $duration_seconds = 0;
@@ -54,6 +56,7 @@ final class Attempt
                 $this->participant_city = trim($m[1]);
             }
 
+            $this->participant_meta = (string)($data['participant_meta'] ?? '');
             $this->started_at = (string)($data['started_at'] ?? '');
             $this->submitted_at = !empty($data['submitted_at']) ? (string)$data['submitted_at'] : null;
             $this->duration_seconds = (int)($data['duration_seconds'] ?? 0);
@@ -102,6 +105,16 @@ final class Attempt
         $phone = sanitize_text_field($participant_data['phone'] ?? ($participant_data['participant_phone'] ?? ''));
         $city = sanitize_text_field($participant_data['city'] ?? ($participant_data['participant_city'] ?? ''));
 
+        // 1.0.21: значения дополнительных полей анкеты приходят уже проверенными.
+        $meta = [];
+        $fields = isset($participant_data['custom_fields']) && is_array($participant_data['custom_fields'])
+            ? $participant_data['custom_fields']
+            : [];
+        if ($fields) {
+            $meta['fields'] = $fields;
+        }
+        $meta_json = $meta ? (string)wp_json_encode($meta, JSON_UNESCAPED_UNICODE) : '';
+
         if ($user_id > 0 && empty($name)) {
             $user = wp_get_current_user();
             $name = $user->display_name ?: $user->user_login;
@@ -123,6 +136,7 @@ final class Attempt
             'participant_org'   => $org,
             'participant_phone' => $phone,
             'participant_city'  => $city,
+            'participant_meta'  => $meta_json,
             'started_at'        => $now,
             'submitted_at'      => null,
             'duration_seconds'  => 0,
@@ -134,7 +148,7 @@ final class Attempt
             'ip_address'        => $ip,
             'user_agent'        => $ua,
             'created_at'        => $now,
-        ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%s', '%s', '%s', '%s']);
+        ], ['%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%f', '%f', '%f', '%s', '%s', '%s', '%s']);
 
         if (!$inserted) {
             // Fallback retry without new columns if DB schema has not yet migrated
@@ -269,6 +283,99 @@ final class Attempt
             'disqualified' => __('Дисквалифицирован', 'wp-olympiad'),
             default => __('Завершено', 'wp-olympiad'),
         };
+    }
+
+    /**
+     * Всё, что хранится в participant_meta: поля анкеты и отметки групп.
+     *
+     * @return array{fields: array<string,mixed>, groups: array<string,string>}
+     */
+    public function meta(): array
+    {
+        $raw = json_decode((string)$this->participant_meta, true);
+        if (!is_array($raw)) {
+            $raw = [];
+        }
+
+        return [
+            'fields' => isset($raw['fields']) && is_array($raw['fields']) ? $raw['fields'] : [],
+            'groups' => isset($raw['groups']) && is_array($raw['groups']) ? $raw['groups'] : [],
+        ];
+    }
+
+    /** @return array<string,mixed> значения дополнительных полей анкеты */
+    public function custom_field_values(): array
+    {
+        return $this->meta()['fields'];
+    }
+
+    /** @return array<string,string> ключ группы => время открытия */
+    public function groups_opened(): array
+    {
+        return $this->meta()['groups'];
+    }
+
+    /**
+     * Запомнить, что участник открыл группу: с этого момента идёт её таймер.
+     * Повторные обращения существующую отметку не двигают.
+     */
+    public function mark_group_opened(string $group_name): bool
+    {
+        if ($group_name === '') {
+            return false;
+        }
+
+        $key = QuestionGroups::key($group_name);
+        $opened = $this->groups_opened();
+        if (isset($opened[$key])) {
+            return false;
+        }
+
+        $opened[$key] = current_time('mysql');
+        $this->patch_meta(['groups' => $opened]);
+
+        return true;
+    }
+
+    /**
+     * Точка времени, с которой считается лимит группы: отметка открытия,
+     * а если её нет — начало попытки.
+     */
+    public function group_opened_at(string $group_name): int
+    {
+        $key = QuestionGroups::key($group_name);
+        $opened = $this->groups_opened();
+        if (!empty($opened[$key])) {
+            $stamp = strtotime((string)$opened[$key]);
+            if ($stamp !== false) {
+                return $stamp;
+            }
+        }
+
+        return $this->started_at !== '' ? (int)strtotime($this->started_at) : 0;
+    }
+
+    /**
+     * Обновить participant_meta, не затирая уже записанное.
+     *
+     * @param array<string,mixed> $patch
+     */
+    private function patch_meta(array $patch): void
+    {
+        global $wpdb;
+        $table = DB::attempts_table();
+
+        $meta = $this->meta();
+        foreach ($patch as $key => $value) {
+            $meta[$key] = $value;
+        }
+
+        $json = (string)wp_json_encode($meta, JSON_UNESCAPED_UNICODE);
+        $this->participant_meta = $json;
+
+        $old = $wpdb->suppress_errors(true);
+        $wpdb->update($table, ['participant_meta' => $json], ['id' => $this->id], ['%s'], ['%d']);
+        $wpdb->suppress_errors($old);
     }
 
     /**

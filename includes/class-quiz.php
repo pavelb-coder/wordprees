@@ -44,6 +44,7 @@ final class Quiz
             }
         }
         $this->settings = self::without_threshold_settings($this->settings);
+        self::normalize_custom_settings($this->settings);
     }
 
     /** Legacy percentage thresholds/classification are no longer settings. */
@@ -145,6 +146,11 @@ final class Quiz
 
             'require_agreement'        => 0,
             'agreement_text'           => 'Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.',
+
+            // 1.0.21: дополнительные поля анкеты и вывод вопросов по группам.
+            'custom_fields'            => [],
+            'question_groups'          => [],
+            'questions_per_page'       => 0,
 
             'show_anti_cheat_notice'   => 1,
             'anti_cheat_notice_text'   => '🛡️ Внимание! Во время тестирования ведётся контроль переключения вкладок и активности окна. Пожалуйста, не закрывайте страницу до завершения.',
@@ -489,6 +495,51 @@ final class Quiz
     /**
      * Get array of all shared texts configured for this quiz
      */
+    /**
+     * Чистка новых настроек 1.0.21: поля анкеты и группы вопросов.
+     *
+     * Вызывается на записи и на чтении, чтобы ни одна дорожка (REST, Ajax,
+     * импорт настроек) не сохранила «сырое» значение.
+     */
+    public static function normalize_custom_settings(array &$settings): void
+    {
+        if (array_key_exists('custom_fields', $settings)) {
+            $settings['custom_fields'] = ParticipantFields::sanitize_defs((array)$settings['custom_fields']);
+        }
+        if (array_key_exists('question_groups', $settings)) {
+            $settings['question_groups'] = QuestionGroups::sanitize_defs((array)$settings['question_groups']);
+        }
+        if (array_key_exists('questions_per_page', $settings)) {
+            $per_page = (int)$settings['questions_per_page'];
+            $settings['questions_per_page'] = $per_page > 0 ? min(50, $per_page) : 0;
+        }
+    }
+
+    /** Дополнительные поля анкеты: описания, готовые к рендеру и проверке. */
+    public function get_custom_fields(): array
+    {
+        return ParticipantFields::sanitize_defs((array)($this->settings['custom_fields'] ?? []));
+    }
+
+    /** Настройки групп (разделов) вопросов этой олимпиады. */
+    public function get_question_groups(): array
+    {
+        return QuestionGroups::sanitize_defs((array)($this->settings['question_groups'] ?? []));
+    }
+
+    public function has_question_groups(): bool
+    {
+        return $this->get_question_groups() !== [];
+    }
+
+    /** Сколько вопросов показывать на одной странице; 0 — по одному. */
+    public function get_questions_per_page(): int
+    {
+        $per_page = (int)($this->settings['questions_per_page'] ?? 0);
+
+        return $per_page > 0 ? min(50, $per_page) : 0;
+    }
+
     public function get_shared_texts(): array
     {
         $texts = $this->get_setting('shared_texts', []);
@@ -636,6 +687,7 @@ final class Quiz
 
         $settings = self::without_threshold_settings(array_merge(self::default_settings(), $data['settings'] ?? []));
         self::normalize_settings_link_alias($settings);
+        self::normalize_custom_settings($settings);
         $settings_json = wp_json_encode($settings, JSON_UNESCAPED_UNICODE);
 
         $now = current_time('mysql');
@@ -683,6 +735,7 @@ final class Quiz
         }
         if (isset($data['settings']) && is_array($data['settings'])) {
             self::normalize_settings_link_alias($data['settings']);
+            self::normalize_custom_settings($data['settings']);
             $this->settings = self::without_threshold_settings(array_merge($this->settings, $data['settings']));
             $fields['settings'] = wp_json_encode($this->settings, JSON_UNESCAPED_UNICODE);
             $format[] = '%s';
@@ -728,6 +781,7 @@ final class Quiz
         }
 
         self::normalize_settings_link_alias($patch);
+        self::normalize_custom_settings($patch);
         foreach ($patch as $key => $value) {
             $settings[$key] = $value;
         }

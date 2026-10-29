@@ -105,6 +105,12 @@ $require_agreement = $is_new ? 0 : (int)$quiz->get_setting('require_agreement', 
 $agreement_text = $is_new ? 'Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.' : (string)$quiz->get_setting('agreement_text', 'Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.');
 
 $show_anti_cheat_notice = $is_new ? 1 : (int)$quiz->get_setting('show_anti_cheat_notice', 1);
+
+// 1.0.21: дополнительные поля анкеты и группы (разделы) вопросов.
+$quiz_custom_fields = $is_new ? [] : $quiz->get_custom_fields();
+$quiz_question_groups = $is_new ? [] : $quiz->get_question_groups();
+$quiz_per_page = $is_new ? 0 : (int)$quiz->get_questions_per_page();
+$quiz_group_names = $is_new ? [] : \WPOlympiad\QuestionGroups::names_of($quiz->get_questions(false));
 $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время тестирования ведётся контроль переключения вкладок и активности окна. Пожалуйста, не закрывайте страницу до завершения.' : (string)$quiz->get_setting('anti_cheat_notice_text', '🛡️ Внимание! Во время тестирования ведётся контроль переключения вкладок и активности окна. Пожалуйста, не закрывайте страницу до завершения.');
 ?>
 <div class="wrap wpo-admin-wrap">
@@ -289,6 +295,48 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         <textarea name="agreement_text" rows="2" class="large-text" placeholder="<?php esc_attr_e('Текст пользовательского соглашения...', 'wp-olympiad'); ?>"><?php echo esc_textarea($agreement_text); ?></textarea>
                                     </div>
                                 </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Дополнительные поля и группы:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <div id="wpo-structures-editor" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px;">
+                                    <input type="hidden" name="custom_fields" id="wpo-custom-fields-json" value="">
+                                    <input type="hidden" name="question_groups" id="wpo-question-groups-json" value="">
+
+                                    <h4 style="margin:0 0 4px;">➕ <?php esc_html_e('Поля анкеты на стартовой форме', 'wp-olympiad'); ?> (<span id="wpo-cf-count"><?php echo (int)count($quiz_custom_fields); ?></span>/<?php echo (int)\WPOlympiad\ParticipantFields::MAX_FIELDS; ?>)</h4>
+                                    <p class="description" style="margin-top:0;"><?php esc_html_e('Ответы попадают в протокол и в CSV попыток, на страницу проверки работы, в REST-описание попытки и в webhook.', 'wp-olympiad'); ?></p>
+                                    <div id="wpo-cf-rows"></div>
+                                    <p style="margin:8px 0 0;"><button type="button" class="button" id="wpo-cf-add">+ <?php esc_html_e('Добавить поле', 'wp-olympiad'); ?></button></p>
+
+                                    <h4 style="margin:20px 0 4px;">📁 <?php esc_html_e('Группы (разделы) вопросов', 'wp-olympiad'); ?></h4>
+                                    <p class="description" style="margin-top:0;">
+                                        <?php esc_html_e('Название группы задаётся в карточке задания в поле «Раздел / группа». Здесь группе добавляются инструкция, собственный лимит времени и порядок вывода.', 'wp-olympiad'); ?>
+                                    </p>
+                                    <datalist id="wpo-settings-group-names">
+                                        <?php foreach ($quiz_group_names as $wpo_gn): ?>
+                                            <option value="<?php echo esc_attr($wpo_gn); ?>"></option>
+                                        <?php endforeach; ?>
+                                    </datalist>
+                                    <label style="display:inline-flex; align-items:center; gap:6px; margin:6px 0 10px; flex-wrap:wrap;">
+                                        <strong><?php esc_html_e('Вопросов на странице:', 'wp-olympiad'); ?></strong>
+                                        <input type="number" name="questions_per_page" id="wpo-per-page" class="small-text" min="0" max="50" step="1" value="<?php echo (int)$quiz_per_page; ?>">
+                                        <span class="description"><?php esc_html_e('0 — по одному вопросу на странице, N — пачками по N заданий.', 'wp-olympiad'); ?></span>
+                                    </label>
+                                    <div id="wpo-gr-rows"></div>
+                                    <p style="margin:8px 0 0;">
+                                        <button type="button" class="button" id="wpo-gr-add">+ <?php esc_html_e('Добавить группу', 'wp-olympiad'); ?></button>
+                                        <span class="description" id="wpo-structures-note" style="margin-left:8px;"></span>
+                                    </p>
+                                </div>
+                                <script>
+                                window.wpoQuizStructures = <?php echo wp_json_encode([
+                                    'custom_fields'      => $quiz_custom_fields,
+                                    'question_groups'    => $quiz_question_groups,
+                                    'questions_per_page' => $quiz_per_page,
+                                    'existing_groups'    => $quiz_group_names,
+                                ], JSON_UNESCAPED_UNICODE); ?>;
+                                </script>
                             </td>
                         </tr>
                         <tr>
