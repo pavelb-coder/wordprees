@@ -3,3 +3,7 @@ Thumbs.db
 *.log
 node_modules/
 vendor/
+
+# Кэш Python (тестовые драйверы запускаются напрямую, артефакты не нужны в репозитории)
+__pycache__/
+*.pyc
