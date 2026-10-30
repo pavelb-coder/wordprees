@@ -4382,6 +4382,7 @@ require __DIR__ . '/test-questions-export-removal.php';
 require __DIR__ . '/test-link-alias.php';
 require __DIR__ . '/test-rules-enforcement.php';
 require __DIR__ . '/test-questionnaire-groups.php';
+require __DIR__ . '/test-resume-draft.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

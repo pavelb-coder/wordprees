@@ -91,6 +91,8 @@ CREATE TABLE {$attempts_table} (
     participant_phone varchar(100) NOT NULL DEFAULT '',
     participant_city varchar(150) NOT NULL DEFAULT '',
     participant_meta longtext NOT NULL,
+    draft_answers longtext DEFAULT NULL,
+    draft_updated_at datetime DEFAULT NULL,
     started_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
     submitted_at datetime DEFAULT NULL,
     duration_seconds int(11) NOT NULL DEFAULT 0,

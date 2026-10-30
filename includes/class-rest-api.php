@@ -75,6 +75,25 @@ final class RestApi
             'permission_callback' => '__return_true',
         ]);
 
+        // 1.0.22: возврат к прерванной попытке, автосохранение черновика, отказ от попытки
+        register_rest_route(self::NAMESPACE, '/resume', [
+            'methods'             => 'POST',
+            'callback'            => [self::class, 'handle_resume'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/save', [
+            'methods'             => 'POST',
+            'callback'            => [self::class, 'handle_save_draft'],
+            'permission_callback' => '__return_true',
+        ]);
+
+        register_rest_route(self::NAMESPACE, '/abandon', [
+            'methods'             => 'POST',
+            'callback'            => [self::class, 'handle_abandon'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // ── Внешняя API-интеграция: доступ по ключу олимпиады (X-API-Key) ─────
         register_rest_route(self::NAMESPACE, '/external/ping', [
             'methods'             => 'GET',
@@ -265,16 +284,54 @@ final class RestApi
             return new WP_Error('attempt_failed', __('Не удалось начать олимпиаду. Попробуйте снова.', 'wp-olympiad'), ['status' => 500]);
         }
 
-        // Prepare public questions
+        $payload = self::build_run_payload($quiz, $attempt, true, $enable_intro_page ? $custom_fields : []);
+        $payload['success'] = true;
+
+        return new WP_REST_Response($payload, 200);
+    }
+
+    /**
+     * Всё, что нужно раннеру для работы: задания в порядке попытки, тексты, группы,
+     * лимиты. Используется и при старте, и при возврате к начатой попытке (1.0.22),
+     * чтобы обе ветки отдавали идентичный набор ключей.
+     *
+     * @param array<int,array<string,mixed>> $custom_fields
+     * @return array<string,mixed>
+     */
+    private static function build_run_payload(Quiz $quiz, Attempt $attempt, bool $fresh, array $custom_fields): array
+    {
         $shuffle_q = (bool)$quiz->get_setting('shuffle_questions', 0);
         $shuffle_a = (bool)$quiz->get_setting('shuffle_answers', 1);
 
-        $questions_raw = $quiz->get_questions($shuffle_q);
-
-        // Участник идёт по группам: задания одного раздела стоят рядом.
+        // При возврате перемешивание заново не проводится: порядок берётся из попытки.
+        $questions_raw = $quiz->get_questions($fresh && $shuffle_q);
         $question_groups = $quiz->get_question_groups();
+
         if ($question_groups && $questions_raw) {
             $questions_raw = QuestionGroups::order($questions_raw, $question_groups);
+        }
+
+        $order = $attempt->question_order();
+        if ($fresh) {
+            $attempt->set_question_order(array_map(static fn($q) => (int)$q->id, $questions_raw));
+        } elseif ($order && $questions_raw) {
+            $by_id = [];
+            foreach ($questions_raw as $q) {
+                $by_id[(int)$q->id] = $q;
+            }
+            $ordered = [];
+            foreach ($order as $id) {
+                if (isset($by_id[$id])) {
+                    $ordered[] = $by_id[$id];
+                    unset($by_id[$id]);
+                }
+            }
+            // Задания, добавленные организатором после старта, — в конец.
+            $questions_raw = array_merge($ordered, array_values($by_id));
+        }
+
+        // Участник идёт по группам: первая группа открывается сразу (для её лимита).
+        if ($question_groups && $questions_raw) {
             $first_group = QuestionGroups::normalize_name((string)($questions_raw[0]->options['group_name'] ?? ''));
             if ($first_group !== '') {
                 $attempt->mark_group_opened($first_group);
@@ -299,14 +356,15 @@ final class RestApi
             ];
         }
 
-        return new WP_REST_Response([
-            'success'              => true,
+        $time_limit = (int)$quiz->get_setting('time_limit', 0);
+
+        return [
             'token'                => $attempt->token,
-            'time_limit'           => (int)$quiz->get_setting('time_limit', 0),
+            'time_limit'           => $time_limit,
             'show_question_points' => (bool)$quiz->get_setting('show_question_points', 1),
             'questions'            => $questions_data,
             'shared_texts'         => $shared_texts_dict,
-            'custom_fields'        => $enable_intro_page ? $custom_fields : [],
+            'custom_fields'        => $custom_fields,
             'question_groups'      => QuestionGroups::client_payload($question_groups),
             'questions_per_page'   => $quiz->get_questions_per_page(),
             'anti_cheat'=> [
@@ -315,7 +373,318 @@ final class RestApi
                 'max_tab_switches' => (int)$quiz->get_setting('max_tab_switches', 5),
                 'popup_warnings'   => (bool)$quiz->get_setting('anti_cheat_popup_warnings', 1),
             ],
+        ];
+    }
+
+    /**
+     * Сколько секунд группы уже потрачено (1.0.22). Группы без отметки открытия
+     * сюда не попадают: их таймер начнётся, когда участник их откроет.
+     *
+     * @return array<string,int>
+     */
+    private static function group_elapsed_payload(Quiz $quiz, Attempt $attempt): array
+    {
+        $out = [];
+        $stamps = $attempt->groups_opened();
+        $now = (int)current_time('timestamp');
+
+        foreach ($quiz->get_question_groups() as $group) {
+            if ((int)($group['time_limit'] ?? 0) <= 0) {
+                continue;
+            }
+            $key = QuestionGroups::key((string)($group['name'] ?? ''));
+            if ($key === '' || empty($stamps[$key])) {
+                continue;
+            }
+            $stamp = strtotime((string)$stamps[$key]);
+            if ($stamp === false) {
+                continue;
+            }
+            $out[$key] = max(0, $now - $stamp);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Возврат к начатой попытке вместо новой (1.0.22).
+     *
+     * OK: попытка ещё жива -> отдаём тот же payload, что и /start, плюс черновик,
+     *     позицию и сколько секунд реально осталось.
+     * Если личный лимит пока участника не было истёк — время НЕ возвращается:
+     * попытка закрывается как в 1.0.20 (написанное сохраняется без баллов
+     * и уходит организатору на проверку), и участник может начать заново.
+     */
+    public static function handle_resume(WP_REST_Request $request): WP_REST_Response|WP_Error
+    {
+        $quiz_id = (int)$request->get_param('quiz_id');
+        $token = sanitize_text_field($request->get_param('token') ?? '');
+
+        $user_id = get_current_user_id();
+        $email = strtolower(sanitize_email((string)($request->get_param('participant_email') ?? '')));
+
+        if ($token !== '') {
+            $attempt = Attempt::get_by_token($token);
+            if (!$attempt || $attempt->status !== 'in_progress' || !$attempt->belongs_to($user_id, $email)) {
+                return new WP_REST_Response(['success' => true, 'found' => false], 200);
+            }
+        } else {
+            $quiz = Quiz::get($quiz_id);
+            if (!$quiz) {
+                return new WP_Error('quiz_not_found', __('Олимпиада не найдена.', 'wp-olympiad'), ['status' => 404]);
+            }
+            if (!(bool)$quiz->get_setting('allow_guest', 1) && !is_user_logged_in()) {
+                return new WP_Error('login_required', __('Для участия войдите на сайт или попросите организатора включить гостевой доступ.', 'wp-olympiad'), ['status' => 401]);
+            }
+            $attempt = Attempt::find_resumable($quiz_id, $user_id, $email);
+            if (!$attempt) {
+                return new WP_REST_Response(['success' => true, 'found' => false], 200);
+            }
+        }
+
+        $quiz = Quiz::get((int)$attempt->quiz_id);
+        if (!$quiz) {
+            return new WP_Error('quiz_not_found', __('Олимпиада не найдена.', 'wp-olympiad'), ['status' => 404]);
+        }
+
+        $time_limit = (int)$quiz->get_setting('time_limit', 0);
+        $remaining = $attempt->get_remaining_seconds($time_limit);
+
+        if ($time_limit > 0 && $remaining <= 0) {
+            $preserved = self::preserve_declined_answers(
+                $attempt,
+                $quiz,
+                null,
+                __('Время попытки истекло, пока участника не было на странице. Ответы сохранены без баллов и переданы организатору на проверку.', 'wp-olympiad')
+            );
+            $attempt->complete(0.0, $quiz->get_total_points(), 'expired');
+            $attempt->clear_draft();
+
+            return new WP_REST_Response([
+                'success'   => true,
+                'found'     => false,
+                'expired'   => true,
+                'preserved' => $preserved,
+                'message'   => $preserved
+                    ? __('Время попытки истекло, пока вас не было. Написанное сохранено без баллов и передано организатору на проверку.', 'wp-olympiad')
+                    : __('Время попытки истекло, пока вас не было. Отвеченных заданий в черновике не было.', 'wp-olympiad'),
+            ], 200);
+        }
+
+        $payload = self::build_run_payload($quiz, $attempt, false, []);
+        $payload['success'] = true;
+        $payload['found'] = true;
+        $payload['resumed'] = true;
+        $payload['attempt_id'] = (int)$attempt->id;
+        $payload['started_at'] = $attempt->started_at;
+        $payload['tab_switches'] = (int)$attempt->tab_switches;
+        $payload['remaining_seconds'] = $remaining;
+        $payload['group_elapsed'] = self::group_elapsed_payload($quiz, $attempt);
+        $payload['draft'] = $attempt->draft();
+        $payload['draft_updated_at'] = (string)($attempt->draft_updated_at ?? '');
+
+        return new WP_REST_Response($payload, 200);
+    }
+
+    /**
+     * Автосохранение черновика (1.0.22). Оценивания здесь нет и быть не может:
+     * баллы появляются только при сдаче. Черновик пишется, пока попытка в работе.
+     */
+    public static function handle_save_draft(WP_REST_Request $request): WP_REST_Response|WP_Error
+    {
+        $token = sanitize_text_field($request->get_param('token') ?? '');
+        $attempt = Attempt::get_by_token($token);
+
+        if (!$attempt || $attempt->status !== 'in_progress') {
+            return new WP_Error('invalid_attempt', __('Сессия олимпиады не найдена или уже завершена.', 'wp-olympiad'), ['status' => 404]);
+        }
+
+        $quiz = Quiz::get((int)$attempt->quiz_id);
+        if (!$quiz) {
+            return new WP_Error('quiz_not_found', __('Олимпиада не найдена.', 'wp-olympiad'), ['status' => 404]);
+        }
+
+        $time_limit = (int)$quiz->get_setting('time_limit', 0);
+        if ($time_limit > 0 && $attempt->get_remaining_seconds($time_limit) <= 0) {
+            return new WP_Error('time_expired', __('Время попытки истекло. Черновик не сохранён — отправьте работу.', 'wp-olympiad'), ['status' => 409]);
+        }
+
+        $draft = self::normalize_draft(
+            $quiz,
+            $request->get_param('answers'),
+            $request->get_param('page'),
+            $request->get_param('flags'),
+            $attempt->draft()['revision']
+        );
+
+        if (!$attempt->save_draft($draft)) {
+            return new WP_Error('draft_failed', __('Не удалось сохранить черновик.', 'wp-olympiad'), ['status' => 500]);
+        }
+
+        return new WP_REST_Response([
+            'success' => true,
+            'answers_saved' => count($draft['answers']),
+            'revision' => $draft['revision'],
+            'saved_at' => (string)($attempt->draft_updated_at ?? ''),
+            'remaining_seconds' => $time_limit > 0 ? $attempt->get_remaining_seconds($time_limit) : null,
         ], 200);
+    }
+
+    /** Сколько ответов и какой длины черновик вмещает (защита от раздувания таблицы). */
+    public const MAX_DRAFT_ANSWERS = 500;
+    public const MAX_DRAFT_VALUE_LENGTH = 20000;
+    public const MAX_DRAFT_TOTAL_LENGTH = 120000;
+
+    /**
+     * Привести присланный черновик к безопасному виду: только вопросы этой
+     * олимпиады, только скалярные значения и списки скаляров, с потолками длины.
+     *
+     * @return array{answers: array<int,mixed>, page: int, flags: int[], revision: int}
+     */
+    public static function normalize_draft(Quiz $quiz, mixed $answers, mixed $page, mixed $flags, int $revision = 0): array
+    {
+        $allowed = [];
+        foreach (Question::get_by_quiz((int)$quiz->id) as $q) {
+            $allowed[(int)$q->id] = true;
+        }
+
+        $clean_answers = [];
+        $budget = self::MAX_DRAFT_TOTAL_LENGTH;
+        if (is_array($answers)) {
+            foreach ($answers as $qid => $value) {
+                if (count($clean_answers) >= self::MAX_DRAFT_ANSWERS) {
+                    break;
+                }
+                if (!is_numeric($qid) || !isset($allowed[(int)$qid])) {
+                    continue;
+                }
+                $value = self::clean_draft_value($value);
+                if ($value === null) {
+                    continue;
+                }
+                // Общий бюджет на черновик: 500 самых длинных ответов — это мегабайты.
+                $size = is_string($value) ? mb_strlen($value) : mb_strlen((string)wp_json_encode($value));
+                if ($budget - $size < 0) {
+                    break;
+                }
+                $budget -= $size;
+                $clean_answers[(int)$qid] = $value;
+            }
+        }
+
+        $clean_flags = [];
+        if (is_array($flags)) {
+            foreach ($flags as $id) {
+                if (count($clean_flags) >= self::MAX_DRAFT_ANSWERS) {
+                    break;
+                }
+                if (is_numeric($id) && isset($allowed[(int)$id])) {
+                    $clean_flags[] = (int)$id;
+                }
+            }
+        }
+
+        return [
+            'answers' => $clean_answers,
+            'page' => max(0, min(100000, (int)(is_numeric($page) ? $page : 0))),
+            'flags' => array_values(array_unique($clean_flags)),
+            'revision' => max(0, $revision),
+        ];
+    }
+
+    /** @return string|array<int|string,mixed>|null null — значение не сохраняем */
+    private static function clean_draft_value(mixed $value): string|array|null
+    {
+        if (is_bool($value)) {
+            return $value ? '1' : '';
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return (string)$value;
+        }
+
+        if (is_string($value)) {
+            $value = trim(sanitize_textarea_field($value));
+            if ($value === '') {
+                return null;
+            }
+            return mb_substr($value, 0, self::MAX_DRAFT_VALUE_LENGTH);
+        }
+
+        if (is_array($value)) {
+            // Карта (сетка соответствий) и список (упорядоченный ответ) чистятся
+            // по-разному: у карты ключи — идентификаторы строк, у списка их нет.
+            $is_map = false;
+            foreach (array_keys($value) as $key) {
+                if (is_string($key) && $key !== '') {
+                    $is_map = true;
+                    break;
+                }
+            }
+
+            $out = [];
+            foreach ($value as $key => $item) {
+                if (count($out) >= 200) {
+                    break;
+                }
+                if (is_array($item) || is_object($item)) {
+                    continue; // вложенных структур в ответе быть не должно
+                }
+                $item = self::clean_draft_value($item);
+                if ($item === null || $item === '') {
+                    continue;
+                }
+                if ($is_map) {
+                    if (!is_string($key) || !preg_match('/^[A-Za-z0-9_\-]{1,64}$/', $key)) {
+                        continue;
+                    }
+                    $out[$key] = $item;
+                } else {
+                    $out[] = $item;
+                }
+            }
+
+            return $out ? $out : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * «Начать заново»: черновик прерванной попытки не выбрасывается — он
+     * сохраняется как ответы без баллов и помечается на ручную проверку,
+     * а попытка получает статус «Прервана» и остаётся в протоколе.
+     */
+    public static function handle_abandon(WP_REST_Request $request): WP_REST_Response|WP_Error
+    {
+        $token = sanitize_text_field($request->get_param('token') ?? '');
+        $attempt = $token !== '' ? Attempt::get_by_token($token) : null;
+
+        if (!$attempt || $attempt->status !== 'in_progress') {
+            return new WP_Error('invalid_attempt', __('Сессия олимпиады не найдена или уже завершена.', 'wp-olympiad'), ['status' => 404]);
+        }
+
+        $email = strtolower(sanitize_email((string)($request->get_param('participant_email') ?? '')));
+        if (!$attempt->belongs_to(get_current_user_id(), $email)) {
+            return new WP_Error('forbidden', __('Эта попытка принадлежит другому участнику.', 'wp-olympiad'), ['status' => 403]);
+        }
+
+        $quiz = Quiz::get((int)$attempt->quiz_id);
+        if (!$quiz) {
+            return new WP_Error('quiz_not_found', __('Олимпиада не найдена.', 'wp-olympiad'), ['status' => 404]);
+        }
+
+        $preserved = self::preserve_declined_answers(
+            $attempt,
+            $quiz,
+            null,
+            __('Попытка прервана: участник начал новую. Ответы сохранены без баллов и переданы организатору на проверку.', 'wp-olympiad')
+        );
+
+        $attempt->complete(0.0, $quiz->get_total_points(), 'abandoned');
+        $attempt->clear_draft();
+
+        return new WP_REST_Response(['success' => true, 'answers_preserved' => $preserved], 200);
     }
 
     /**
@@ -505,6 +874,9 @@ final class RestApi
             );
 
             $wpdb->query('COMMIT');
+
+            // 1.0.22: работа сдана — черновик убираем, чтобы он не висел в БД.
+            $attempt->clear_draft();
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
             return new WP_Error('submission_failed', __('Ошибка сохранения результатов в базу данных.', 'wp-olympiad'), ['status' => 500]);
@@ -692,8 +1064,15 @@ final class RestApi
      *
      * @return bool сохранены ли ответы
      */
-    private static function preserve_declined_answers(Attempt $attempt, Quiz $quiz, mixed $user_answers): bool
+    private static function preserve_declined_answers(Attempt $attempt, Quiz $quiz, mixed $user_answers, string $comment = ''): bool
     {
+        // 1.0.22: если во вкладке ответов уже нет (перезагрузка, падение браузера),
+        // берём то, что сохранил автосейв.
+        if (!is_array($user_answers) || $user_answers === []) {
+            $draft = $attempt->draft();
+            $user_answers = $draft['answers'];
+        }
+
         if (!is_array($user_answers) || $user_answers === []) {
             return false;
         }
@@ -705,6 +1084,9 @@ final class RestApi
                 $resp['awarded_points'] = 0;
                 $resp['is_correct'] = null;
                 $resp['needs_manual_review'] = 1;
+                if ($comment !== '') {
+                    $resp['review_comment'] = $comment;
+                }
                 $responses[] = $resp;
             }
 

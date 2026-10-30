@@ -23,6 +23,9 @@ final class Attempt
     public string $participant_city = '';
     /** JSON: значения дополнительных полей анкеты и отметки открытия групп. */
     public string $participant_meta = '';
+    /** 1.0.22: несохранённые ответы (JSON) и время последней автосохранения. */
+    public ?string $draft_answers = null;
+    public ?string $draft_updated_at = null;
     public string $started_at = '';
     public ?string $submitted_at = null;
     public int $duration_seconds = 0;
@@ -57,6 +60,9 @@ final class Attempt
             }
 
             $this->participant_meta = (string)($data['participant_meta'] ?? '');
+            $draft_raw = $data['draft_answers'] ?? null;
+            $this->draft_answers = ($draft_raw === null || $draft_raw === '') ? null : (string)$draft_raw;
+            $this->draft_updated_at = !empty($data['draft_updated_at']) ? (string)$data['draft_updated_at'] : null;
             $this->started_at = (string)($data['started_at'] ?? '');
             $this->submitted_at = !empty($data['submitted_at']) ? (string)$data['submitted_at'] : null;
             $this->duration_seconds = (int)($data['duration_seconds'] ?? 0);
@@ -280,15 +286,17 @@ final class Attempt
             'in_progress' => __('В процессе', 'wp-olympiad'),
             'needs_review' => __('На проверке', 'wp-olympiad'),
             'expired' => __('Истекло время', 'wp-olympiad'),
+            'abandoned' => __('Прервана', 'wp-olympiad'),
             'disqualified' => __('Дисквалифицирован', 'wp-olympiad'),
             default => __('Завершено', 'wp-olympiad'),
         };
     }
 
     /**
-     * Всё, что хранится в participant_meta: поля анкеты и отметки групп.
+     * Всё, что хранится в participant_meta: поля анкеты, отметки групп и
+     * порядок заданий (1.0.22 — нужен, чтобы возврат к попытке не перемешал их заново).
      *
-     * @return array{fields: array<string,mixed>, groups: array<string,string>}
+     * @return array{fields: array<string,mixed>, groups: array<string,string>, order: int[]}
      */
     public function meta(): array
     {
@@ -297,9 +305,19 @@ final class Attempt
             $raw = [];
         }
 
+        $order = [];
+        if (isset($raw['order']) && is_array($raw['order'])) {
+            foreach ($raw['order'] as $id) {
+                if (is_numeric($id) && (int)$id > 0) {
+                    $order[] = (int)$id;
+                }
+            }
+        }
+
         return [
             'fields' => isset($raw['fields']) && is_array($raw['fields']) ? $raw['fields'] : [],
             'groups' => isset($raw['groups']) && is_array($raw['groups']) ? $raw['groups'] : [],
+            'order' => $order,
         ];
     }
 
@@ -353,6 +371,177 @@ final class Attempt
         }
 
         return $this->started_at !== '' ? (int)strtotime($this->started_at) : 0;
+    }
+
+    /**
+     * Зафиксировать порядок заданий за попыткой (1.0.22).
+     *
+     * @param int[] $ids
+     */
+    public function set_question_order(array $ids): void
+    {
+        $clean = [];
+        foreach ($ids as $id) {
+            if (is_numeric($id) && (int)$id > 0) {
+                $clean[] = (int)$id;
+            }
+        }
+
+        if (!$clean || $clean === $this->question_order()) {
+            return;
+        }
+
+        $this->patch_meta(['order' => $clean]);
+    }
+
+    /** @return int[] порядок заданий этой попытки ('' — не сохранялся) */
+    public function question_order(): array
+    {
+        return $this->meta()['order'];
+    }
+
+    /**
+     * Последняя незавершённая попытка участника, к которой можно вернуться.
+     *
+     * Авторизация — та же, что и при проверке лимита попыток: id вошедшего
+     * пользователя либо e-mail из стартовой формы.
+     */
+    public static function find_resumable(int $quiz_id, int $user_id = 0, string $email = ''): ?self
+    {
+        global $wpdb;
+        $table = DB::attempts_table();
+
+        $where = ['quiz_id = %d', "status = 'in_progress'"];
+        $params = [$quiz_id];
+
+        if ($user_id > 0) {
+            $where[] = 'user_id = %d';
+            $params[] = $user_id;
+        } elseif ($email !== '') {
+            $where[] = 'LOWER(participant_email) = %s';
+            $params[] = strtolower($email);
+        } else {
+            return null;
+        }
+
+        $sql = "SELECT * FROM {$table} WHERE " . implode(' AND ', $where) . " ORDER BY id DESC LIMIT 1";
+        $row = $wpdb->get_row($wpdb->prepare($sql, ...$params), ARRAY_A);
+
+        return $row ? new self($row) : null;
+    }
+
+    /**
+     * Может ли этот посетитель работать с попыткой по её токену.
+     *
+     * Гостевая попытка (user_id = 0) доступна по токену — ровно как сдача,
+     * которой тоже нужен только токен. Попытка, закреплённая за вошедшим
+     * пользователем, доступна только этому пользователю: по одному лишь
+     * e-mail её ни вернуть, ни закрыть нельзя.
+     */
+    public function belongs_to(int $user_id, string $email = ''): bool
+    {
+        if ((int)$this->user_id > 0) {
+            return $user_id > 0 && (int)$this->user_id === $user_id;
+        }
+
+        return $email === ''
+            || ($this->participant_email !== '' && strcasecmp(trim($this->participant_email), $email) === 0);
+    }
+
+    /**
+     * Черновик ответов: ['answers' => [id => значение], 'page' => int,
+     * 'flags' => int[], 'revision' => int]. Пустой, если сохранять нечего.
+     *
+     * @return array{answers: array<int,mixed>, page: int, flags: int[], revision: int}
+     */
+    public function draft(): array
+    {
+        $raw = $this->draft_answers !== null ? json_decode((string)$this->draft_answers, true) : null;
+        if (!is_array($raw)) {
+            return ['answers' => [], 'page' => 0, 'flags' => [], 'revision' => 0];
+        }
+
+        $answers = [];
+        if (isset($raw['answers']) && is_array($raw['answers'])) {
+            foreach ($raw['answers'] as $qid => $value) {
+                if (is_numeric($qid) && (int)$qid > 0) {
+                    $answers[(int)$qid] = $value;
+                }
+            }
+        }
+
+        $flags = [];
+        if (isset($raw['flags']) && is_array($raw['flags'])) {
+            foreach ($raw['flags'] as $id) {
+                if (is_numeric($id) && (int)$id > 0) {
+                    $flags[] = (int)$id;
+                }
+            }
+        }
+
+        return [
+            'answers' => $answers,
+            'page' => max(0, (int)($raw['page'] ?? 0)),
+            'flags' => array_values(array_unique($flags)),
+            'revision' => max(0, (int)($raw['revision'] ?? 0)),
+        ];
+    }
+
+    /** Сохранить черновик. Колонка может отсутствовать до миграции БД — тогда тихо false. */
+    public function save_draft(array $payload): bool
+    {
+        global $wpdb;
+        $table = DB::attempts_table();
+
+        $payload['revision'] = $this->draft()['revision'] + 1;
+        $json = (string)wp_json_encode($payload, JSON_UNESCAPED_UNICODE);
+        $now = current_time('mysql');
+
+        $old = $wpdb->suppress_errors(true);
+        $done = $wpdb->update(
+            $table,
+            ['draft_answers' => $json, 'draft_updated_at' => $now],
+            ['id' => $this->id],
+            ['%s', '%s'],
+            ['%d']
+        ) !== false;
+        $wpdb->suppress_errors($old);
+
+        if ($done) {
+            $this->draft_answers = $json;
+            $this->draft_updated_at = $now;
+        }
+
+        return $done;
+    }
+
+    public function draft_answer_count(): int
+    {
+        return $this->draft_answers === null ? 0 : count($this->draft()['answers']);
+    }
+
+    /** Черновик больше не нужен: работа сдана или закрыта. */
+    public function clear_draft(): bool
+    {
+        global $wpdb;
+        $table = DB::attempts_table();
+
+        $old = $wpdb->suppress_errors(true);
+        $done = $wpdb->update(
+            $table,
+            ['draft_answers' => null, 'draft_updated_at' => null],
+            ['id' => $this->id],
+            [null, null],
+            ['%d']
+        ) !== false;
+        $wpdb->suppress_errors($old);
+
+        if ($done) {
+            $this->draft_answers = null;
+            $this->draft_updated_at = null;
+        }
+
+        return $done;
     }
 
     /**

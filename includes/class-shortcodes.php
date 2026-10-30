@@ -345,13 +345,17 @@ final class Shortcodes
         $req_agreement = (bool)$quiz->get_setting('require_agreement', 0);
         $agreement_text = (string)$quiz->get_setting('agreement_text', __('Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.', 'wp-olympiad'));
 
+        // 1.0.22: у вошедшего пользователя может быть начатая и не сданная попытка.
+        $resumable = is_user_logged_in()
+            && Attempt::find_resumable((int)$quiz_id, get_current_user_id()) !== null;
+
         $show_ac = (bool)$quiz->get_setting('show_anti_cheat_notice', 1);
         $ac_text = (string)$quiz->get_setting('anti_cheat_notice_text', __('🛡️ Внимание! Во время тестирования ведётся контроль переключения вкладок и активности окна. Пожалуйста, не закрывайте страницу до завершения.', 'wp-olympiad'));
 
         ob_start();
         ?>
         <?php echo Style::render($quiz); // Scoped design / appearance of the testing page ?>
-        <div class="wpo-quiz-wrapper" id="wpo-quiz-<?php echo esc_attr((string)$quiz_id); ?>" data-quiz-id="<?php echo esc_attr((string)$quiz_id); ?>" data-skip-intro="<?php echo $enable_intro_page ? '0' : '1'; ?>">
+        <div class="wpo-quiz-wrapper" id="wpo-quiz-<?php echo esc_attr((string)$quiz_id); ?>" data-quiz-id="<?php echo esc_attr((string)$quiz_id); ?>" data-skip-intro="<?php echo $enable_intro_page ? '0' : '1'; ?>" data-resumable="<?php echo $resumable ? '1' : '0'; ?>">
             <!-- 1. Intro / Start Screen -->
             <div class="wpo-card wpo-intro-screen" style="overflow:hidden; <?php echo !$enable_intro_page ? 'display:none;' : ''; ?>">
                 <?php if (!empty($intro_banner_url)): ?>
@@ -535,6 +539,9 @@ final class Shortcodes
                         </div>
                     <?php endif; ?>
                 </div>
+
+                <!-- 1.0.22: состояние автосохранения черновика -->
+                <div class="wpo-draft-state" style="display:none;"></div>
 
                 <!-- Progress Bar -->
                 <div class="wpo-progress-wrap">

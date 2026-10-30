@@ -23,6 +23,16 @@ final class Ajax
         add_action('wp_ajax_wp_olympiad_heartbeat', [self::class, 'ajax_heartbeat']);
         add_action('wp_ajax_nopriv_wp_olympiad_heartbeat', [self::class, 'ajax_heartbeat']);
 
+        // 1.0.22: возврат к прерванной попытке, черновик, отказ от попытки.
+        add_action('wp_ajax_wp_olympiad_resume', [self::class, 'ajax_resume']);
+        add_action('wp_ajax_nopriv_wp_olympiad_resume', [self::class, 'ajax_resume']);
+
+        add_action('wp_ajax_wp_olympiad_save_draft', [self::class, 'ajax_save_draft']);
+        add_action('wp_ajax_nopriv_wp_olympiad_save_draft', [self::class, 'ajax_save_draft']);
+
+        add_action('wp_ajax_wp_olympiad_abandon', [self::class, 'ajax_abandon']);
+        add_action('wp_ajax_nopriv_wp_olympiad_abandon', [self::class, 'ajax_abandon']);
+
         add_action('wp_ajax_wp_olympiad_submit', [self::class, 'ajax_submit']);
         add_action('wp_ajax_nopriv_wp_olympiad_submit', [self::class, 'ajax_submit']);
 
@@ -89,6 +99,74 @@ final class Ajax
         $req->set_param('group', sanitize_text_field($_POST['group'] ?? ''));
 
         $res = RestApi::handle_heartbeat($req);
+        if (is_wp_error($res)) {
+            wp_send_json_error(['message' => $res->get_error_message()], $res->get_error_data()['status'] ?? 400);
+        }
+
+        wp_send_json_success($res->get_data());
+    }
+
+    /**
+     * 1.0.22: мост к /resume — страница перезагружена, надо вернуть начатую попытку.
+     */
+    public static function ajax_resume(): void
+    {
+        check_ajax_referer('wp_olympiad_nonce', 'nonce');
+
+        $req = new WP_REST_Request('POST', '/wp-olympiad/v1/resume');
+        $req->set_param('quiz_id', (int)($_POST['quiz_id'] ?? 0));
+        $req->set_param('token', sanitize_text_field($_POST['token'] ?? ''));
+        $req->set_param('participant_name', sanitize_text_field($_POST['participant_name'] ?? ''));
+        $req->set_param('participant_email', sanitize_email($_POST['participant_email'] ?? ''));
+
+        $res = RestApi::handle_resume($req);
+        if (is_wp_error($res)) {
+            wp_send_json_error(['message' => $res->get_error_message()], $res->get_error_data()['status'] ?? 400);
+        }
+
+        wp_send_json_success($res->get_data());
+    }
+
+    /**
+     * 1.0.22: мост к /save — автосохранение черновика ответов.
+     */
+    public static function ajax_save_draft(): void
+    {
+        check_ajax_referer('wp_olympiad_nonce', 'nonce');
+
+        $req = new WP_REST_Request('POST', '/wp-olympiad/v1/save');
+        $req->set_param('token', sanitize_text_field($_POST['token'] ?? ''));
+
+        foreach (['answers' => [], 'flags' => []] as $key => $default) {
+            $raw = $_POST[$key] ?? $default;
+            if (is_string($raw)) {
+                $raw = json_decode(stripslashes($raw), true) ?: [];
+            }
+            $req->set_param($key, (array)$raw);
+        }
+
+        $req->set_param('page', (int)($_POST['page'] ?? 0));
+
+        $res = RestApi::handle_save_draft($req);
+        if (is_wp_error($res)) {
+            wp_send_json_error(['message' => $res->get_error_message()], $res->get_error_data()['status'] ?? 400);
+        }
+
+        wp_send_json_success($res->get_data());
+    }
+
+    /**
+     * 1.0.22: мост к /abandon — участник сознательно начинает заново.
+     */
+    public static function ajax_abandon(): void
+    {
+        check_ajax_referer('wp_olympiad_nonce', 'nonce');
+
+        $req = new WP_REST_Request('POST', '/wp-olympiad/v1/abandon');
+        $req->set_param('token', sanitize_text_field($_POST['token'] ?? ''));
+        $req->set_param('participant_email', sanitize_email($_POST['participant_email'] ?? ''));
+
+        $res = RestApi::handle_abandon($req);
         if (is_wp_error($res)) {
             wp_send_json_error(['message' => $res->get_error_message()], $res->get_error_data()['status'] ?? 400);
         }

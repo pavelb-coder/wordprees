@@ -97,6 +97,7 @@ if (!defined('ABSPATH')) {
                 <option value="completed" <?php selected($status, 'completed'); ?>><?php esc_html_e('Завершено', 'wp-olympiad'); ?></option>
                 <option value="needs_review" <?php selected($status, 'needs_review'); ?>><?php esc_html_e('Требует проверки жюри', 'wp-olympiad'); ?></option>
                 <option value="in_progress" <?php selected($status, 'in_progress'); ?>><?php esc_html_e('В процессе', 'wp-olympiad'); ?></option>
+                <option value="abandoned" <?php selected($status, 'abandoned'); ?>><?php esc_html_e('Прервана', 'wp-olympiad'); ?></option>
                 <option value="disqualified" <?php selected($status, 'disqualified'); ?>><?php esc_html_e('Дисквалифицирован', 'wp-olympiad'); ?></option>
             </select>
 

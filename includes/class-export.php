@@ -95,6 +95,7 @@ final class Export
             'completed'    => 'Завершено',
             'needs_review' => 'На проверке',
             'expired'      => 'Истекло время',
+            'abandoned'    => 'Прервана',
             'disqualified' => 'Дисквалифицирован',
         ];
 

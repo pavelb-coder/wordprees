@@ -96,6 +96,56 @@ foreach ($questions as $q) {
         </div>
     </div>
 
+    <?php
+    // 1.0.22: несохранённый черновик виден организатору, но оцениваться не может:
+    // работа ещё не отправлена участником.
+    $wpo_draft = $attempt->draft();
+    $wpo_choice_text = static function (mixed $value, $wpo_q): string {
+        $choices = $wpo_q ? (array)($wpo_q->options['choices'] ?? []) : [];
+        $items = is_array($value) ? $value : [$value];
+        $out = [];
+        foreach ($items as $item) {
+            $item = (string)$item;
+            foreach ($choices as $choice) {
+                if (is_array($choice) && ($choice['id'] ?? '') !== '' && (string)$choice['id'] === $item) {
+                    $item = (string)($choice['text'] ?? $item);
+                    break;
+                }
+            }
+            if ($item !== '') {
+                $out[] = $item;
+            }
+        }
+
+        return implode(', ', $out);
+    };
+    ?>
+    <?php if ($attempt->status === 'in_progress' && !empty($wpo_draft['answers'])): ?>
+        <div class="wpo-admin-card" style="margin-bottom:16px; padding:14px 16px; border-left:4px solid #f59e0b;">
+            <h3 style="margin:0 0 6px;">📝 <?php esc_html_e('Несданный черновик (автосохранение)', 'wp-olympiad'); ?></h3>
+            <p class="description" style="margin:0 0 10px;">
+                <?php
+                $wpo_draft_when = !empty($attempt->draft_updated_at)
+                    ? mysql2date(get_option('date_format') . ' ' . get_option('time_format'), (string)$attempt->draft_updated_at)
+                    : '';
+                echo esc_html(sprintf(
+                    $wpo_draft_when !== ''
+                        ? 'Сохранено в %s. Работа не отправлена: эти ответы не оцениваются и в протокол не войдут, пока участник их не сдаст.'
+                        : 'Работа не отправлена: эти ответы не оцениваются и в протокол не войдут, пока участник их не сдаст.',
+                    $wpo_draft_when
+                ));
+                ?>
+            </p>
+            <?php foreach ($wpo_draft['answers'] as $wpo_dqid => $wpo_dval):
+                $wpo_dq = $questions_map[(int)$wpo_dqid] ?? null; ?>
+                <div style="margin-bottom:6px; font-size:13px;">
+                    <strong><?php echo esc_html($wpo_dq ? $wpo_dq->title : ('#' . (int)$wpo_dqid)); ?>:</strong>
+                    <span><?php echo esc_html($wpo_choice_text($wpo_dval, $wpo_dq) ?: '—'); ?></span>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
     <!-- Responses Inspection & Grading Form -->
     <form id="wpo-review-form" onsubmit="return false;">
         <input type="hidden" name="attempt_id" value="<?php echo esc_attr((string)$attempt->id); ?>">
