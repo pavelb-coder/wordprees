@@ -471,8 +471,18 @@ def main():
     for needle in ['ajax_resume', 'ajax_save_draft', 'ajax_abandon']:
         true_in('M13. Мост: ' + needle, aj, needle)
 
+    # Версию не запиляем числом: проверяем, что заголовок файла и константа
+    # совпадают — именно расхождение этих двух мест ломает апдейт-хук и счётчик
+    # обновлений, а конкретное число меняется каждый выпуск.
     main_php = read('wp-olympiad.php')
-    true_in('M14. Версия плагина', main_php, "define('WP_OLYMPIAD_VERSION', '1.0.22')")
+    m_head = re.search(r'\* Version: ([0-9]+(?:\.[0-9]+)*)', main_php)
+    m_def = re.search(r"define\('WP_OLYMPIAD_VERSION', '([0-9]+(?:\.[0-9]+)*)'\)", main_php)
+    check('M14. Версия плагина: заголовок и константа совпадают',
+          bool(m_head) and bool(m_def) and m_head.group(1) == m_def.group(1),
+          {'header': m_head and m_head.group(1), 'const': m_def and m_def.group(1)})
+    check('M14b. Версия не ниже 1.0.22 (контракт черновика на месте)',
+          bool(m_def) and tuple(int(x) for x in m_def.group(1).split('.')) >= (1, 0, 22),
+          m_def and m_def.group(1))
 
     print('\n=======================================')
     print('Проверок: %d, пройдено: %d, отказов: %d' % (TOTAL, PASSED, FAILED))

@@ -521,10 +521,14 @@ final class RestApi
             return new WP_Error('draft_failed', __('Не удалось сохранить черновик.', 'wp-olympiad'), ['status' => 500]);
         }
 
+        // Ревизию поднимает save_draft(); в ответ отдаём то, что реально легло в БД,
+        // иначе клиент видит значение на единицу меньше хранимого.
+        $revision = (int)($attempt->draft()['revision'] ?? $draft['revision']);
+
         return new WP_REST_Response([
             'success' => true,
             'answers_saved' => count($draft['answers']),
-            'revision' => $draft['revision'],
+            'revision' => $revision,
             'saved_at' => (string)($attempt->draft_updated_at ?? ''),
             'remaining_seconds' => $time_limit > 0 ? $attempt->get_remaining_seconds($time_limit) : null,
         ], 200);

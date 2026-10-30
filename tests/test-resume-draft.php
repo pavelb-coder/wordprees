@@ -456,6 +456,10 @@ $it('Автосейв: принимается только живая попыт
         $reloaded = Attempt::get((int)$attempt->id);
         $qq($reloaded && $reloaded->draft()['answers'] === [(int)$qid => 'c1'], 'Черновик после автосейва не такой', json_encode($reloaded ? $reloaded->draft()['answers'] : null, JSON_UNESCAPED_UNICODE));
         $qq(!empty($reloaded->draft_updated_at), 'Время автосейва не записано');
+        $resp_data = $res->get_data();
+        $qq((int)$resp_data['revision'] === (int)$reloaded->draft()['revision'],
+             'Ответ /save врёт о ревизии черновика',
+             $resp_data['revision'] . ' != ' . $reloaded->draft()['revision']);
 
         // Просроченная попытка черновик уже не принимает.
         $wpdb->update(DB::attempts_table(), ['started_at' => date('Y-m-d H:i:s', time() - 600)], ['id' => (int)$attempt->id], ['%s'], ['%d']);
@@ -609,6 +613,57 @@ $it('«Начать заново»: попытка получает статус
         $qq($new instanceof Attempt && (int)$new->id !== (int)$closed->id, 'Новая попытка не создана');
         $qq($new->draft()['answers'] === [], 'Черновик прерванной попытки перетёк в новую');
         $rd_cleanup($id, $new);
+
+        return true;
+    } finally {
+        $rd_cleanup($id, $attempt);
+        wp_set_current_user($previous_user);
+        Quiz::delete($id);
+    }
+});
+
+// ── 209 ─────────────────────────────────────────────────────────────────────
+$it('Старт с переполненными полями: значения усечены по лимиту колонки, попытка заведена', function () use ($qq, $rd_choices, $rd_cleanup): bool {
+    global $wpdb;
+    $previous_user = get_current_user_id();
+    wp_set_current_user(0);
+    $token = strtolower(wp_generate_password(6, false, false));
+    $id = Quiz::create([
+        'title' => 'Rd overflow ' . $token,
+        'status' => 'publish',
+        'settings' => ['allow_guest' => 1, 'time_limit' => 30],
+    ]);
+
+    $attempt = null;
+    try {
+        $qid = (int)Question::create(['quiz_id' => $id, 'question_type' => 'single', 'title' => 'Задание', 'points' => 1, 'options' => $rd_choices]);
+
+        $attempt = Attempt::start($id, [
+            'name'  => str_repeat('И', 5000),
+            'email' => str_repeat('a', 600) . '@example.invalid',
+            'org'   => str_repeat('О', 3000),
+            'phone' => str_repeat('8', 500),
+            'city'  => str_repeat('Г', 500),
+        ]);
+        $qq($attempt instanceof Attempt, 'Старт с длинными полями не создал попытку');
+
+        $row = $wpdb->get_row("SELECT participant_name, participant_email, participant_org, participant_phone, participant_city FROM "
+            . DB::attempts_table() . " WHERE id=" . (int)$attempt->id, ARRAY_A);
+        $qq(is_array($row) && $row !== [], 'Строка попытки не найдена');
+
+        $qq(mb_strlen((string)$row['participant_name'], 'UTF-8') === 255, 'Имя не усечено до 255 символов', (string)mb_strlen((string)$row['participant_name'], 'UTF-8'));
+        $qq(mb_strlen((string)$row['participant_org'], 'UTF-8') === 255, 'Организация не усечена до 255 символов', (string)mb_strlen((string)$row['participant_org'], 'UTF-8'));
+        $qq(mb_strlen((string)$row['participant_email'], 'UTF-8') === 255, 'E-mail не усечён до 255 символов', (string)mb_strlen((string)$row['participant_email'], 'UTF-8'));
+        $qq(mb_strlen((string)$row['participant_phone'], 'UTF-8') === 100, 'Телефон не усечён до 100 символов', (string)mb_strlen((string)$row['participant_phone'], 'UTF-8'));
+        $qq(mb_strlen((string)$row['participant_city'], 'UTF-8') === 150, 'Город не усечён до 150 символов', (string)mb_strlen((string)$row['participant_city'], 'UTF-8'));
+
+        $qq((int)$wpdb->get_var("SELECT COUNT(*) FROM " . DB::attempts_table() . " WHERE quiz_id=" . (int)$id) === 1, 'Попыток больше одной');
+
+        // Черновик и возврат с усечённой идентификацией работают как обычно.
+        $saved = $attempt->save_draft(['answers' => [(int)$qid => 'c1'], 'page' => 1, 'flags' => [], 'revision' => 0]);
+        $qq($saved, 'Черновик в такую попытку не сохраняется');
+        $found = Attempt::find_resumable($id, 0, strtolower((string)$row['participant_email']));
+        $qq($found instanceof Attempt && (int)$found->id === (int)$attempt->id, 'Возврат не находит попытку по усечённому e-mail');
 
         return true;
     } finally {

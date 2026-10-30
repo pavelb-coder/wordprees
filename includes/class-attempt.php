@@ -133,6 +133,22 @@ final class Attempt
         $ip = sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? '');
         $ua = substr(sanitize_text_field($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 250);
 
+        // Колонки участника — varchar(255)/varchar(150)/varchar(100)/varchar(45).
+        // На MariaDB со STRICT_TRANS_TABLES (и на MySQL 8 по умолчанию) значение
+        // длиннее колонки — это ошибка INSERT: попытка не заводилась, а участник
+        // получал «не удалось начать олимпиаду». Усекаем по лимиту колонки: в
+        // протоколе запись чуть короче, но работа и идентификация не теряются.
+        $clamp = static function (string $value, int $limit): string {
+            return mb_strlen($value, 'UTF-8') > $limit ? mb_substr($value, 0, $limit, 'UTF-8') : $value;
+        };
+        $name = $clamp($name, 255);
+        $email = $clamp($email, 255);
+        $org = $clamp($org, 255);
+        $phone = $clamp($phone, 100);
+        $city = $clamp($city, 150);
+        $ip = $clamp($ip, 45);
+        $ua = $clamp($ua, 250);
+
         $inserted = $wpdb->insert($table, [
             'quiz_id'           => $quiz_id,
             'user_id'           => $user_id,
