@@ -59,7 +59,7 @@ curl -s -X POST "http://localhost:8127/index.php?rest_route=/wp-olympiad/v1/resu
 cd /home/user/.cache/wpo-test/wordpress
 php ../wp-cli.phar eval-file wp-content/plugins/wp-olympiad/tests/test-suite.php --allow-root
 
-# HTTP-проверки 1.0.22: возврат к прерванной попытке и автосохранение (163 проверки)
+# HTTP-проверки 1.0.22: возврат к прерванной попытке и автосохранение (164 проверки)
 python3 /home/user/wordprees/tests/e2e/e2e-resume-draft.py \
     --wp /home/user/.cache/wpo-test/wordpress \
     --cli /home/user/.cache/wpo-test/wp-cli.phar \
