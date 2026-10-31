@@ -90,4 +90,47 @@ python3 "$REPO/tests/e2e/fuzz-1022.py" --base http://localhost:8127
 | `set-quiz-status.php <quiz_id> <publish\|draft>` | публикует/снимает олимпиаду и чистит кеш `Quiz::clear_cache()` |
 | `protocol-csv.php <quiz_id>` | печатает `протокол_<имя>.csv` тем же кодом, что отдаёт кнопку выгрузки |
 | `fuzz-1022.py` | негативный и стресс-прогон 1.0.22/1.0.23: мусор и неверные типы во всех точках, границы потолков черновика, чужие токены, AJAX-мост, 150 автосейвов и гонки, инварианты БД, поиск утечек и пустоты `debug.log` |
+| `dom-start-check.mjs` | DOM-прогон кнопки «Начать выполнение олимпиады» (jsdom + живой REST): `start`, `reload-continue`, `reload-restart`, `reload-dismiss`, `slow-start`, `resume-no-questions`; требует `npm i jsdom` |
 | `e2e-resume-draft.py` | сам прогон: фикстура → HTTP → БД → протокол → админка → грепы по установленной копии; в конце печатает «Проверок: N, пройдено: N, отказов: 0» |
+
+## Прогон кнопки в DOM (`dom-start-check.mjs`)
+
+Серверные проверки не выполняют JS раннера: в 1.0.23 они были зелёные, а клик по
+«Начать выполнение олимпиады» — мёртвый. `dom-start-check.mjs` грузит страницу
+стенда в jsdom, подставляет живой REST стенда вместо `fetch`, исполняет
+настоящий `public/js/olympiad-frontend.js` и проверяет последствие нажатия:
+появились ли карточки `.wpo-question-card-inner`, скрыто ли интро, не остался ли
+оверлей, разблокирована ли кнопка, и не появилось ли непойманных
+`unhandledrejection`/`window.onerror`.
+
+```bash
+cd /home/user/.cache/dom1024 && npm i jsdom@24     # один раз, каталог вне репозитория
+ln -sfn /home/user/.cache/dom1024/node_modules /home/user/wordprees/node_modules   # ESM-резолвинг
+WP=/home/user/.cache/wpo-test/wordpress
+cd "$WP" && FIX=$(php ../wp-cli.phar eval-file wp-content/plugins/wp-olympiad/tests/e2e/make-quiz.php --allow-root | tail -1)
+PAGE=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['page_id'])" "$FIX")
+node /home/user/wordprees/tests/e2e/dom-start-check.mjs --base http://localhost:8127 --page "$PAGE" --scenario start
+```
+
+Состояние «живая попытка + перезагрузка» сценарии `reload-continue`, `reload-restart`
+и `reload-dismiss` создают сами: `POST /start` через REST, затем запись о токене
+подсовывается в `localStorage` страницы. Коды ответа REST-маршрутов на стенде без
+«постоянных ссылок» снимаются через `?rest_route=`, поэтому `--base` достаточно.
+
+Для `resume-no-questions` состояние готовит оператор — попытка должна остаться
+живой, а задания олимпиады — исчезнуть:
+
+```bash
+php ../wp-cli.phar db export /tmp/questions.sql --tables=wp_olympiad_questions --allow-root
+php ../wp-cli.phar db query "DELETE FROM wp_olympiad_questions" --allow-root
+TOKEN=$(php ../wp-cli.phar db query "SELECT token FROM wp_olympiad_attempts WHERE status='in_progress' ORDER BY id DESC LIMIT 1" --skip-column-names --allow-root | tr -d '[:space:]')
+EMAIL=$(php ../wp-cli.phar db query "SELECT participant_email FROM wp_olympiad_attempts WHERE status='in_progress' ORDER BY id DESC LIMIT 1" --skip-column-names --allow-root | tr -d '[:space:]')
+node /home/user/wordprees/tests/e2e/dom-start-check.mjs --base http://localhost:8127 --page "$PAGE" --scenario resume-no-questions --token "$TOKEN" --email "$EMAIL"
+mysql -u wpo -pwpo wpo < /tmp/questions.sql      # вернуть задания
+```
+
+Ожидание: `OK — тихо не осталось`. Диалог возврата при пустом списке заданий не
+показывается вообще, а нажатие «Начать» даёт штатное «В этой олимпиаде пока нет
+вопросов». Сценарий `slow-start` вешает `fetch` на `/start` (25-секундный таймаут
+ждём реально, прогон занимает ~30 с) и требует, чтобы кнопка вернулась в работу с
+сообщением «Сервер не отвечает».
