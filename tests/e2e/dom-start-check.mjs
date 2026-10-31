@@ -193,6 +193,7 @@ function state(w) {
     cards: wrapper.querySelectorAll('.wpo-question-card-inner').length,
     overlay: !!overlay,
     resumeCard: !!w.document.querySelector('.wpo-resume-card'),
+    resumeButtons: w.document.querySelectorAll('.wpo-resume-actions button').length,
     startDisabled: !!btn && btn.disabled === true,
     startText: btn ? btn.textContent.trim().replace(/\s+/g, ' ') : '',
     invalidField: first ? (first.getAttribute('name') || first.tagName) : '',
@@ -287,6 +288,11 @@ if (SCENARIO === 'reload-continue' || SCENARIO === 'reload-restart') {
     console.log('\nСЦЕНАРИЙ ' + SCENARIO + ': ПРОВАЛЕН — нет диалога возврата при живой попытке');
     process.exit(1);
   }
+  // 1.0.25: в диалоге ровно две кнопки — «Продолжить попытку» и «Начать заново».
+  if (before.resumeButtons !== 2) {
+    console.log('\nСЦЕНАРИЙ ' + SCENARIO + ': ПРОВАЛЕН — кнопок в диалоге ' + before.resumeButtons + ', ожидалось две');
+    process.exit(1);
+  }
   if (SCENARIO === 'reload-restart') {
     await click(w, '.wpo-resume-restart', WAIT);
     fillForm(w, { email: seeded.email });
@@ -347,8 +353,13 @@ if (SCENARIO === 'reload-dismiss') {
     : await seedLiveAttempt();
   const record = { token: seeded.token, email: seeded.email, savedAt: Date.now() - 60000 };
   const { dom, w, events } = await runJsdom(html, record);
-  if (!state(w).resumeCard && !state(w).overlay) {
+  const opened = state(w);
+  if (!opened.resumeCard && !opened.overlay) {
     console.log('\nСЦЕНАРИЙ reload-dismiss: ПРОВАЛЕН — диалог возврата не показан');
+    process.exit(1);
+  }
+  if (opened.resumeButtons !== 2) {
+    console.log('\nСЦЕНАРИЙ reload-dismiss: ПРОВАЛЕН — кнопок в диалоге ' + opened.resumeButtons + ', ожидалось две');
     process.exit(1);
   }
   w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
