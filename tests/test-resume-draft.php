@@ -21,6 +21,21 @@ $qq = static function (bool $ok, string $message, string $extra = ''): void {
     }
 };
 
+if (!function_exists(__NAMESPACE__ . '\\wpo_wall_at')) {
+    /**
+     * Wall-clock пояса сайта N секунд назад — в тех же единицах, что и плагин
+     * (`current_time('mysql')` в запись, `strtotime()` + `current_time('timestamp')` в чтение).
+     * Нужно, чтобы проверка не зависела от того, задан на стенде поясом UTC или, например,
+     * Europe/Moscow: `date(..., time())` дал бы время по UTC и разошёлся бы на смещение.
+     */
+    function wpo_wall_at(int $seconds_ago): string
+    {
+        $site_now = (int)strtotime(current_time('mysql'));
+
+        return gmdate('Y-m-d H:i:s', $site_now - $seconds_ago);
+    }
+}
+
 $rd_choices = [
     'choices' => [
         ['id' => 'c1', 'text' => '4', 'is_correct' => 1],
@@ -375,7 +390,7 @@ $it('Возврат к попытке: тот же токен, тот же по�
         $attempt->set_question_order([(int)$q3, (int)$q1, (int)$q2]);
         $attempt->save_draft(['answers' => [(int)$q2 => 'c2', (int)$q1 => 'c1'], 'page' => 1, 'flags' => [(int)$q3]]);
         $attempt->mark_group_opened('Альфа');
-        $wpdb->update(DB::attempts_table(), ['started_at' => date('Y-m-d H:i:s', time() - 95)], ['id' => (int)$attempt->id], ['%s'], ['%d']);
+        $wpdb->update(DB::attempts_table(), ['started_at' => wpo_wall_at(95)], ['id' => (int)$attempt->id], ['%s'], ['%d']);
 
         $req = new \WP_REST_Request('POST', '/wp-olympiad/v1/resume');
         $req->set_param('quiz_id', $id);
@@ -462,7 +477,7 @@ $it('Автосейв: принимается только живая попыт
              $resp_data['revision'] . ' != ' . $reloaded->draft()['revision']);
 
         // Просроченная попытка черновик уже не принимает.
-        $wpdb->update(DB::attempts_table(), ['started_at' => date('Y-m-d H:i:s', time() - 600)], ['id' => (int)$attempt->id], ['%s'], ['%d']);
+        $wpdb->update(DB::attempts_table(), ['started_at' => wpo_wall_at(600)], ['id' => (int)$attempt->id], ['%s'], ['%d']);
         $late = RestApi::handle_save_draft($req);
         $qq($late instanceof \WP_Error && $late->get_error_code() === 'time_expired', 'Просроченной попытке разрешили автосейв');
         $late_data = (array)$late->get_error_data();
@@ -504,7 +519,7 @@ $it('Возврат после истечения личного лимита: �
         $qid = Question::create(['quiz_id' => $id, 'question_type' => 'single', 'title' => 'Задание', 'points' => 3, 'options' => $rd_choices]);
         $attempt = Attempt::start($id, ['name' => 'Просрочка ' . $token, 'email' => $email]);
         $attempt->save_draft(['answers' => [(int)$qid => 'c1']]);
-        $wpdb->update(DB::attempts_table(), ['started_at' => date('Y-m-d H:i:s', time() - 1200)], ['id' => (int)$attempt->id], ['%s'], ['%d']);
+        $wpdb->update(DB::attempts_table(), ['started_at' => wpo_wall_at(1200)], ['id' => (int)$attempt->id], ['%s'], ['%d']);
 
         $req = new \WP_REST_Request('POST', '/wp-olympiad/v1/resume');
         $req->set_param('quiz_id', $id);

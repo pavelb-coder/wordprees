@@ -228,6 +228,10 @@ async function click(w, sel, waitMs) {
 
 function fillForm(w, { email, org = 'Школа №1', name = 'Домен Тест' } = {}) {
   const wrapper = w.document.querySelector(`.wpo-quiz-wrapper[data-quiz-id="${QUIZ_ID}"]`);
+  if (!wrapper) {
+    log('ПРОВАЛ', `обёртка олимпиады не найдена (quiz=${QUIZ_ID}) — проверьте --quiz и --page`);
+    process.exit(1);
+  }
   const set = (n, v) => {
     const el = wrapper.querySelector(`[name="${n}"]`);
     if (el) { el.value = v; el.dispatchEvent(new w.Event('input', { bubbles: true })); }
@@ -334,6 +338,52 @@ if (SCENARIO === 'resume-no-questions') {
     : 'OK — тихо не осталось (карточек: ' + st.cards + ', alert: ' + alerts.length + ', ошибок JS: ' + errs.length
       + (alerts.length ? ': ' + alerts[0].msg.slice(0, 90) : '') + ')'));
   process.exit(silent ? 1 : 0);
+}
+
+if (SCENARIO === 'reload-dismiss') {
+  // Esc по диалогу = «решить позже»: попытка обязана остаться живой, кнопка — рабочей.
+  const seeded = arg('token', '')
+    ? { token: arg('token', ''), email: arg('email', newEmail('given')) }
+    : await seedLiveAttempt();
+  const record = { token: seeded.token, email: seeded.email, savedAt: Date.now() - 60000 };
+  const { dom, w, events } = await runJsdom(html, record);
+  if (!state(w).resumeCard && !state(w).overlay) {
+    console.log('\nСЦЕНАРИЙ reload-dismiss: ПРОВАЛЕН — диалог возврата не показан');
+    process.exit(1);
+  }
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep(600);
+  const dismissed = state(w);
+  log('ПОСЛЕ ESC', JSON.stringify(dismissed));
+  if (dismissed.overlay) { console.log('\nСЦЕНАРИЙ reload-dismiss: ПРОВАЛЕН — диалог не закрылся'); process.exit(1); }
+  if (dismissed.startDisabled) {
+    console.log('\nСЦЕНАРИЙ reload-dismiss: ПРОВАЛЕН — после Esc кнопка осталась заблокированной');
+    process.exit(1);
+  }
+  fillForm(w, { email: seeded.email });
+  await click(w, '.wpo-btn-start', WAIT + 500);
+  const st = state(w);
+  log('ПОСЛЕ ПОВТОРНОГО КЛИКА', JSON.stringify(st));
+  log('ПОПЫТКА СЦЕНАРИЯ', JSON.stringify(seeded));
+  finish('reload-dismiss', st, events);
+}
+
+if (SCENARIO === 'slow-start') {
+  // Сервер не отвечает: кнопка должна вернуться в работу с внятным сообщением.
+  const { dom, w, events } = await runJsdom(html, null, { hangStart: true });
+  fillForm(w, { email: newEmail('slow') });
+  await click(w, '.wpo-btn-start', 1200);
+  const stuck = state(w);
+  log('ЧЕРЕЗ 1.2 с', JSON.stringify({ startDisabled: stuck.startDisabled, startText: stuck.startText }));
+  await sleep(27000);
+  const st = state(w);
+  log('ЧЕРЕЗ 28 с', JSON.stringify({ startDisabled: st.startDisabled, startText: st.startText }));
+  const alerts = events.filter((e) => e.kind === 'ALERT').map((e) => e.msg);
+  const ok = st.startDisabled === false && alerts.some((m) => /не отвечает/i.test(m));
+  console.log('\nСЦЕНАРИЙ slow-start: ' + (ok
+    ? 'OK — кнопка разблокирована, сообщение получено: ' + alerts.join(' | ').slice(0, 120)
+    : 'ПРОВАЛЕН — disabled=' + st.startDisabled + ', alert=' + JSON.stringify(alerts).slice(0, 200)));
+  process.exit(ok ? 0 : 1);
 }
 
 console.error('неизвестный сценарий: ' + SCENARIO);

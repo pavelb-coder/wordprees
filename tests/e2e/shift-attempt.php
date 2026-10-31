@@ -22,14 +22,29 @@ if (!$attempt) {
 }
 
 $table = \WPOlympiad\DB::attempts_table();
-$wpdb->update($table, ['started_at' => date('Y-m-d H:i:s', time() - $seconds)], ['id' => (int)$attempt->id], ['%s'], ['%d']);
+if (!function_exists('wpo_wall_at')) {
+    /**
+     * Wall-clock пояса сайта N секунд назад — в тех же единицах, что и плагин
+     * (`current_time('mysql')` / `strtotime()` + `current_time('timestamp')`), чтобы
+     * сдвиг не зависел от часового пояса PHP и MySQL на стенде.
+     */
+    function wpo_wall_at($seconds_ago)
+    {
+        $site_now = (int) strtotime(current_time('mysql'));
+
+        return gmdate('Y-m-d H:i:s', $site_now - (int) $seconds_ago);
+    }
+}
+
+$started_at = wpo_wall_at($seconds);
+$wpdb->update($table, ['started_at' => $started_at], ['id' => (int)$attempt->id], ['%s'], ['%d']);
 
 $moved = [];
 if ($with_groups) {
     $attempt = \WPOlympiad\Attempt::get((int)$attempt->id);
     $stamps = $attempt->groups_opened();
     foreach ($stamps as $key => $stamp) {
-        $stamps[$key] = date('Y-m-d H:i:s', time() - $seconds);
+        $stamps[$key] = wpo_wall_at($seconds);
         $moved[] = $key;
     }
     $raw = json_decode((string)$attempt->participant_meta, true);
@@ -42,6 +57,6 @@ if ($with_groups) {
 
 echo json_encode([
     'ok' => true,
-    'started_at' => date('Y-m-d H:i:s', time() - $seconds),
+    'started_at' => $started_at,
     'groups_shifted' => $moved,
 ]), "\n";

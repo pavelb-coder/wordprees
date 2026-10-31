@@ -21,6 +21,16 @@ if (!$attempt) {
     return;
 }
 
+if (!function_exists('wpo_wall_at')) {
+    /** См. tests/e2e/shift-attempt.php: время пишется в «стеновых» часах пояса сайта. */
+    function wpo_wall_at($seconds_ago)
+    {
+        $site_now = (int) strtotime(current_time('mysql'));
+
+        return gmdate('Y-m-d H:i:s', $site_now - (int) $seconds_ago);
+    }
+}
+
 $key = \WPOlympiad\QuestionGroups::key($group);
 $raw = json_decode((string)$attempt->participant_meta, true);
 if (!is_array($raw)) {
@@ -31,7 +41,7 @@ $stamps = isset($raw['groups']) && is_array($raw['groups']) ? $raw['groups'] : [
 if ((string)$seconds === 'clear') {
     unset($stamps[$key]);
 } else {
-    $stamps[$key] = date('Y-m-d H:i:s', time() - max(0, (int)$seconds));
+    $stamps[$key] = wpo_wall_at(max(0, (int)$seconds));
 }
 
 $raw['groups'] = $stamps;
