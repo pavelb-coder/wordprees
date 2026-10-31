@@ -41,7 +41,6 @@
             this.draftTimer = null;
             this.draftInFlight = false;
             this.draftHooksBound = false;
-            this.draftStateEl = null;
             this.draftKey = '';
             this.isSubmitted = false;
             this.resumeChecked = false;
@@ -70,7 +69,6 @@
             this.btnNext = this.wrapper.querySelector('.wpo-btn-next');
             this.btnFinish = this.wrapper.querySelector('.wpo-btn-finish');
             this.btnFlag = this.wrapper.querySelector('.wpo-btn-flag');
-            this.draftStateEl = this.wrapper.querySelector('.wpo-draft-state');
         }
 
         bindEvents() {
@@ -1591,7 +1589,6 @@
                 this.clearLocalDraft();
                 this.clearResumeToken();
                 this.detachDraftHooks();
-                this.setDraftState('', '');
                 this.renderResults(data);
             } catch (err) {
                 console.error(err);
@@ -2012,9 +2009,8 @@
                         <div class="wpo-resume-actions">
                             <button type="button" class="wpo-btn wpo-btn-primary wpo-resume-continue">Продолжить попытку</button>
                             <button type="button" class="wpo-btn wpo-btn-outline wpo-resume-restart">Начать заново</button>
-                            <button type="button" class="wpo-btn wpo-btn-outline wpo-resume-later">Решить позже</button>
                         </div>
-                        <p class="wpo-resume-note">«Начать заново» закроет эту попытку: написанное сохранится организатору без баллов и уйдёт на ручную проверку, а начнёте вы с чистого листа. «Решить позже» (или Esc) ничего не меняет — черновик останется на месте.</p>
+                        <p class="wpo-resume-note">«Начать заново» закроет эту попытку: написанное сохранится организатору без баллов и уйдёт на ручную проверку, а начнёте вы с чистого листа. Esc или клик мимо окна ничего не меняют — черновик останется на месте.</p>
                     </div>
                 `;
 
@@ -2039,10 +2035,8 @@
 
                 continueBtn.addEventListener('click', () => close(true));
                 restartBtn.addEventListener('click', () => close(false));
-                const laterBtn = overlay.querySelector('.wpo-resume-later');
-                if (laterBtn) laterBtn.addEventListener('click', () => close(null));
-                // Мимо окна — «решить позже», а не «начать заново»: закрытие попытки не должно
-                // случаться от случайного нажатия.
+                // Esc и клик мимо окна — «отложить», а не «начать заново»: случайное
+                // нажатие не должно закрывать попытку и обнулять ответы.
                 overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
                 document.addEventListener('keydown', onKey);
                 document.body.appendChild(overlay);
@@ -2213,24 +2207,17 @@
                     headers: headers,
                     body: JSON.stringify(body),
                     keepalive: true
-                }).then((r) => {
-                    this.draftInFlight = false;
-                    this.setDraftState(r.ok ? '✓ Черновик сохранён' : '⚠ Черновик сохранён только в этом браузере', r.ok ? 'ok' : 'warn');
                 }).catch(() => {
                     this.draftInFlight = false;
-                    this.setDraftState('⚠ Черновик сохранён только в этом браузере', 'warn');
                 });
                 return;
             }
 
             this.draftInFlight = true;
-            this.setDraftState('⏳ Сохраняем черновик…', 'pending');
             this.apiPost('/save', body, 'wp_olympiad_save_draft').then((res) => {
                 this.draftInFlight = false;
                 const data = (res && (res.data || res)) || {};
                 if (res && res.success !== false && (data.saved_at !== undefined || data.answers_saved !== undefined)) {
-                    const stamp = data.saved_at ? String(data.saved_at).slice(11, 16) : '';
-                    this.setDraftState(`✓ Черновик сохранён${stamp ? ' в ' + stamp : ''} (${parseInt(data.answers_saved, 10) || 0} ответ(ов))`, 'ok');
                     if (this.timeLimit > 0 && typeof data.remaining_seconds === 'number' && data.remaining_seconds >= 0 && data.remaining_seconds < 999999) {
                         this.remainingSeconds = data.remaining_seconds;
                         this.updateTimerDisplay();
@@ -2238,28 +2225,12 @@
                     return;
                 }
                 if (res && res.message && /истекло/i.test(res.message)) {
-                    this.setDraftState('⛔ Время попытки вышло', 'danger');
                     this.submitAnswers(true);
                     return;
                 }
-                this.setDraftState('⚠ Черновик сохранён только в этом браузере', 'warn');
             }).catch(() => {
                 this.draftInFlight = false;
-                this.setDraftState('⚠ Черновик сохранён только в этом браузере', 'warn');
             });
-        }
-
-        setDraftState(text, kind) {
-            if (!this.draftStateEl) {
-                if (!this.runnerScreen) return;
-                const el = document.createElement('div');
-                el.className = 'wpo-draft-state';
-                this.runnerScreen.appendChild(el);
-                this.draftStateEl = el;
-            }
-            this.draftStateEl.textContent = text || '';
-            this.draftStateEl.className = 'wpo-draft-state' + (kind ? ' is-' + kind : '');
-            this.draftStateEl.style.display = text ? 'block' : 'none';
         }
 
         showAntiCheatToast(icon, title, message) {

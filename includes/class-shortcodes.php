@@ -540,9 +540,6 @@ final class Shortcodes
                     <?php endif; ?>
                 </div>
 
-                <!-- 1.0.22: состояние автосохранения черновика -->
-                <div class="wpo-draft-state" style="display:none;"></div>
-
                 <!-- Progress Bar -->
                 <div class="wpo-progress-wrap">
                     <div class="wpo-progress-bar" style="width: 0%;"></div>

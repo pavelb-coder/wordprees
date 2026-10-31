@@ -128,7 +128,7 @@ def main():
     check('A1b. База REST найдена на странице', st.api.endswith('/wp-olympiad/v1'), st.api)
     true_in('A2. На странице есть стартовая форма', html, 'wpo-intro-screen')
     true_in('A3. Поля анкеты рендерятся', html, 'name="custom_fields[klass]"')
-    true_in('A4. Индикатор автосохранения в разметке', html, 'wpo-draft-state')
+    check('A4. Индикатор автосохранения убран из разметки (1.0.25)', 'wpo-draft-state' not in html)
     true_in('A5. Гостю не подсказываем про возврат', html, 'data-resumable="0"')
     check('A6. Инструкция группы участнику до старта не показана', 'Практика за 1 минуту' not in html)
 
@@ -443,8 +443,9 @@ def main():
     check('M4. JS: локальный черновик не льётся в чужую попытку', 'raw.token === this.token' in js)
 
     css = read('public', 'css', 'olympiad-frontend.css')
-    for needle in ['.wpo-draft-state', '.wpo-resume-card', '.wpo-resume-actions', 'is-warn']:
+    for needle in ['.wpo-resume-card', '.wpo-resume-actions']:
         true_in('M5. CSS: ' + needle, css, needle)
+    check('M5b. CSS: индикатор автосейва больше не стилизуется (1.0.25)', '.wpo-draft-state' not in css)
 
     rest = read('includes', 'class-rest-api.php')
     for needle in ["'/resume'", "'/save'", "'/abandon'", 'handle_resume', 'handle_save_draft', 'handle_abandon',
@@ -462,7 +463,8 @@ def main():
 
     sc = read('includes', 'class-shortcodes.php')
     true_in('M10. Шорткод: подсказка о возврате', sc, 'data-resumable')
-    true_in('M11. Шорткод: индикатор автосейва', sc, 'wpo-draft-state')
+    check('M11. Шорткод: индикатор автосейва убран (1.0.25)', 'wpo-draft-state' not in sc)
+    check('M11b. Диалог возврата: третья кнопка не возвращается', 'wpo-resume-later' not in read('public', 'js', 'olympiad-frontend.js'))
 
     ex = read('includes', 'class-export.php')
     true_in('M12. Экспорт: статус «Прервана»', ex, "'abandoned'    => 'Прервана'")

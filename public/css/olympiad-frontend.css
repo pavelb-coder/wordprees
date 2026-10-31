@@ -1749,22 +1749,7 @@
 }
 
 
-/* ── 1.0.22: автосохранение черновика и возврат к прерванной попытке ────── */
-.wpo-draft-state {
-    margin: 0 0 10px;
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    line-height: 1.4;
-    color: #475569;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-}
-.wpo-draft-state.is-pending { color: #92400e; background: #fffbeb; border-color: #fde68a; }
-.wpo-draft-state.is-ok { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
-.wpo-draft-state.is-warn { color: #9a3412; background: #fff7ed; border-color: #fed7aa; }
-.wpo-draft-state.is-danger { color: #991b1b; background: #fef2f2; border-color: #fecaca; font-weight: 600; }
-
+/* ── 1.0.22: возврат к прерванной попытке ────── */
 .wpo-resume-card { max-width: 460px; }
 .wpo-resume-icon { font-size: 34px; line-height: 1; margin-bottom: 6px; }
 .wpo-resume-title { margin: 0 0 10px; font-size: 19px; color: #0f172a; }
