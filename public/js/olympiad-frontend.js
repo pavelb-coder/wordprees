@@ -7,6 +7,9 @@
 
     const config = window.WPOlympiadConfig || {};
 
+    // 1.0.24: сколько ждём ответа /start, прежде чем вернуть кнопке жизнь.
+    const START_TIMEOUT_MS = 25000;
+
     class OlympiadRunner {
         constructor(wrapper) {
             this.wrapper = wrapper;
@@ -178,27 +181,37 @@
                 custom_fields: customValues,
             };
 
-            if (await this.offerResumeBeforeStart(payload)) {
-                return;
-            }
-
             if (this.startBtn) {
                 this.startBtn.disabled = true;
                 this.startBtn.textContent = '⏳ Загрузка заданий...';
             }
 
+            const restoreBtn = () => {
+                if (this.startBtn) {
+                    this.startBtn.disabled = false;
+                    this.startBtn.textContent = origBtnText || '🚀 Начать выполнение олимпиады';
+                }
+            };
+
             try {
-                const res = await this.apiPost('/start', payload, 'wp_olympiad_start');
+                // 1.0.24: диалог возврата выполняется внутри try — его сбой больше
+                // не оставляет клик без ответа, а участник уходит в обычный старт.
+                if (await this.offerResumeBeforeStart(payload, restoreBtn)) {
+                    return;
+                }
+
+                const res = await this.withTimeout(
+                    this.apiPost('/start', payload, 'wp_olympiad_start'),
+                    START_TIMEOUT_MS,
+                    'wpo_start_timeout'
+                );
                 if (!res.success) {
                     const msg = res.message || (res.data && res.data.message) || 'Не удалось начать олимпиаду.';
                     if (this.skipIntro && this.runnerScreen) {
                         this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-error" style="padding:24px; text-align:center; color:#991b1b; background:#fef2f2; border:1px solid #fecaca; border-radius:8px;"><strong>Ошибка:</strong> ${msg}</div>`;
                     } else {
                         alert(msg);
-                        if (this.startBtn) {
-                            this.startBtn.disabled = false;
-                            this.startBtn.textContent = origBtnText;
-                        }
+                        restoreBtn();
                     }
                     return;
                 }
@@ -210,22 +223,22 @@
                         this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-info" style="padding:24px; text-align:center; color:#1e40af; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">${noQMsg}</div>`;
                     } else {
                         alert(noQMsg);
-                        if (this.startBtn) this.startBtn.disabled = false;
+                        restoreBtn();
                     }
                     return;
                 }
                 this.writeResumeToken(payload.participant_email);
             } catch (err) {
                 console.error(err);
-                const errMsg = 'Сетевая ошибка при запуске олимпиады.';
+                const timedOut = !!(err && err.message === 'wpo_start_timeout');
+                const errMsg = timedOut
+                    ? 'Сервер не отвечает. Проверьте соединение и нажмите кнопку ещё раз — начатая попытка не потеряется.'
+                    : 'Сетевая ошибка при запуске олимпиады.';
                 if (this.skipIntro && this.runnerScreen) {
                     this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-error" style="padding:24px; text-align:center; color:#991b1b; background:#fef2f2; border:1px solid #fecaca; border-radius:8px;">${errMsg}</div>`;
                 } else {
                     alert(errMsg);
-                    if (this.startBtn) {
-                        this.startBtn.disabled = false;
-                        this.startBtn.textContent = '🚀 Начать выполнение олимпиады';
-                    }
+                    restoreBtn();
                 }
             }
         }
@@ -1847,26 +1860,55 @@
         }
 
         /** Есть ли несданная попытка — спросить участника до создания новой. */
-        async offerResumeBeforeStart(payload) {
+        async offerResumeBeforeStart(payload, onDismiss) {
             if (this.resumeChecked || this.isSubmitted) return false;
             const stored = this.readResumeRecord();
             const hinted = this.wrapper.dataset.resumable === '1';
             const byEmail = !!(payload && payload.participant_email);
             if (!stored && !hinted && !byEmail) return false;
 
-            const found = await this.probeResume({
-                token: stored && stored.token ? stored.token : '',
-                participant_name: payload ? payload.participant_name : '',
-                participant_email: payload ? payload.participant_email : ''
-            });
+            let found = null;
+            try {
+                found = await this.probeResume({
+                    token: stored && stored.token ? stored.token : '',
+                    participant_name: payload ? payload.participant_name : '',
+                    participant_email: payload ? payload.participant_email : ''
+                });
+            } catch (e) {
+                found = null;
+            }
             this.resumeChecked = true;
             if (!found) return false;
 
-            const continueAttempt = await this.showResumeDialog(found);
-            if (continueAttempt) {
-                if (this.startBtn) this.startBtn.disabled = false;
-                if (this.beginRun(found, true)) this.writeResumeToken(payload ? payload.participant_email : '');
-                return true;
+            let choice = null;
+            try {
+                choice = await this.showResumeDialog(found);
+            } catch (e) {
+                this.closeResumeDialog();
+                return false;
+            }
+
+            // Escape или клик мимо окна: участник отложил решение. Попытку не трогаем,
+            // кнопку возвращаем в работу — следующее нажатие стартует как обычно.
+            if (choice === null) {
+                if (typeof onDismiss === 'function') onDismiss();
+                return false;
+            }
+
+            if (choice) {
+                let started = false;
+                try {
+                    started = this.beginRun(found, true);
+                } catch (e) {
+                    started = false;
+                }
+                if (started) {
+                    this.writeResumeToken(payload ? payload.participant_email : '');
+                    return true;
+                }
+                // Продолжать нечего — не глотаем клик: предупреждаем и уходим в обычный старт.
+                this.notify('⚠️', 'Продолжить не удалось', 'Попытку не удалось восстановить — начинаем новую.');
+                return false;
             }
 
             await this.apiPost('/abandon', {
@@ -1883,18 +1925,43 @@
             if (!stored && this.wrapper.dataset.resumable !== '1') return;
 
             (async () => {
-                const found = await this.probeResume({ token: stored && stored.token ? stored.token : '' });
+                let found = null;
+                try {
+                    found = await this.probeResume({ token: stored && stored.token ? stored.token : '' });
+                } catch (e) {
+                    found = null;
+                }
                 if (!found) {
                     if (stored) { this.clearResumeToken(); this.clearLocalDraftByKey(stored.token); }
                     return;
                 }
-                const continueAttempt = await this.showResumeDialog(found);
-                if (continueAttempt) {
-                    this.resumeChecked = true;
-                    this.beginRun(found, true);
+                this.resumeChecked = true;
+
+                let choice = null;
+                try {
+                    choice = await this.showResumeDialog(found);
+                } catch (e) {
+                    this.closeResumeDialog();
+                    return;
+                }
+                if (choice === null) return;
+
+                if (choice) {
+                    let started = false;
+                    try {
+                        started = this.beginRun(found, true);
+                    } catch (e) {
+                        started = false;
+                    }
+                    if (!started) {
+                        this.notify('⚠️', 'Продолжить не удалось',
+                            'Попытку не удалось восстановить — нажмите «Начать выполнение олимпиады», чтобы начать заново.');
+                        return;
+                    }
                     this.writeResumeToken(stored && stored.email ? stored.email : '');
                     return;
                 }
+
                 await this.apiPost('/abandon', { token: found.token }, 'wp_olympiad_abandon').catch(() => {});
                 this.clearResumeToken();
             })().catch(() => {});
@@ -1913,11 +1980,14 @@
                 this.showAntiCheatToast('⛔', 'Время попытки вышло', data.message);
             }
             if (!res || res.success === false || !data.found || !data.token) return null;
+            // 1.0.24: заданий в попытке не осталось (организатор снял их с публикации) —
+            // продолжать нечего, а диалог только сломал бы клик по «Начать».
+            if (Array.isArray(data.questions) && data.questions.length === 0) return null;
             return data;
         }
 
         showResumeDialog(data) {
-            return new Promise((resolve) => {
+            return new Promise((resolve, reject) => {
                 const existing = document.querySelector('.wpo-resume-overlay');
                 if (existing) existing.remove();
 
@@ -1942,23 +2012,80 @@
                         <div class="wpo-resume-actions">
                             <button type="button" class="wpo-btn wpo-btn-primary wpo-resume-continue">Продолжить попытку</button>
                             <button type="button" class="wpo-btn wpo-btn-outline wpo-resume-restart">Начать заново</button>
+                            <button type="button" class="wpo-btn wpo-btn-outline wpo-resume-later">Решить позже</button>
                         </div>
-                        <p class="wpo-resume-note">«Начать заново» закроет эту попытку: написанное сохранится организатору без баллов и уйдёт на ручную проверку, а начнёте вы с чистого листа.</p>
+                        <p class="wpo-resume-note">«Начать заново» закроет эту попытку: написанное сохранится организатору без баллов и уйдёт на ручную проверку, а начнёте вы с чистого листа. «Решить позже» (или Esc) ничего не меняет — черновик останется на месте.</p>
                     </div>
                 `;
 
-                const close = (val) => {
+                const continueBtn = overlay.querySelector('.wpo-resume-continue');
+                const restartBtn = overlay.querySelector('.wpo-resume-restart');
+                if (!continueBtn || !restartBtn) {
                     overlay.remove();
-                    document.removeEventListener('keydown', onKey);
+                    reject(new Error('wpo_resume_dialog_incomplete'));
+                    return;
+                }
+
+                let settled = false;
+                let onKey = null;
+                const close = (val) => {
+                    if (settled) return;
+                    settled = true;
+                    overlay.remove();
+                    if (onKey) document.removeEventListener('keydown', onKey);
                     resolve(val);
                 };
-                const onKey = (e) => { if (e.key === 'Escape') close(false); };
+                onKey = (e) => { if (e.key === 'Escape') close(null); };
 
-                overlay.querySelector('.wpo-resume-continue').addEventListener('click', () => close(true));
-                overlay.querySelector('.wpo-resume-restart').addEventListener('click', () => close(false));
-                overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+                continueBtn.addEventListener('click', () => close(true));
+                restartBtn.addEventListener('click', () => close(false));
+                const laterBtn = overlay.querySelector('.wpo-resume-later');
+                if (laterBtn) laterBtn.addEventListener('click', () => close(null));
+                // Мимо окна — «решить позже», а не «начать заново»: закрытие попытки не должно
+                // случаться от случайного нажатия.
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
                 document.addEventListener('keydown', onKey);
                 document.body.appendChild(overlay);
+            });
+        }
+
+        closeResumeDialog() {
+            const open = document.querySelector('.wpo-resume-overlay');
+            if (open) open.remove();
+        }
+
+        /** Тост, если он доступен; иначе — только в консоль: тихий отказ недопустим в UI-ветке. */
+        notify(icon, title, msg) {
+            if (typeof this.showAntiCheatToast === 'function') {
+                this.showAntiCheatToast(icon, title, msg);
+                return;
+            }
+            if (window.console && window.console.warn) window.console.warn(title + '. ' + msg);
+        }
+
+        /** Промис с предельным временем ожидания: зависший запрос не должен запирать кнопку. */
+        withTimeout(promise, ms, marker) {
+            return new Promise((resolve, reject) => {
+                let settled = false;
+                const timer = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    reject(new Error(marker || 'wpo_timeout'));
+                }, ms);
+                Promise.resolve(promise).then(
+                    (value) => {
+                        if (settled) return;
+                        settled = true;
+                        clearTimeout(timer);
+                        resolve(value);
+                    },
+                    (err) => {
+                        if (settled) return;
+                        settled = true;
+                        clearTimeout(timer);
+                        reject(err);
+                    }
+                );
             });
         }
 
