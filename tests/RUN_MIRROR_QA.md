@@ -38,6 +38,19 @@
 10. зеркало чужой олимпиады: игнорируется, запросов нет;
 11. зеркало старше суток: сервер не дёргается, запись удалена.
 
+## Второй харнесс: `tests/e2e/dom-skip-intro-check.mjs` (16 проверок)
+
+Отдельный прогон для режима «без стартовой формы» (`data-skip-intro="1"`), где страница сама
+запускает попытку при загрузке — именно там риск «F5 заводит вторую попытку» максимальный.
+Покрыто: авто-старт делает ровно один `/start` и заводит зеркало; после `F5` `/start` не
+вызывается вовсе, попытка проверена `/heartbeat`, ответ отмечен в форме, отсчёт идёт с
+серверного остатка (05:00), сдача уезжает с восстановленным ответом и чистит зеркало; если
+попытка на сервере уже сдана — авто-старт всё равно состоитя (участник не зависает); при
+сетевом сбое зеркало сохраняется. Исключений нет ни в одном сценарии.
+
+**Внимание:** этот харнесс добавлен уже после публикации 1.0.27 и в архив того релиза не
+попал — он описывает тот же код, что и `dom-reload-check.mjs`, но приедет в следующем релизе.
+
 ## Команды повтора
 
 ```bash
@@ -46,12 +59,14 @@ mkdir -p /home/user/qa/deps && cd /home/user/qa/deps && npm i jsdom
 
 cd /home/user/wordprees
 node tests/e2e/dom-reload-check.mjs                       # ожидание: «проверок: 48, провалов: 0»
+node tests/e2e/dom-skip-intro-check.mjs                   # ожидание: «проверок: 16, провалов: 0»
 
 # negative control: на фронте 1.0.26 харнесс обязан валиться
 git show v1.0.26:public/js/olympiad-frontend.js > /tmp/fe.js
 cp public/js/olympiad-frontend.js /tmp/fe.keep
 cp /tmp/fe.js public/js/olympiad-frontend.js
-node tests/e2e/dom-reload-check.mjs                        # ожидание: провалы есть
+node tests/e2e/dom-reload-check.mjs                        # ожидание: 21 провал
+node tests/e2e/dom-skip-intro-check.mjs                    # ожидание: 8 провалов
 cp /tmp/fe.keep public/js/olympiad-frontend.js
 
 php wp-cli.phar eval-file wp-content/plugins/wp-olympiad/tests/test-suite.php --allow-root
