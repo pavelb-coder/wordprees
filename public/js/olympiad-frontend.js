@@ -7,6 +7,11 @@
 
     const config = window.WPOlympiadConfig || {};
 
+    // 1.0.27: зеркало прохождения в localStorage. Ключ, лимиты и версия записи.
+    const MIRROR_VERSION = 1;
+    const MIRROR_MAX_BYTES = 1500000;
+    const MIRROR_MAX_AGE_MS = 86400000;
+
     class OlympiadRunner {
         constructor(wrapper) {
             this.wrapper = wrapper;
@@ -35,6 +40,16 @@
             this.groupTimerInterval = null;
 
             this.initDOM();
+
+            // 1.0.27: восстановление прерванного перезагрузкой прохождения. Запускается
+            // до bindEvents(): и авто-старт (skipIntro), и клик по кнопке «Начать» сначала
+            // дожидаются его результата — иначе на F5 создавалась бы вторая попытка
+            // поверх той, ответы которой лежат в localStorage.
+            this.mirrorInterval = null;
+            this.mirrorDisabled = false;
+            this.runPayload = null;
+            this.restorePromise = this.tryRestoreRun();
+
             this.bindEvents();
         }
 
@@ -115,6 +130,14 @@
         }
 
         async handleStart() {
+            if (this.restorePromise) {
+                const restored = await this.restorePromise;
+                this.restorePromise = null;
+                if (restored) {
+                    return;
+                }
+            }
+
             if (!this.skipIntro) {
                 const form = this.wrapper.querySelector('.wpo-start-form');
                 if (form && !form.checkValidity()) {
@@ -186,49 +209,11 @@
                 }
 
                 const data = res.data || res;
-                this.token = data.token;
-                this.timeLimit = data.time_limit || 0;
-                this.showQuestionPoints = data.show_question_points !== undefined ? Boolean(data.show_question_points) : true;
-                this.questions = data.questions || [];
-                this.sharedTexts = data.shared_texts || {};
-                this.antiCheat = data.anti_cheat || this.antiCheat;
-                const perPage = parseInt(data.questions_per_page, 10);
-                this.questionsPerPage = perPage > 1 ? perPage : 1;
-                this.questionGroups = Array.isArray(data.question_groups) ? data.question_groups : [];
-                this.groupDefs = {};
-                this.questionGroups.forEach((g) => {
-                    if (g && g.key) this.groupDefs[g.key] = g;
-                });
-                this.buildPages();
-
-                if (this.questions.length === 0) {
-                    const noQMsg = 'В этой олимпиаде пока нет вопросов.';
-                    if (this.skipIntro && this.runnerScreen) {
-                        this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-info" style="padding:24px; text-align:center; color:#1e40af; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">${noQMsg}</div>`;
-                    } else {
-                        alert(noQMsg);
-                        if (this.startBtn) this.startBtn.disabled = false;
-                    }
+                const ok = this.applyRunData(data, null);
+                if (!ok) {
                     return;
                 }
-
-                // Switch screen
-                if (this.introScreen) this.introScreen.style.display = 'none';
-                if (this.runnerScreen) this.runnerScreen.style.display = 'block';
-
-                const loadingEl = this.runnerScreen ? this.runnerScreen.querySelector('.wpo-runner-loading') : null;
-                if (loadingEl) loadingEl.style.display = 'none';
-
-                if (this.counterTotal) {
-                    this.counterTotal.textContent = this.questions.length;
-                }
-
-                this.initAntiCheat();
-                this.initTimer();
-                this.initGroupTimers();
-                this.renderNavStrip();
-                this.renderQuestion(0);
-                this.openCurrentGroup();
+                this.startMirror();
             } catch (err) {
                 console.error(err);
                 const errMsg = 'Сетевая ошибка при запуске олимпиады.';
@@ -242,6 +227,276 @@
                     }
                 }
             }
+        }
+
+        // 1.0.27: применение ответа /start — общая часть обычного старта и восстановления
+        // после перезагрузки страницы. false — показывать нечего (вопросов нет), экран
+        // остаётся на стартовой форме. remaining — остаток времени в секундах от сервера
+        // (при восстановлении), чтобы F5 не обнулял личный лимит участника.
+        applyRunData(data, remaining) {
+            this.runPayload = data;
+            this.token = data.token;
+            this.timeLimit = data.time_limit || 0;
+            this.showQuestionPoints = data.show_question_points !== undefined ? Boolean(data.show_question_points) : true;
+            this.questions = data.questions || [];
+            this.sharedTexts = data.shared_texts || {};
+            this.antiCheat = data.anti_cheat || this.antiCheat;
+            const perPage = parseInt(data.questions_per_page, 10);
+            this.questionsPerPage = perPage > 1 ? perPage : 1;
+            this.questionGroups = Array.isArray(data.question_groups) ? data.question_groups : [];
+            this.groupDefs = {};
+            this.questionGroups.forEach((g) => {
+                if (g && g.key) this.groupDefs[g.key] = g;
+            });
+            this.buildPages();
+
+            if (this.questions.length === 0) {
+                const noQMsg = 'В этой олимпиаде пока нет вопросов.';
+                if (this.skipIntro && this.runnerScreen) {
+                    this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-info" style="padding:24px; text-align:center; color:#1e40af; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">${noQMsg}</div>`;
+                } else {
+                    alert(noQMsg);
+                    if (this.startBtn) this.startBtn.disabled = false;
+                }
+                return false;
+            }
+
+            // Switch screen
+            if (this.introScreen) this.introScreen.style.display = 'none';
+            if (this.runnerScreen) this.runnerScreen.style.display = 'block';
+
+            const loadingEl = this.runnerScreen ? this.runnerScreen.querySelector('.wpo-runner-loading') : null;
+            if (loadingEl) loadingEl.style.display = 'none';
+
+            if (this.counterTotal) {
+                this.counterTotal.textContent = this.questions.length;
+            }
+
+            this.initAntiCheat();
+            this.initTimer(remaining);
+            this.initGroupTimers();
+            this.renderNavStrip();
+            this.renderQuestion(0);
+            this.openCurrentGroup();
+            return true;
+        }
+
+        // ── 1.0.27: зеркало прохождения в localStorage ────────────────────────
+        // Только этот браузер, только это устройство: на сервер ничего не пишется,
+        // новых колонок и эндпоинтов нет. Хранится токен попытки, payload /start
+        // (он и так отдан участнику) и введённые ответы — всё, чтобы после F5
+        // молча вернуть участника в ту же попытку на том же вопросе.
+
+        mirrorKey() {
+            return 'wpo-run-v1:' + this.quizId;
+        }
+
+        storageOk() {
+            if (typeof localStorage === 'undefined' || localStorage === null) return false;
+            if (this._storageOk !== undefined) return this._storageOk;
+            try {
+                const probe = 'wpo-probe';
+                localStorage.setItem(probe, '1');
+                localStorage.removeItem(probe);
+                this._storageOk = true;
+            } catch (e) {
+                this._storageOk = false;
+            }
+            return this._storageOk;
+        }
+
+        startMirror() {
+            if (this.mirrorDisabled || !this.storageOk()) return;
+            this.recordMirror();
+            this._mirrorOnInput = () => this.scheduleMirror(350);
+            if (this.runnerScreen) {
+                this.runnerScreen.addEventListener('input', this._mirrorOnInput, true);
+                this.runnerScreen.addEventListener('change', this._mirrorOnInput, true);
+            }
+            this._mirrorOnHide = () => this.recordMirror();
+            window.addEventListener('pagehide', this._mirrorOnHide);
+            document.addEventListener('visibilitychange', this._mirrorOnHide);
+            if (this.mirrorInterval) clearInterval(this.mirrorInterval);
+            this.mirrorInterval = setInterval(() => this.recordMirror(), 3000);
+        }
+
+        stopMirror() {
+            if (this.mirrorInterval) {
+                clearInterval(this.mirrorInterval);
+                this.mirrorInterval = null;
+            }
+            if (this._mirrorDebounce) {
+                clearTimeout(this._mirrorDebounce);
+                this._mirrorDebounce = null;
+            }
+            if (this._mirrorOnInput) {
+                if (this.runnerScreen) {
+                    this.runnerScreen.removeEventListener('input', this._mirrorOnInput, true);
+                    this.runnerScreen.removeEventListener('change', this._mirrorOnInput, true);
+                }
+                this._mirrorOnInput = null;
+            }
+            if (this._mirrorOnHide) {
+                window.removeEventListener('pagehide', this._mirrorOnHide);
+                document.removeEventListener('visibilitychange', this._mirrorOnHide);
+                this._mirrorOnHide = null;
+            }
+        }
+
+        scheduleMirror(delayMs) {
+            if (this._mirrorDebounce || this.mirrorDisabled) return;
+            this._mirrorDebounce = setTimeout(() => {
+                this._mirrorDebounce = null;
+                this.recordMirror();
+            }, delayMs);
+        }
+
+        recordMirror() {
+            if (!this.token || this.isSubmitting || this.mirrorDisabled || !this.storageOk()) return;
+            let raw = '';
+            try {
+                raw = JSON.stringify({
+                    v: MIRROR_VERSION,
+                    quiz_id: this.quizId,
+                    token: this.token,
+                    saved_at: Date.now(),
+                    index: this.currentIndex,
+                    flagged: Array.from(this.flagged || []),
+                    answers: this.answers,
+                    run: this.runPayload
+                });
+            } catch (e) {
+                return;
+            }
+            if (raw.length > MIRROR_MAX_BYTES) {
+                // Слишком объёмное прохождение (гигантские тексты заданий) — в
+                // localStorage не лезем: поведение остаётся как в 1.0.21.
+                this.mirrorDisabled = true;
+                this.stopMirror();
+                return;
+            }
+            try {
+                localStorage.setItem(this.mirrorKey(), raw);
+            } catch (e) {
+                // Квота исчерпана или хранилище заблокировано — больше не пробуем.
+                this.mirrorDisabled = true;
+                this.stopMirror();
+            }
+        }
+
+        clearMirror() {
+            if (!this.storageOk()) return;
+            try {
+                localStorage.removeItem(this.mirrorKey());
+            } catch (e) {
+                // игнорируем: хуже от этого не станет
+            }
+        }
+
+        readMirror() {
+            if (!this.storageOk()) return null;
+            let raw = null;
+            try {
+                raw = localStorage.getItem(this.mirrorKey());
+            } catch (e) {
+                return null;
+            }
+            if (!raw) return null;
+            let m = null;
+            try {
+                m = JSON.parse(raw);
+            } catch (e) {
+                this.clearMirror();
+                return null;
+            }
+            const valid = m
+                && m.v === MIRROR_VERSION
+                && parseInt(m.quiz_id, 10) === this.quizId
+                && typeof m.token === 'string' && m.token !== ''
+                && m.run && typeof m.run === 'object'
+                && Array.isArray(m.run.questions) && m.run.questions.length > 0
+                && m.saved_at && (Date.now() - parseInt(m.saved_at, 10)) <= MIRROR_MAX_AGE_MS;
+            if (!valid) {
+                this.clearMirror();
+                return null;
+            }
+            return m;
+        }
+
+        // Жива ли попытка на сервере. Отдельно от apiPost: тот любую сетевую
+        // ошибку превращает в success:false, а для зеркала это принципиально
+        // разные случаи — «попытки нет» (чистим) и «не удалось спросить» (храним).
+        async pingAttempt(token) {
+            if (!config.restUrl || typeof fetch !== 'function') {
+                return { status: 'unknown' };
+            }
+            let res = null;
+            try {
+                res = await fetch(config.restUrl + '/heartbeat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-WP-Nonce': config.restNonce || ''
+                    },
+                    body: JSON.stringify({ token: token })
+                });
+            } catch (e) {
+                return { status: 'unknown' };
+            }
+            if (!res) return { status: 'unknown' };
+            let json = null;
+            try {
+                json = await res.json();
+            } catch (e) {
+                json = null;
+            }
+            if (res.ok && json && json.success !== false) {
+                const data = json.data || json;
+                if (data && data.disqualified) {
+                    return { status: 'dead' };
+                }
+                return {
+                    status: 'alive',
+                    remaining: (data && typeof data.remaining_seconds === 'number') ? data.remaining_seconds : null
+                };
+            }
+            // 400/403/404 — сервер знает, что попытка уже сдана или её нет.
+            if (res.status === 400 || res.status === 403 || res.status === 404) {
+                return { status: 'dead' };
+            }
+            return { status: 'unknown' };
+        }
+
+        async tryRestoreRun() {
+            const m = this.readMirror();
+            if (!m) return false;
+
+            const probe = await this.pingAttempt(m.token);
+            if (probe.status === 'unknown') {
+                // Сервер не ответил (сеть, 500) — зеркало не трогаем: написанное
+                // дороже, участник начнёт как обычно и вернётся к нему же.
+                return false;
+            }
+            if (probe.status === 'dead') {
+                // Попытка сдана или её нет — зеркало больше не нужно.
+                this.clearMirror();
+                return false;
+            }
+
+            this.runPayload = m.run;
+            const remaining = probe.remaining;
+            if (!this.applyRunData(m.run, remaining)) {
+                this.clearMirror();
+                return false;
+            }
+            this.answers = (m.answers && typeof m.answers === 'object') ? m.answers : {};
+            this.flagged = new Set(Array.isArray(m.flagged) ? m.flagged : []);
+            const idx = parseInt(m.index, 10);
+            this.currentIndex = (isFinite(idx) && idx >= 0 && idx < this.questions.length) ? idx : 0;
+            this.renderQuestion(this.currentIndex);
+            this.updateNavState();
+            this.startMirror();
+            return true;
         }
 
         initAntiCheat() {
@@ -343,6 +598,11 @@
                 const res = await this.apiPost('/heartbeat', hbPayload, 'wp_olympiad_heartbeat');
 
                 const data = res.data || res;
+                if (this.timeLimit > 0 && typeof data.remaining_seconds === 'number'
+                    && data.remaining_seconds >= 0 && data.remaining_seconds < 999999) {
+                    this.remainingSeconds = Math.floor(data.remaining_seconds);
+                    this.updateTimerDisplay();
+                }
                 if (data.disqualified) {
                     this.showDisqualificationModal(data.message || 'Вы дисквалифицированы за превышение переключений вкладок.');
                     this.submitAnswers(true);
@@ -352,13 +612,17 @@
             }
         }
 
-        initTimer() {
+        initTimer(remaining) {
             if (this.timeLimit <= 0) {
                 if (this.timerBox) this.timerBox.style.display = 'none';
                 return;
             }
 
-            this.remainingSeconds = this.timeLimit * 60;
+            // 1.0.27: при восстановлении после перезагрузки отсчёт продолжается — сервер
+            // отдаёт остаток в /heartbeat, и заново полные N минут участник себе не выбивает.
+            this.remainingSeconds = (typeof remaining === 'number' && isFinite(remaining) && remaining >= 0 && remaining < 999999)
+                ? Math.max(0, Math.floor(remaining))
+                : this.timeLimit * 60;
             this.updateTimerDisplay();
 
             this.timerInterval = setInterval(() => {
@@ -512,12 +776,14 @@
                 this.flagged.add(currentQ.id);
             }
             this.updateNavState();
+            this.recordMirror();
         }
 
         navigate(newIndex) {
             if (newIndex < 0 || newIndex >= this.questions.length) return;
             this.currentIndex = newIndex;
             this.renderCurrent();
+            this.recordMirror();
         }
 
         /** Шаг перелистывания: один вопрос или вся страница пачки. */
@@ -1582,6 +1848,11 @@
                 }
 
                 const data = res.data || res;
+                // 1.0.27: работа сдана — зеркало в localStorage убираем, чтобы
+                // следующая перезагрузка не пыталась вернуть участника в попытку,
+                // которой уже нет.
+                this.stopMirror();
+                this.clearMirror();
                 this.renderResults(data);
             } catch (err) {
                 console.error(err);

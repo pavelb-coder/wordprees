@@ -1,0 +1,85 @@
+{
+    "success": true,
+    "token": "htuAIXz6Rt7zSjJ7gi2E3ziQDoOjHnf6",
+    "time_limit": 20,
+    "show_question_points": true,
+    "questions": [
+        {
+            "id": 598,
+            "question_type": "single",
+            "title": "Столица России?",
+            "content": "",
+            "points": 2,
+            "penalty": 0,
+            "sort_order": 0,
+            "is_required": true,
+            "shuffle_answers": true,
+            "group_name": "",
+            "show_points": null,
+            "shared_text_id": "",
+            "choices": [
+                {
+                    "id": "c1",
+                    "text": "Москва"
+                },
+                {
+                    "id": "c2",
+                    "text": "Питер"
+                }
+            ]
+        },
+        {
+            "id": 599,
+            "question_type": "text",
+            "title": "Площадь квадрата со стороной a",
+            "content": "",
+            "points": 3,
+            "penalty": 0,
+            "sort_order": 0,
+            "is_required": false,
+            "shuffle_answers": true,
+            "group_name": "",
+            "show_points": null,
+            "shared_text_id": "",
+            "placeholder": "Введите краткий ответ..."
+        },
+        {
+            "id": 600,
+            "question_type": "multi",
+            "title": "Что является простым числом?",
+            "content": "",
+            "points": 4,
+            "penalty": 0,
+            "sort_order": 0,
+            "is_required": false,
+            "shuffle_answers": true,
+            "group_name": "",
+            "show_points": null,
+            "shared_text_id": "",
+            "choices": [
+                {
+                    "id": "m2",
+                    "text": "4"
+                },
+                {
+                    "id": "m3",
+                    "text": "5"
+                },
+                {
+                    "id": "m1",
+                    "text": "2"
+                }
+            ]
+        }
+    ],
+    "shared_texts": [],
+    "custom_fields": [],
+    "question_groups": [],
+    "questions_per_page": 0,
+    "anti_cheat": {
+        "copy": true,
+        "blur": true,
+        "max_tab_switches": 5,
+        "popup_warnings": true
+    }
+}
