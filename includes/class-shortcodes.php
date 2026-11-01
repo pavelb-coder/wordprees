@@ -593,6 +593,12 @@ final class Shortcodes
             'order'   => 'DESC',
         ]);
 
+        // 1.0.29: сброшенные из-за закрытого браузера попытки участнику не показываются:
+        // это не сдача, а написанное в них организатор видит в протоколе.
+        $attempts = array_values(array_filter($attempts, static function ($att): bool {
+            return (string)($att->status ?? '') !== 'browser_closed';
+        }));
+
         ob_start();
         ?>
         <div class="wpo-my-results-container">

@@ -98,6 +98,7 @@ if (!defined('ABSPATH')) {
                 <option value="needs_review" <?php selected($status, 'needs_review'); ?>><?php esc_html_e('Требует проверки жюри', 'wp-olympiad'); ?></option>
                 <option value="in_progress" <?php selected($status, 'in_progress'); ?>><?php esc_html_e('В процессе', 'wp-olympiad'); ?></option>
                 <option value="disqualified" <?php selected($status, 'disqualified'); ?>><?php esc_html_e('Дисквалифицирован', 'wp-olympiad'); ?></option>
+                <option value="browser_closed" <?php selected($status, 'browser_closed'); ?>><?php esc_html_e('Сброшена: страница была закрыта', 'wp-olympiad'); ?></option>
             </select>
 
             <button type="submit" class="button"><?php esc_html_e('Применить', 'wp-olympiad'); ?></button>
@@ -186,7 +187,7 @@ if (!defined('ABSPATH')) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <span class="wpo-badge <?php echo $att->status === 'needs_review' ? 'wpo-badge-review' : (in_array($att->status, ['expired', 'disqualified'], true) ? 'wpo-badge-fail' : 'wpo-badge-completed'); ?>"><?php echo esc_html($att->get_status_label()); ?></span>
+                                    <span class="wpo-badge <?php echo $att->status === 'needs_review' ? 'wpo-badge-review' : (in_array($att->status, ['expired', 'disqualified', 'browser_closed'], true) ? 'wpo-badge-fail' : 'wpo-badge-completed'); ?>"><?php echo esc_html($att->get_status_label()); ?></span><?php if ((int)$att->closed_seconds > 0): ?><br><span class="description"><?php echo esc_html(sprintf('отсутствие %d мин', max(1, (int)round($att->closed_seconds / 60)))); ?></span><?php endif; ?>
                                 </td>
                                 <td style="text-align:right;">
                                     <div style="display:inline-flex; gap:4px; align-items:center;">

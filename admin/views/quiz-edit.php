@@ -23,6 +23,8 @@ $completion_message = $is_new ? 'Спасибо за участие! Ваши о
 $anti_cheat_copy = $is_new ? 1 : (int)$quiz->get_setting('anti_cheat_copy', 1);
 $anti_cheat_blur = $is_new ? 1 : (int)$quiz->get_setting('anti_cheat_blur', 1);
 $max_tab_switches = $is_new ? 5 : (int)$quiz->get_setting('max_tab_switches', 5);
+$reset_on_browser_close = $is_new ? 0 : (int)$quiz->get_setting('reset_on_browser_close', 0);
+$browser_close_timeout = $is_new ? 120 : max(30, (int)$quiz->get_setting('browser_close_timeout', 120));
 $anti_cheat_popup_warnings = $is_new ? 1 : (int)$quiz->get_setting('anti_cheat_popup_warnings', 1);
 $allow_external_embed = $is_new ? 1 : (int)$quiz->get_setting('allow_external_embed', 1);
 $webhook_url = $is_new ? '' : (string)$quiz->get_setting('webhook_url', '');
@@ -473,6 +475,18 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <td>
                                 <input type="number" name="max_tab_switches" id="max_tab_switches" value="<?php echo esc_attr((string)$max_tab_switches); ?>" min="0" max="50" step="1" class="small-text">
                                 <p class="description"><?php esc_html_e('При превышении лимита попытка автоматически дисквалифицируется. 0 — только протоколировать без дисквалификации.', 'wp-olympiad'); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Сброс при закрытом браузере:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <label>
+                                    <input type="checkbox" name="reset_on_browser_close" value="1" <?php checked($reset_on_browser_close, 1); ?>>
+                                    <?php esc_html_e('Аннулировать попытку, если страница молчала дольше порога', 'wp-olympiad'); ?>
+                                </label>
+                                <label for="browser_close_timeout" style="display:block;margin-top:8px;"><?php esc_html_e('Порог молчания страницы, секунд:', 'wp-olympiad'); ?></label>
+                                <input type="number" name="browser_close_timeout" id="browser_close_timeout" value="<?php echo esc_attr((string)$browser_close_timeout); ?>" min="30" max="21600" step="30" class="small-text">
+                                <p class="description"><?php esc_html_e('Сигнал жизни приходит каждые 30 секунд, поэтому переключение вкладки (максимум около минуты) и перезагрузка страницы (несколько секунд) паузой не считаются: время при них идёт так же, как раньше. Если сигналов не было дольше порога, текущая попытка помечается как сброшенная: написанное остаётся в базе и видно в протоколе, а участник начинает новую попытку с полным лимитом и чистыми ответами. Включайте осознанно: такая попытка не засчитывается в лимит число повторов, зато уже написанное обнуляется.', 'wp-olympiad'); ?></p>
                             </td>
                         </tr>
                         <tr>

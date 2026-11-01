@@ -96,6 +96,7 @@ final class Export
             'needs_review' => 'На проверке',
             'expired'      => 'Истекло время',
             'disqualified' => 'Дисквалифицирован',
+            'browser_closed' => 'Сброшена: страница была закрыта',
         ];
 
         // Batch fetch all responses for these attempts to prevent N+1 queries

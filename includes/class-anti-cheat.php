@@ -94,8 +94,61 @@ final class AntiCheat
      *     message: string
      * }
      */
+    /**
+     * 1.0.29: «браузер закрыт» = разрыв между сигналами страницы длиннее порога.
+     *
+     * Порог настраивается в олимпиаде, и он заведомо больше и F5 (разрыв в секунды),
+     * и фоновой вкладки (браузер прореживает таймеры примерно до раза в минуту, но
+     * heartbeat продолжает приходить). Отсчёт — только от серверной отметки
+     * last_seen_at, часам клиента мы не доверяем.
+     *
+     * @return array{enabled:bool,threshold:int,gap:int,reset:bool}
+     */
+    public static function browser_close_gap(Attempt $attempt, Quiz $quiz): array
+    {
+        $enabled = (int)$quiz->get_setting('reset_on_browser_close', 0) === 1;
+        $threshold = (int)$quiz->get_setting('browser_close_timeout', 120);
+        if ($threshold <= 0) {
+            // Настройка пуста или обнулена — работаем порогом по умолчанию,
+            // а не превращаем сброс в «пауза на 30 секунд».
+            $threshold = 120;
+        }
+        $threshold = max(30, min(6 * HOUR_IN_SECONDS, $threshold));
+        if (!$enabled || $attempt->last_seen_at === '' || $attempt->status !== 'in_progress') {
+            return ['enabled' => $enabled, 'threshold' => $threshold, 'gap' => 0, 'reset' => false];
+        }
+        $ref = strtotime($attempt->last_seen_at);
+        if ($ref === false || $ref <= 0) {
+            return ['enabled' => true, 'threshold' => $threshold, 'gap' => 0, 'reset' => false];
+        }
+        $gap = max(0, current_time('timestamp') - $ref);
+        return [
+            'enabled'   => true,
+            'threshold' => $threshold,
+            'gap'       => $gap,
+            'reset'     => $gap >= $threshold,
+        ];
+    }
+
     public static function process_heartbeat(Attempt $attempt, Quiz $quiz, bool $tab_switched = false): array
     {
+        // 1.0.29: сначала проверяем паузу — если страница молчала дольше порога,
+        // попытка аннулируется и отвечать остатком времени уже нечего.
+        $pause = self::browser_close_gap($attempt, $quiz);
+        if ($pause['reset'] && $attempt->close_as_abandoned((int)$pause['gap'])) {
+            return [
+                'status'            => 'browser_closed',
+                'remaining_seconds' => 0,
+                'tab_switches'      => (int)$attempt->tab_switches,
+                'disqualified'      => false,
+                'closed_after'      => (int)$pause['gap'],
+                'message'           => sprintf(
+                    __('Страница была закрыта %d мин, попытка сброшена.', 'wp-olympiad'),
+                    max(1, (int)round($pause['gap'] / 60))
+                ),
+            ];
+        }
+        $attempt->touch_last_seen();
         $time_limit = (int)$quiz->get_setting('time_limit', 0);
         $remaining = $attempt->get_remaining_seconds($time_limit);
 

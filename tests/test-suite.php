@@ -4384,6 +4384,7 @@ require __DIR__ . '/test-rules-enforcement.php';
 require __DIR__ . '/test-questionnaire-groups.php';
 require __DIR__ . '/test-participant-clamp.php';
 require __DIR__ . '/test-run-mirror.php';
+require __DIR__ . '/test-browser-close-reset.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

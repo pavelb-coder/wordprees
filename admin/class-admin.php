@@ -181,6 +181,10 @@ final class Admin
                     'anti_cheat_copy'   => !empty($_POST['anti_cheat_copy']) ? 1 : 0,
                     'anti_cheat_blur'   => !empty($_POST['anti_cheat_blur']) ? 1 : 0,
                     'max_tab_switches'  => max(0, (int)($_POST['max_tab_switches'] ?? 5)),
+                    // 1.0.29: сброс попытки при закрытом браузере. Порог не опускаем
+                    // ниже 30 с, чтобы F5 не давал паузу, и не поднимаем выше 6 часов.
+                    'reset_on_browser_close' => !empty($_POST['reset_on_browser_close']) ? 1 : 0,
+                    'browser_close_timeout' => min(6 * HOUR_IN_SECONDS, max(30, (int)($_POST['browser_close_timeout'] ?? 120))),
                     'anti_cheat_popup_warnings' => !empty($_POST['anti_cheat_popup_warnings']) ? 1 : 0,
                     'allow_external_embed' => !empty($_POST['allow_external_embed']) ? 1 : 0,
                     // Имя прямой внешней ссылки (пусто = ссылка по номеру олимпиады).

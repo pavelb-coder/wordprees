@@ -68,8 +68,11 @@ $it('Фронтенд: зеркало прохождения пишется, ч�
     $qq(strpos($js, "if (probe.status === 'unknown') {") !== false, 'Восстановление не различает unknown и dead');
     $qq(strpos($js, 'config.restUrl + chr(39) + /heartbeat') === false && strpos($js, "config.restUrl + '/heartbeat'") !== false,
         'Проверка попытки уходит не на /heartbeat');
+    // Шесть мест: успех восстановления не чистит, чистят — dead/unknown-исключения,
+    // успешная сдача, отсутствие попытки, провал applyRunData и (1.0.29) сброс
+    // попытки за закрытый браузер в handleRunClosed().
     $qq(
-        substr_count($js, 'this.clearMirror();') === 5,
+        substr_count($js, 'this.clearMirror();') === 6,
         'Неожиданное число очисток зеркала',
         (string)substr_count($js, 'this.clearMirror();')
     );

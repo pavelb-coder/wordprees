@@ -75,6 +75,8 @@ final class Quiz
             'anti_cheat_copy'     => 1,         // 1 = disable copy & right click
             'anti_cheat_blur'     => 1,         // 1 = track tab switches
             'max_tab_switches'    => 5,         // 0 = just log, >0 = limit
+            'reset_on_browser_close' => 0,      // 1.0.29: 1 = аннулировать попытку, если страница молчала дольше порога
+            'browser_close_timeout'  => 120,    // 1.0.29: порог молчания в секундах (30 .. 6 часов)
             'anti_cheat_popup_warnings' => 1,   // 1 = show popup toast & modal warnings on anti-cheat triggers
             'allow_external_embed'=> 1,         // 1 = allow iframe embedding on external sites
             'link_alias'          => '',        // Human readable name used in the public runner link instead of the numeric id

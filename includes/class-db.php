@@ -92,6 +92,8 @@ CREATE TABLE {$attempts_table} (
     participant_city varchar(150) NOT NULL DEFAULT '',
     participant_meta longtext NOT NULL,
     started_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+    last_seen_at datetime DEFAULT NULL,
+    closed_seconds int(11) NOT NULL DEFAULT 0,
     submitted_at datetime DEFAULT NULL,
     duration_seconds int(11) NOT NULL DEFAULT 0,
     tab_switches int(11) NOT NULL DEFAULT 0,

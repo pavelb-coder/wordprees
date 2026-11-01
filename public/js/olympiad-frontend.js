@@ -61,6 +61,8 @@
             this.skipIntro = this.wrapper.dataset.skipIntro === '1';
 
             this.startBtn = this.wrapper.querySelector('.wpo-btn-start');
+            // 1.0.29: подпись кнопки нужна, чтобы вернуть её после сброса попытки.
+            this.startBtnLabel = this.startBtn ? this.startBtn.textContent : '';
             this.navStrip = this.wrapper.querySelector('.wpo-nav-strip');
             this.qContainer = this.wrapper.querySelector('.wpo-question-container');
             this.progressBar = this.wrapper.querySelector('.wpo-progress-bar');
@@ -506,6 +508,36 @@
         // продолжать клиентский отсчёт, а сразу сверить его с сервером: иначе до
         // ближайшего heartbeat (30 с) участник видит больше, чем у него осталось.
         // Дедлайн эта правка не меняет — только честность цифр на экране.
+        /**
+         * 1.0.29: попытка сброшена сервером (браузер был закрыт дольше порога).
+         * Снимаем зеркало и все слушатели, гасим таймеры, показываем стартовую
+         * форму. Написанное в этой попытке уже не вернётся: оно осталось в базе
+         * со статусом «сброшена» и доступно организатору в протоколе.
+         */
+        handleRunClosed() {
+            if (!this.token || this.resultsShown) return;
+            this.stopMirror();
+            this.clearMirror();
+            this.stopRemainingOnReturn();
+            this.pauseSubmitTimers();
+            this.token = null;
+            this.questions = [];
+            this.answers = {};
+            this.flagged = new Set();
+            this.currentIndex = 0;
+            this.runPayload = null;
+            if (this.runnerScreen) this.runnerScreen.style.display = 'none';
+            if (this.resultsScreen) this.resultsScreen.style.display = 'none';
+            if (this.introScreen) this.introScreen.style.display = '';
+            // Кнопка старта после успешного запуска остаётся отключённой (так и
+            // задумано), поэтому после сброса возвращаем её в исходный вид —
+            // иначе новую попытку было бы нечем начать.
+            if (this.startBtn) {
+                this.startBtn.disabled = false;
+                this.startBtn.textContent = this.startBtnLabel;
+            }
+        }
+
         syncRemainingOnReturn() {
             if (this._returnSyncBound) return;
             this._returnSyncBound = true;
@@ -627,6 +659,14 @@
                 const currentGroup = this.groupOf(this.currentIndex);
                 if (currentGroup) hbPayload.group = currentGroup;
                 const res = await this.apiPost('/heartbeat', hbPayload, 'wp_olympiad_heartbeat');
+
+                // 1.0.29: сервер аннулировал попытку, потому что страница молчала
+                // дольше порога. Молча возвращаем участника на стартовую форму —
+                // он начнёт заново с полным лимитом; диалогов и плашек нет.
+                if (res && res.success === false && res.code === 'attempt_closed') {
+                    this.handleRunClosed();
+                    return;
+                }
 
                 const data = res.data || res;
                 if (this.timeLimit > 0 && typeof data.remaining_seconds === 'number'
@@ -2179,7 +2219,10 @@
                     } else if (res.status === 400 || res.status === 403 || res.status === 404) {
                         return {
                             success: false,
-                            message: json.message || (json.data && json.data.message) || 'Ошибка валидации данных.'
+                            message: json.message || (json.data && json.data.message) || 'Ошибка валидации данных.',
+                            // 1.0.29: код ошибки нужен раннеру, чтобы отличить
+                            // «попытку сбросили за закрытый браузер» от прочего.
+                            code: json.code || (json.data && json.data.code) || ''
                         };
                     }
                 } catch (e) {

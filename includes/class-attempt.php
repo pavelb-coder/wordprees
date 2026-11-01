@@ -27,6 +27,10 @@ final class Attempt
     public ?string $submitted_at = null;
     public int $duration_seconds = 0;
     public int $tab_switches = 0;
+    /** @var string Отметка последнего сигнала страницы (heartbeat). */
+    public string $last_seen_at = '';
+    /** @var int Секунды молчания страницы, из-за которых попытка сброшена. */
+    public int $closed_seconds = 0;
     public int $score = 0;
     public int $max_score = 0;
     public float $percentage = 0.00;
@@ -61,6 +65,8 @@ final class Attempt
             $this->submitted_at = !empty($data['submitted_at']) ? (string)$data['submitted_at'] : null;
             $this->duration_seconds = (int)($data['duration_seconds'] ?? 0);
             $this->tab_switches = (int)($data['tab_switches'] ?? 0);
+            $this->last_seen_at = (string)($data['last_seen_at'] ?? '');
+            $this->closed_seconds = (int)($data['closed_seconds'] ?? 0);
             $this->score = (int)round((float)($data['score'] ?? 0));
             $this->max_score = (int)round((float)($data['max_score'] ?? 0));
             $this->percentage = (float)($data['percentage'] ?? 0.00);
@@ -196,7 +202,14 @@ final class Attempt
             }
         }
 
-        return self::get((int)$wpdb->insert_id);
+        $attempt = self::get((int)$wpdb->insert_id);
+        if ($attempt) {
+            // 1.0.29: пауза «закрытого браузера» измеряется по сигналам страницы,
+            // поэтому точкой отсчёта служит момент создания попытки, а не started_at:
+            // попытки, заведённые до обновления плагина, не должны аннулироваться сразу.
+            $attempt->touch_last_seen();
+        }
+        return $attempt;
     }
 
     /**
@@ -214,6 +227,50 @@ final class Attempt
         ));
 
         return $this->tab_switches;
+    }
+
+    /**
+     * 1.0.29: страница подаёт сигнал жизни — запоминаем его на сервере, чтобы
+     * измерять паузу по серверным часам, а не по часам браузера участника.
+     */
+    public function touch_last_seen(): void
+    {
+        global $wpdb;
+        $table = DB::attempts_table();
+        $now = current_time('mysql');
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$table} SET last_seen_at = %s WHERE id = %d",
+            $now,
+            $this->id
+        ));
+        $this->last_seen_at = $now;
+    }
+
+    /**
+     * 1.0.29: аннулирование попытки, написанной при закрытом браузере.
+     *
+     * Ответы не удаляются: строка попытки остаётся с ответами и статусом
+     * 'browser_closed', организатор может посмотреть их и проверить вручную.
+     * В зачёт max_attempts такой статус не идёт — участник начинает заново
+     * с полным лимитом и чистыми ответами.
+     */
+    public function close_as_abandoned(int $gap_seconds): bool
+    {
+        global $wpdb;
+        $table = DB::attempts_table();
+        $gap = max(0, $gap_seconds);
+        $affected = $wpdb->query($wpdb->prepare(
+            "UPDATE {$table} SET status = 'browser_closed', closed_seconds = %d "
+            . "WHERE id = %d AND status = 'in_progress'",
+            $gap,
+            $this->id
+        ));
+        if (!is_int($affected) || $affected !== 1) {
+            return false;
+        }
+        $this->status = 'browser_closed';
+        $this->closed_seconds = $gap;
+        return true;
     }
 
     /**
@@ -300,6 +357,7 @@ final class Attempt
             'needs_review' => __('На проверке', 'wp-olympiad'),
             'expired' => __('Истекло время', 'wp-olympiad'),
             'disqualified' => __('Дисквалифицирован', 'wp-olympiad'),
+            'browser_closed' => __('Сброшена: страница была закрыта', 'wp-olympiad'),
             default => __('Завершено', 'wp-olympiad'),
         };
     }

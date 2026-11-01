@@ -105,6 +105,15 @@ function makeServer(opts = {}) {
             if (srv.heartbeat === 'boom') {
                 throw new TypeError('Failed to fetch');
             }
+            if (srv.heartbeat === 'closed') {
+                // 1.0.29: страница молчала дольше порога — сервер аннулировал
+                // попытку и отвечает тем же 400, что и на уже сданной попытке.
+                if (att) att.status = 'browser_closed';
+                return jsonResponse(400, {
+                    code: 'attempt_closed',
+                    message: 'Страница была закрыта 12 мин, попытка сброшена.',
+                });
+            }
             if (!att || att.status !== 'in_progress' || srv.heartbeat === 'dead') {
                 return jsonResponse(404, { code: 'invalid_attempt', message: 'Сессия олимпиады не найдена или уже завершена.' });
             }
@@ -456,6 +465,54 @@ async function main() {
         'после сдачи: focus не шлёт heartbeat по уже закрытой попытке');
     ok(p10.errorsSeen().length === 0, 'возврат на вкладку: без исключений', p10.errorsSeen().join(' | '));
     p10.dom.window.close();
+
+    // 13) 1.0.29: сброс прямо во время написания. Сервер говорит «attempt_closed» —
+    // зеркало снимается, участник молча возвращается на стартовую форму и может
+    // начать заново; новая попытка запускается сама только по его клику.
+    const srv12 = makeServer({});
+    const p12 = await openPage(srv12, {}, { autoStart: true, afterStart: async (w) => { pickAnswer(w, qIds[0], 'c1'); } });
+    const callsBeforeReset = srv12.calls.length;
+    srv12.heartbeat = 'closed';
+    p12.window.dispatchEvent(new p12.window.Event('focus'));
+    await tick(250);
+    ok(readMirror(p12.window) === null, 'сброс: зеркало снято вместе с попыткой');
+    ok(shown(p12.window, sel.intro), 'сброс: показана стартовая форма');
+    ok(!shown(p12.window, sel.runner), 'сброс: раннер скрыт');
+    ok(p12.alerts.length === 0, 'сброс: без всплывающих сообщений', p12.alerts.join(' | '));
+    ok(!/попытка сброшена/i.test(p12.window.document.body.textContent || ''),
+       'сброс: участник не видит текста о причине');
+    ok(srv12.calls.slice(callsBeforeReset).indexOf('start') === -1,
+       'сброс: новая попытка не стартует сама');
+    ok(p12.errorsSeen().length === 0, 'сброс: без исключений', p12.errorsSeen().join(' | '));
+    // и сразу после сброса можно начать заново
+    srv12.heartbeat = undefined;
+    fillStartForm(p12.window);
+    const btn12 = p12.window.document.querySelector(sel.start);
+    if (btn12) btn12.click();
+    await tick(200);
+    ok(shown(p12.window, sel.runner), 'сброс: следующая попытка запускается');
+    ok(srv12.calls.filter((c) => c === 'start').length === 2,
+       'сброс: /start вызван второй раз ровно один раз', String(srv12.calls.filter((c) => c === 'start').length));
+    p12.dom.window.close();
+
+    // 14) 1.0.29: тот же отказ ловится при восстановлении после перезагрузки:
+    // зеркало есть, сервер отвечает attempt_closed -> старт-форма, /start не трогается.
+    const srv13a = makeServer({});
+    const p13a = await openPage(srv13a, {}, { autoStart: true, afterStart: async (w) => { pickAnswer(w, qIds[0], 'c7'); } });
+    const mirror13 = readMirror(p13a.window);
+    p13a.dom.window.close();
+    ok(!!mirror13 && !mirror13.parseError, 'сброс при восстановлении: зеркало записано до перезагрузки');
+    const srv13 = makeServer({});
+    srv13.heartbeat = 'closed';
+    const p13 = await openPage(srv13, { 'wpo-run-v1:7': JSON.stringify(mirror13) }, {});
+    await tick(250);
+    ok(readMirror(p13.window) === null, 'сброс при восстановлении: зеркало снято');
+    ok(shown(p13.window, sel.intro), 'сброс при восстановлении: стартовая форма');
+    ok(srv13.calls.filter((c) => c === 'start').length === 0,
+       'сброс при восстановлении: /start не вызывается');
+    ok(p13.alerts.length === 0, 'сброс при восстановлении: без диалогов', p13.alerts.join(' | '));
+    ok(p13.errorsSeen().length === 0, 'сброс при восстановлении: без исключений', p13.errorsSeen().join(' | '));
+    p13.dom.window.close();
 
     console.log('\nпроверок: ' + checked + ', провалов: ' + failed);
     console.log(failed === 0 ? 'DOM-ПРОВЕРКА: OK' : 'DOM-ПРОВЕРКА: ПРОВАЛЫ');

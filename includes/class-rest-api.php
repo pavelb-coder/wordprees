@@ -364,6 +364,13 @@ final class RestApi
 
         $result = AntiCheat::process_heartbeat($attempt, $quiz, $tab_switched);
 
+        if (($result['status'] ?? '') === 'browser_closed') {
+            // 400 — тот же код, что и для уже сданной попытки: фронтенд 1.0.27
+            // распознаёт его как «зеркало не восстанавливаем», участник молча
+            // возвращается на стартовую форму и начинает заново.
+            return new WP_Error('attempt_closed', $result['message'], ['status' => 400]);
+        }
+
         return new WP_REST_Response($result, 200);
     }
 
