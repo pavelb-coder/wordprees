@@ -1747,13 +1747,3 @@
     padding-top: 22px;
     border-top: 1px dashed #cbd5e1;
 }
-
-
-/* ── 1.0.22: возврат к прерванной попытке ────── */
-.wpo-resume-card { max-width: 460px; }
-.wpo-resume-icon { font-size: 34px; line-height: 1; margin-bottom: 6px; }
-.wpo-resume-title { margin: 0 0 10px; font-size: 19px; color: #0f172a; }
-.wpo-resume-text { margin: 0 0 16px; font-size: 14px; line-height: 1.55; color: #334155; }
-.wpo-resume-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-.wpo-resume-actions .wpo-btn { flex: 1 1 180px; justify-content: center; }
-.wpo-resume-note { margin: 14px 0 0; font-size: 12px; line-height: 1.5; color: #64748b; }

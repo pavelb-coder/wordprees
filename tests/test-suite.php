@@ -7,21 +7,6 @@
 // declare(strict_types=1);
 
 namespace WPOlympiad\Tests;
-if (!function_exists(__NAMESPACE__ . '\\wpo_wall_at')) {
-    /**
-     * Wall-clock пояса сайта N секунд назад — в тех же единицах, что и плагин
-     * (`current_time('mysql')` в запись, `strtotime()` + `current_time('timestamp')` в чтение).
-     * Нужно, чтобы проверка не зависела от того, задан на стенде поясом UTC или, например,
-     * Europe/Moscow: `date(..., time())` дал бы время по UTC и разошёлся бы на смещение.
-     */
-    function wpo_wall_at(int $seconds_ago): string
-    {
-        $site_now = (int)strtotime(current_time('mysql'));
-
-        return gmdate('Y-m-d H:i:s', $site_now - $seconds_ago);
-    }
-}
-
 
 use WPOlympiad\DB;
 use WPOlympiad\Quiz;
@@ -319,7 +304,7 @@ $it("Серверный таймер: проверка времени сдачи
 
     // Simulate expired attempt (started 2 hours ago)
     global $wpdb;
-    $old_time = wpo_wall_at(7200);
+    $old_time = date('Y-m-d H:i:s', time() - 7200);
     $wpdb->update(DB::attempts_table(), ['started_at' => $old_time], ['id' => $attempt1->id]);
     $attempt1->started_at = $old_time;
 
@@ -4397,7 +4382,7 @@ require __DIR__ . '/test-questions-export-removal.php';
 require __DIR__ . '/test-link-alias.php';
 require __DIR__ . '/test-rules-enforcement.php';
 require __DIR__ . '/test-questionnaire-groups.php';
-require __DIR__ . '/test-resume-draft.php';
+require __DIR__ . '/test-participant-clamp.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

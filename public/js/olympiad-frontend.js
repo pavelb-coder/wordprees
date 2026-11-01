@@ -7,9 +7,6 @@
 
     const config = window.WPOlympiadConfig || {};
 
-    // 1.0.24: сколько ждём ответа /start, прежде чем вернуть кнопке жизнь.
-    const START_TIMEOUT_MS = 25000;
-
     class OlympiadRunner {
         constructor(wrapper) {
             this.wrapper = wrapper;
@@ -36,14 +33,6 @@
             this.groupOpened = {};
             this.expiredGroups = {};
             this.groupTimerInterval = null;
-            // 1.0.22: автосохранение черновика и возврат к прерванной попытке.
-            this.draftDirty = false;
-            this.draftTimer = null;
-            this.draftInFlight = false;
-            this.draftHooksBound = false;
-            this.draftKey = '';
-            this.isSubmitted = false;
-            this.resumeChecked = false;
 
             this.initDOM();
             this.bindEvents();
@@ -79,10 +68,6 @@
             if (this.skipIntro) {
                 // Auto-start testing immediately without showing intro screen
                 this.handleStart();
-            } else {
-                // 1.0.22: если есть несданная попытка — предложить вернуться сразу,
-                // не заставляя снова заполнять анкету.
-                this.maybeOfferResumeOnLoad();
             }
 
             if (this.btnPrev) {
@@ -184,59 +169,77 @@
                 this.startBtn.textContent = '⏳ Загрузка заданий...';
             }
 
-            const restoreBtn = () => {
-                if (this.startBtn) {
-                    this.startBtn.disabled = false;
-                    this.startBtn.textContent = origBtnText || '🚀 Начать выполнение олимпиады';
-                }
-            };
-
             try {
-                // 1.0.24: диалог возврата выполняется внутри try — его сбой больше
-                // не оставляет клик без ответа, а участник уходит в обычный старт.
-                if (await this.offerResumeBeforeStart(payload, restoreBtn)) {
-                    return;
-                }
-
-                const res = await this.withTimeout(
-                    this.apiPost('/start', payload, 'wp_olympiad_start'),
-                    START_TIMEOUT_MS,
-                    'wpo_start_timeout'
-                );
+                const res = await this.apiPost('/start', payload, 'wp_olympiad_start');
                 if (!res.success) {
                     const msg = res.message || (res.data && res.data.message) || 'Не удалось начать олимпиаду.';
                     if (this.skipIntro && this.runnerScreen) {
                         this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-error" style="padding:24px; text-align:center; color:#991b1b; background:#fef2f2; border:1px solid #fecaca; border-radius:8px;"><strong>Ошибка:</strong> ${msg}</div>`;
                     } else {
                         alert(msg);
-                        restoreBtn();
+                        if (this.startBtn) {
+                            this.startBtn.disabled = false;
+                            this.startBtn.textContent = origBtnText;
+                        }
                     }
                     return;
                 }
 
                 const data = res.data || res;
-                if (!this.beginRun(data)) {
+                this.token = data.token;
+                this.timeLimit = data.time_limit || 0;
+                this.showQuestionPoints = data.show_question_points !== undefined ? Boolean(data.show_question_points) : true;
+                this.questions = data.questions || [];
+                this.sharedTexts = data.shared_texts || {};
+                this.antiCheat = data.anti_cheat || this.antiCheat;
+                const perPage = parseInt(data.questions_per_page, 10);
+                this.questionsPerPage = perPage > 1 ? perPage : 1;
+                this.questionGroups = Array.isArray(data.question_groups) ? data.question_groups : [];
+                this.groupDefs = {};
+                this.questionGroups.forEach((g) => {
+                    if (g && g.key) this.groupDefs[g.key] = g;
+                });
+                this.buildPages();
+
+                if (this.questions.length === 0) {
                     const noQMsg = 'В этой олимпиаде пока нет вопросов.';
                     if (this.skipIntro && this.runnerScreen) {
                         this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-info" style="padding:24px; text-align:center; color:#1e40af; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">${noQMsg}</div>`;
                     } else {
                         alert(noQMsg);
-                        restoreBtn();
+                        if (this.startBtn) this.startBtn.disabled = false;
                     }
                     return;
                 }
-                this.writeResumeToken(payload.participant_email);
+
+                // Switch screen
+                if (this.introScreen) this.introScreen.style.display = 'none';
+                if (this.runnerScreen) this.runnerScreen.style.display = 'block';
+
+                const loadingEl = this.runnerScreen ? this.runnerScreen.querySelector('.wpo-runner-loading') : null;
+                if (loadingEl) loadingEl.style.display = 'none';
+
+                if (this.counterTotal) {
+                    this.counterTotal.textContent = this.questions.length;
+                }
+
+                this.initAntiCheat();
+                this.initTimer();
+                this.initGroupTimers();
+                this.renderNavStrip();
+                this.renderQuestion(0);
+                this.openCurrentGroup();
             } catch (err) {
                 console.error(err);
-                const timedOut = !!(err && err.message === 'wpo_start_timeout');
-                const errMsg = timedOut
-                    ? 'Сервер не отвечает. Проверьте соединение и нажмите кнопку ещё раз — начатая попытка не потеряется.'
-                    : 'Сетевая ошибка при запуске олимпиады.';
+                const errMsg = 'Сетевая ошибка при запуске олимпиады.';
                 if (this.skipIntro && this.runnerScreen) {
                     this.runnerScreen.innerHTML = `<div class="wpo-alert wpo-alert-error" style="padding:24px; text-align:center; color:#991b1b; background:#fef2f2; border:1px solid #fecaca; border-radius:8px;">${errMsg}</div>`;
                 } else {
                     alert(errMsg);
-                    restoreBtn();
+                    if (this.startBtn) {
+                        this.startBtn.disabled = false;
+                        this.startBtn.textContent = '🚀 Начать выполнение олимпиады';
+                    }
                 }
             }
         }
@@ -349,16 +352,13 @@
             }
         }
 
-        initTimer(remaining) {
+        initTimer() {
             if (this.timeLimit <= 0) {
                 if (this.timerBox) this.timerBox.style.display = 'none';
                 return;
             }
 
-            // 1.0.22: при возврате к попытке время продолжает идти — сервер отдаёт остаток.
-            this.remainingSeconds = (typeof remaining === 'number' && isFinite(remaining) && remaining < 999999)
-                ? Math.max(0, Math.floor(remaining))
-                : this.timeLimit * 60;
+            this.remainingSeconds = this.timeLimit * 60;
             this.updateTimerDisplay();
 
             this.timerInterval = setInterval(() => {
@@ -512,14 +512,12 @@
                 this.flagged.add(currentQ.id);
             }
             this.updateNavState();
-            this.queueDraftSave();
         }
 
         navigate(newIndex) {
             if (newIndex < 0 || newIndex >= this.questions.length) return;
             this.currentIndex = newIndex;
             this.renderCurrent();
-            this.queueDraftSave();
         }
 
         /** Шаг перелистывания: один вопрос или вся страница пачки. */
@@ -1584,11 +1582,6 @@
                 }
 
                 const data = res.data || res;
-                // 1.0.22: работа сдана — локальный черновик больше не нужен.
-                this.isSubmitted = true;
-                this.clearLocalDraft();
-                this.clearResumeToken();
-                this.detachDraftHooks();
                 this.renderResults(data);
             } catch (err) {
                 console.error(err);
@@ -1621,10 +1614,6 @@
             }
 
             this.resumeSubmitTimers();
-
-            // 1.0.22: раз сдача не прошла — ответы тем более должны быть сохранены.
-            this.draftDirty = true;
-            this.queueDraftSave();
         }
 
         resumeSubmitTimers() {
@@ -1745,492 +1734,6 @@
             </div>`;
 
             this.resultsScreen.innerHTML = html;
-        }
-
-        // ── 1.0.22: возврат к прерванной попытке и автосохранение черновика ──────
-
-        /** Применить payload и запустить раннер. Общий для «Начать» и «Продолжить». */
-        beginRun(data, resumed) {
-            this.token = data.token;
-            this.timeLimit = data.time_limit || 0;
-            this.showQuestionPoints = data.show_question_points !== undefined ? Boolean(data.show_question_points) : true;
-            this.questions = data.questions || [];
-            this.sharedTexts = data.shared_texts || {};
-            this.antiCheat = data.anti_cheat || this.antiCheat;
-            const perPage = parseInt(data.questions_per_page, 10);
-            this.questionsPerPage = perPage > 1 ? perPage : 1;
-            this.questionGroups = Array.isArray(data.question_groups) ? data.question_groups : [];
-            this.groupDefs = {};
-            this.questionGroups.forEach((g) => {
-                if (g && g.key) this.groupDefs[g.key] = g;
-            });
-            this.buildPages();
-
-            if (this.questions.length === 0) return false;
-
-            this.draftKey = 'wpo_draft_v1_' + this.quizId + ':' + this.token;
-
-            // Switch screen
-            if (this.introScreen) this.introScreen.style.display = 'none';
-            if (this.runnerScreen) this.runnerScreen.style.display = 'block';
-
-            const loadingEl = this.runnerScreen ? this.runnerScreen.querySelector('.wpo-runner-loading') : null;
-            if (loadingEl) loadingEl.style.display = 'none';
-
-            if (this.counterTotal) {
-                this.counterTotal.textContent = this.questions.length;
-            }
-
-            if (resumed) this.applyResumedState(data);
-
-            this.initAntiCheat();
-            this.initTimer(typeof data.remaining_seconds === 'number' ? data.remaining_seconds : null);
-            this.initGroupTimers();
-            this.renderNavStrip();
-            this.renderCurrent();
-            this.openCurrentGroup();
-            this.attachDraftHooks();
-
-            return true;
-        }
-
-        /** Восстановить черновик, позицию, флажки и уже идущие таймеры групп. */
-        applyResumedState(data) {
-            const draft = data.draft || {};
-            let restored = 0;
-
-            if (draft.answers && typeof draft.answers === 'object') {
-                Object.keys(draft.answers).forEach((qid) => {
-                    const id = parseInt(qid, 10);
-                    if (!isNaN(id) && id > 0) {
-                        this.answers[id] = draft.answers[qid];
-                        restored++;
-                    }
-                });
-            }
-
-            if (Array.isArray(draft.flags)) {
-                this.flagged = new Set(draft.flags.map((v) => parseInt(v, 10)).filter((v) => v > 0));
-            }
-
-            const idx = parseInt(draft.page, 10);
-            if (!isNaN(idx) && idx >= 0 && idx < this.questions.length) {
-                this.currentIndex = idx;
-            }
-
-            if (data.group_elapsed && typeof data.group_elapsed === 'object') {
-                const now = Date.now();
-                Object.keys(data.group_elapsed).forEach((key) => {
-                    const spent = parseInt(data.group_elapsed[key], 10);
-                    if (!isNaN(spent) && spent >= 0) this.groupOpened[key] = now - spent * 1000;
-                });
-            }
-
-            // Локальное зеркало может оказаться свежее серверного (сеть падала).
-            const local = this.readLocalDraft();
-            let fromLocal = 0;
-            if (local && local.answers && typeof local.answers === 'object') {
-                Object.keys(local.answers).forEach((qid) => {
-                    const id = parseInt(qid, 10);
-                    if (isNaN(id) || id <= 0) return;
-                    if (this.answers[id] === undefined || this.answers[id] === '' || this.answers[id] === null) {
-                        this.answers[id] = local.answers[qid];
-                        fromLocal++;
-                    }
-                });
-                if (Array.isArray(local.flags) && (!draft.flags || !draft.flags.length)) {
-                    this.flagged = new Set(local.flags.map((v) => parseInt(v, 10)).filter((v) => v > 0));
-                }
-            }
-
-            if (restored > 0 || fromLocal > 0) {
-                const stamp = data.draft_updated_at ? String(data.draft_updated_at).slice(11, 16) : '';
-                const parts = [];
-                if (restored > 0) parts.push(`Ответов из черновика: ${restored}${stamp ? ' (сохранено в ' + stamp + ')' : ''}`);
-                if (fromLocal > 0) parts.push(`Ещё ${fromLocal} восстановлено из этого браузера`);
-                if (typeof data.remaining_seconds === 'number' && data.remaining_seconds < 999999) {
-                    parts.push(`Осталось времени: ${Math.max(1, Math.round(data.remaining_seconds / 60))} мин — отсчёт не начинался заново`);
-                }
-                this.showAntiCheatToast('↩️', 'Прогресс восстановлен', parts.join('. ') + '.');
-                this.draftDirty = true;
-            }
-        }
-
-        /** Есть ли несданная попытка — спросить участника до создания новой. */
-        async offerResumeBeforeStart(payload, onDismiss) {
-            if (this.resumeChecked || this.isSubmitted) return false;
-            const stored = this.readResumeRecord();
-            const hinted = this.wrapper.dataset.resumable === '1';
-            const byEmail = !!(payload && payload.participant_email);
-            if (!stored && !hinted && !byEmail) return false;
-
-            let found = null;
-            try {
-                found = await this.probeResume({
-                    token: stored && stored.token ? stored.token : '',
-                    participant_name: payload ? payload.participant_name : '',
-                    participant_email: payload ? payload.participant_email : ''
-                });
-            } catch (e) {
-                found = null;
-            }
-            this.resumeChecked = true;
-            if (!found) return false;
-
-            let choice = null;
-            try {
-                choice = await this.showResumeDialog(found);
-            } catch (e) {
-                this.closeResumeDialog();
-                return false;
-            }
-
-            // Escape или клик мимо окна: участник отложил решение. Попытку не трогаем,
-            // кнопку возвращаем в работу — следующее нажатие стартует как обычно.
-            if (choice === null) {
-                if (typeof onDismiss === 'function') onDismiss();
-                return false;
-            }
-
-            if (choice) {
-                let started = false;
-                try {
-                    started = this.beginRun(found, true);
-                } catch (e) {
-                    started = false;
-                }
-                if (started) {
-                    this.writeResumeToken(payload ? payload.participant_email : '');
-                    return true;
-                }
-                // Продолжать нечего — не глотаем клик: предупреждаем и уходим в обычный старт.
-                this.notify('⚠️', 'Продолжить не удалось', 'Попытку не удалось восстановить — начинаем новую.');
-                return false;
-            }
-
-            await this.apiPost('/abandon', {
-                token: found.token,
-                participant_email: payload ? payload.participant_email : ''
-            }, 'wp_olympiad_abandon').catch(() => {});
-            this.clearResumeToken();
-            this.clearLocalDraft();
-            return false;
-        }
-
-        maybeOfferResumeOnLoad() {
-            const stored = this.readResumeRecord();
-            if (!stored && this.wrapper.dataset.resumable !== '1') return;
-
-            (async () => {
-                let found = null;
-                try {
-                    found = await this.probeResume({ token: stored && stored.token ? stored.token : '' });
-                } catch (e) {
-                    found = null;
-                }
-                if (!found) {
-                    if (stored) { this.clearResumeToken(); this.clearLocalDraftByKey(stored.token); }
-                    return;
-                }
-                this.resumeChecked = true;
-
-                let choice = null;
-                try {
-                    choice = await this.showResumeDialog(found);
-                } catch (e) {
-                    this.closeResumeDialog();
-                    return;
-                }
-                if (choice === null) return;
-
-                if (choice) {
-                    let started = false;
-                    try {
-                        started = this.beginRun(found, true);
-                    } catch (e) {
-                        started = false;
-                    }
-                    if (!started) {
-                        this.notify('⚠️', 'Продолжить не удалось',
-                            'Попытку не удалось восстановить — нажмите «Начать выполнение олимпиады», чтобы начать заново.');
-                        return;
-                    }
-                    this.writeResumeToken(stored && stored.email ? stored.email : '');
-                    return;
-                }
-
-                await this.apiPost('/abandon', { token: found.token }, 'wp_olympiad_abandon').catch(() => {});
-                this.clearResumeToken();
-            })().catch(() => {});
-        }
-
-        async probeResume(extra) {
-            const body = Object.assign({ quiz_id: this.quizId }, extra || {});
-            let res;
-            try {
-                res = await this.apiPost('/resume', body, 'wp_olympiad_resume');
-            } catch (e) {
-                return null;
-            }
-            const data = (res && (res.data || res)) || {};
-            if (data.expired && data.message && this.showAntiCheatToast) {
-                this.showAntiCheatToast('⛔', 'Время попытки вышло', data.message);
-            }
-            if (!res || res.success === false || !data.found || !data.token) return null;
-            // 1.0.24: заданий в попытке не осталось (организатор снял их с публикации) —
-            // продолжать нечего, а диалог только сломал бы клик по «Начать».
-            if (Array.isArray(data.questions) && data.questions.length === 0) return null;
-            return data;
-        }
-
-        showResumeDialog(data) {
-            return new Promise((resolve, reject) => {
-                const existing = document.querySelector('.wpo-resume-overlay');
-                if (existing) existing.remove();
-
-                const draft = data.draft || {};
-                const saved = draft.answers ? Object.keys(draft.answers).length : 0;
-                const mins = typeof data.remaining_seconds === 'number' && data.remaining_seconds < 999999
-                    ? Math.max(1, Math.round(data.remaining_seconds / 60))
-                    : 0;
-                const stamp = data.draft_updated_at ? String(data.draft_updated_at).slice(11, 16) : '';
-
-                const overlay = document.createElement('div');
-                overlay.className = 'wpo-modal-overlay wpo-resume-overlay';
-                overlay.innerHTML = `
-                    <div class="wpo-modal-card wpo-resume-card">
-                        <div class="wpo-resume-icon">⏳</div>
-                        <h3 class="wpo-resume-title">У вас есть несданная попытка</h3>
-                        <p class="wpo-resume-text">
-                            ${saved > 0 ? `В сохранённом черновике ответов: <b>${saved}</b>${stamp ? ` (в ${this.escapeHtml(stamp)})` : ''}.` : 'Черновик пока пуст — вы ещё не ответили ни на одно задание.'}
-                            ${mins ? `<br>Осталось времени: <b>~${mins} мин</b>. Отсчёт продолжается с того места, где вы остановились.` : ''}
-                            ${Array.isArray(data.questions) && data.questions.length ? `<br>Заданий в попытке: ${data.questions.length}.` : ''}
-                        </p>
-                        <div class="wpo-resume-actions">
-                            <button type="button" class="wpo-btn wpo-btn-primary wpo-resume-continue">Продолжить попытку</button>
-                            <button type="button" class="wpo-btn wpo-btn-outline wpo-resume-restart">Начать заново</button>
-                        </div>
-                        <p class="wpo-resume-note">«Начать заново» закроет эту попытку: написанное сохранится организатору без баллов и уйдёт на ручную проверку, а начнёте вы с чистого листа. Esc или клик мимо окна ничего не меняют — черновик останется на месте.</p>
-                    </div>
-                `;
-
-                const continueBtn = overlay.querySelector('.wpo-resume-continue');
-                const restartBtn = overlay.querySelector('.wpo-resume-restart');
-                if (!continueBtn || !restartBtn) {
-                    overlay.remove();
-                    reject(new Error('wpo_resume_dialog_incomplete'));
-                    return;
-                }
-
-                let settled = false;
-                let onKey = null;
-                const close = (val) => {
-                    if (settled) return;
-                    settled = true;
-                    overlay.remove();
-                    if (onKey) document.removeEventListener('keydown', onKey);
-                    resolve(val);
-                };
-                onKey = (e) => { if (e.key === 'Escape') close(null); };
-
-                continueBtn.addEventListener('click', () => close(true));
-                restartBtn.addEventListener('click', () => close(false));
-                // Esc и клик мимо окна — «отложить», а не «начать заново»: случайное
-                // нажатие не должно закрывать попытку и обнулять ответы.
-                overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
-                document.addEventListener('keydown', onKey);
-                document.body.appendChild(overlay);
-            });
-        }
-
-        closeResumeDialog() {
-            const open = document.querySelector('.wpo-resume-overlay');
-            if (open) open.remove();
-        }
-
-        /** Тост, если он доступен; иначе — только в консоль: тихий отказ недопустим в UI-ветке. */
-        notify(icon, title, msg) {
-            if (typeof this.showAntiCheatToast === 'function') {
-                this.showAntiCheatToast(icon, title, msg);
-                return;
-            }
-            if (window.console && window.console.warn) window.console.warn(title + '. ' + msg);
-        }
-
-        /** Промис с предельным временем ожидания: зависший запрос не должен запирать кнопку. */
-        withTimeout(promise, ms, marker) {
-            return new Promise((resolve, reject) => {
-                let settled = false;
-                const timer = setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    reject(new Error(marker || 'wpo_timeout'));
-                }, ms);
-                Promise.resolve(promise).then(
-                    (value) => {
-                        if (settled) return;
-                        settled = true;
-                        clearTimeout(timer);
-                        resolve(value);
-                    },
-                    (err) => {
-                        if (settled) return;
-                        settled = true;
-                        clearTimeout(timer);
-                        reject(err);
-                    }
-                );
-            });
-        }
-
-        // ── Локальное зеркало черновика и запись на сервер ──
-
-        resumeRecordKey() { return 'wpo_resume_v1_' + this.quizId; }
-
-        readResumeRecord() {
-            try {
-                const raw = JSON.parse(localStorage.getItem(this.resumeRecordKey()) || 'null');
-                return raw && raw.token ? raw : null;
-            } catch (e) {
-                return null;
-            }
-        }
-
-        writeResumeToken(email) {
-            if (!this.token) return;
-            try {
-                localStorage.setItem(this.resumeRecordKey(), JSON.stringify({
-                    token: this.token,
-                    email: String(email || '').trim().toLowerCase(),
-                    savedAt: Date.now()
-                }));
-            } catch (e) {}
-        }
-
-        clearResumeToken() {
-            try { localStorage.removeItem(this.resumeRecordKey()); } catch (e) {}
-        }
-
-        localDraftKey(token) { return 'wpo_draft_v1_' + this.quizId + ':' + token; }
-
-        clearLocalDraftByKey(token) {
-            if (!token) return;
-            try { localStorage.removeItem(this.localDraftKey(token)); } catch (e) {}
-        }
-
-        writeLocalDraft() {
-            if (!this.draftKey) return;
-            try {
-                localStorage.setItem(this.draftKey, JSON.stringify({
-                    token: this.token,
-                    answers: this.answers,
-                    page: this.currentIndex,
-                    flags: Array.from(this.flagged || []),
-                    savedAt: Date.now()
-                }));
-            } catch (e) {}
-        }
-
-        readLocalDraft() {
-            if (!this.draftKey) return null;
-            try {
-                const raw = JSON.parse(localStorage.getItem(this.draftKey) || 'null');
-                return raw && raw.token === this.token ? raw : null;
-            } catch (e) {
-                return null;
-            }
-        }
-
-        clearLocalDraft() {
-            const token = this.token;
-            this.draftKey = '';
-            this.clearLocalDraftByKey(token);
-        }
-
-        attachDraftHooks() {
-            if (this.draftHooksBound) return;
-            this.draftHooksBound = true;
-
-            if (this.qContainer) {
-                const touch = () => this.queueDraftSave();
-                this.qContainer.addEventListener('input', touch);
-                this.qContainer.addEventListener('change', touch);
-            }
-
-            this.unloadHandler = () => this.flushDraftSave(true);
-            this.visibilityHandler = () => { if (document.hidden) this.flushDraftSave(true); };
-            window.addEventListener('beforeunload', this.unloadHandler);
-            document.addEventListener('visibilitychange', this.visibilityHandler);
-        }
-
-        detachDraftHooks() {
-            if (!this.draftHooksBound) return;
-            this.draftHooksBound = false;
-            if (this.draftTimer) {
-                clearTimeout(this.draftTimer);
-                this.draftTimer = null;
-            }
-            if (this.unloadHandler) window.removeEventListener('beforeunload', this.unloadHandler);
-            if (this.visibilityHandler) document.removeEventListener('visibilitychange', this.visibilityHandler);
-        }
-
-        /** Ответ изменился: сразу пишем в браузер, на сервер — пачкой раз в 1,5 с. */
-        queueDraftSave() {
-            if (!this.token || this.isSubmitting || this.isSubmitted) return;
-            this.draftDirty = true;
-            this.writeLocalDraft();
-            if (this.draftTimer) return;
-            this.draftTimer = setTimeout(() => {
-                this.draftTimer = null;
-                this.flushDraftSave(false);
-            }, 1500);
-        }
-
-        flushDraftSave(useKeepalive) {
-            if (!this.token || this.isSubmitted || this.draftInFlight) return;
-            if (!this.draftDirty && !useKeepalive) return;
-            this.draftDirty = false;
-
-            const body = {
-                token: this.token,
-                answers: this.answers,
-                page: this.currentIndex,
-                flags: Array.from(this.flagged || [])
-            };
-
-            if (useKeepalive && config.restUrl) {
-                this.draftInFlight = true;
-                const headers = { 'Content-Type': 'application/json' };
-                if (config.restNonce) headers['X-WP-Nonce'] = config.restNonce;
-                fetch(config.restUrl + '/save', {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(body),
-                    keepalive: true
-                }).catch(() => {
-                    this.draftInFlight = false;
-                });
-                return;
-            }
-
-            this.draftInFlight = true;
-            this.apiPost('/save', body, 'wp_olympiad_save_draft').then((res) => {
-                this.draftInFlight = false;
-                const data = (res && (res.data || res)) || {};
-                if (res && res.success !== false && (data.saved_at !== undefined || data.answers_saved !== undefined)) {
-                    if (this.timeLimit > 0 && typeof data.remaining_seconds === 'number' && data.remaining_seconds >= 0 && data.remaining_seconds < 999999) {
-                        this.remainingSeconds = data.remaining_seconds;
-                        this.updateTimerDisplay();
-                    }
-                    return;
-                }
-                if (res && res.message && /истекло/i.test(res.message)) {
-                    this.submitAnswers(true);
-                    return;
-                }
-            }).catch(() => {
-                this.draftInFlight = false;
-            });
         }
 
         showAntiCheatToast(icon, title, message) {
