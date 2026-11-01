@@ -47,6 +47,7 @@
             // поверх той, ответы которой лежат в localStorage.
             this.mirrorInterval = null;
             this.mirrorDisabled = false;
+            this.resultsShown = false;
             this.runPayload = null;
             this.restorePromise = this.tryRestoreRun();
 
@@ -273,6 +274,7 @@
             }
 
             this.initAntiCheat();
+            this.syncRemainingOnReturn();
             this.initTimer(remaining);
             this.initGroupTimers();
             this.renderNavStrip();
@@ -497,6 +499,35 @@
             this.updateNavState();
             this.startMirror();
             return true;
+        }
+
+        // 1.0.28: возвращение на вкладку. Время отсутствия засчитывается сервером
+        // (остаток считается от started_at попытки), поэтому при возврате нужно не
+        // продолжать клиентский отсчёт, а сразу сверить его с сервером: иначе до
+        // ближайшего heartbeat (30 с) участник видит больше, чем у него осталось.
+        // Дедлайн эта правка не меняет — только честность цифр на экране.
+        syncRemainingOnReturn() {
+            if (this._returnSyncBound) return;
+            this._returnSyncBound = true;
+            this._onReturn = () => {
+                if (document.hidden || !this.token || this.isSubmitting || this.resultsShown) return;
+                const now = Date.now();
+                if (this._lastReturnSync && now - this._lastReturnSync < 3000) return;
+                this._lastReturnSync = now;
+                this.sendHeartbeat(false);
+            };
+            document.addEventListener('visibilitychange', this._onReturn);
+            window.addEventListener('focus', this._onReturn);
+        }
+
+        stopRemainingOnReturn() {
+            if (!this._returnSyncBound) return;
+            this._returnSyncBound = false;
+            if (this._onReturn) {
+                document.removeEventListener('visibilitychange', this._onReturn);
+                window.removeEventListener('focus', this._onReturn);
+                this._onReturn = null;
+            }
         }
 
         initAntiCheat() {
@@ -1852,6 +1883,7 @@
                 // следующая перезагрузка не пыталась вернуть участника в попытку,
                 // которой уже нет.
                 this.stopMirror();
+                this.stopRemainingOnReturn();
                 this.clearMirror();
                 this.renderResults(data);
             } catch (err) {
@@ -1912,6 +1944,8 @@
         }
 
         renderResults(data) {
+            this.resultsShown = true;
+            this.stopRemainingOnReturn();
             this.runnerScreen.style.display = 'none';
             this.resultsScreen.style.display = 'block';
 

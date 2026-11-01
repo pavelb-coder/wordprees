@@ -281,9 +281,17 @@ $it('Регламент: участник не получает точное в�
         $rules(Quiz::get($id)->schedule_organizer_line() === '', 'Пустое расписание дало строку для организатора');
 
         // ...а когда оно задано, организатор видит время на странице, участник — нет.
-        Quiz::get($id)->update(['settings' => ['start_time' => '2026-11-01 09:30', 'end_time' => '2026-12-01 18:00']]);
+        // Даты считаются от «сейчас»: зафиксированный день делал проверку зависимой от
+        // часов — после 09:30 «сегодня» олимпиада уже началась, страница не блокировалась,
+        // и уведомление об обходе не появлялось. Окно в будущем даёт стабильный before_start.
+        $sched_from = $now->modify('+1 day')->setTime(9, 30);
+        $sched_to = $now->modify('+1 month')->setTime(18, 0);
+        Quiz::get($id)->update(['settings' => [
+            'start_time' => $sched_from->format('Y-m-d H:i'),
+            'end_time' => $sched_to->format('Y-m-d H:i'),
+        ]]);
         $line = Quiz::get($id)->schedule_organizer_line();
-        $rules(str_contains($line, 'начало 01.11.2026 09:30') && str_contains($line, 'приём ответов до 01.12.2026 18:00'), 'Строка для организатора неполная: ' . $line);
+        $rules(str_contains($line, 'начало ' . $sched_from->format('d.m.Y H:i')) && str_contains($line, 'приём ответов до ' . $sched_to->format('d.m.Y H:i')), 'Строка для организатора неполная: ' . $line);
 
         $guest_html = Shortcodes::render_quiz(['id' => $id]);
         $rules(!str_contains($guest_html, 'Расписание сайта:'), 'Гостю показана строка расписания для организатора');

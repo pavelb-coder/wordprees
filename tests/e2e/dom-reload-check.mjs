@@ -420,6 +420,43 @@ async function main() {
     ok(shown(p9.window, sel.intro), 'протухшее зеркало: стартовая форма');
     p9.dom.window.close();
 
+    // 12) возврат на вкладку: остаток сразу сверяется с сервером (время отсутствия
+    // засчитывается, а не «дочитывается» клиентом).
+    const srv10 = makeServer({ remaining: 1150 });
+    const p10 = await openPage(srv10, {}, { autoStart: true, afterStart: async (w) => { pickAnswer(w, qIds[0], 'c1'); } });
+    const hbBeforeReturn = srv10.calls.filter((c) => c === 'heartbeat').length;
+    srv10.remaining = 120;
+    p10.window.dispatchEvent(new p10.window.Event('focus'));
+    await tick(150);
+    const hbAfterReturn = srv10.calls.filter((c) => c === 'heartbeat').length;
+    ok(hbAfterReturn === hbBeforeReturn + 1,
+        'возврат на вкладку: отправлен ровно один heartbeat за сверкой остатка',
+        hbBeforeReturn + ' -> ' + hbAfterReturn);
+    const t10 = (p10.window.document.querySelector(sel.timer) || {}).textContent || '';
+    ok(t10 === '02:00', 'возврат на вкладку: таймер показывает серверный остаток, а не свои минуты', t10);
+    await tick(500);   // ждём слипания записи (350 мс), иначе зеркало ещё не обновлено
+    const m10 = readMirror(p10.window);
+    ok(m10 && m10.answers && m10.answers[qIds[0]] === 'c1', 'возврат на вкладку: зеркало не пострадало',
+        m10 && JSON.stringify(m10.answers));
+    // повторный focus в течение 3 с не должен спамить запросами
+    const hbBeforeDouble = srv10.calls.filter((c) => c === 'heartbeat').length;
+    p10.window.dispatchEvent(new p10.window.Event('focus'));
+    await tick(120);
+    ok(srv10.calls.filter((c) => c === 'heartbeat').length === hbBeforeDouble,
+        'возврат на вкладку: частые focus не плодят heartbeat');
+
+    // после сдачи слушатель снимается: focus не дёргает сервер по закрытой попытке
+    const fin10 = p10.window.document.querySelector(sel.finish);
+    if (fin10) fin10.click();
+    await tick(300);
+    const hbAfterSubmit = srv10.calls.filter((c) => c === 'heartbeat').length;
+    p10.window.dispatchEvent(new p10.window.Event('focus'));
+    await tick(150);
+    ok(srv10.calls.filter((c) => c === 'heartbeat').length === hbAfterSubmit,
+        'после сдачи: focus не шлёт heartbeat по уже закрытой попытке');
+    ok(p10.errorsSeen().length === 0, 'возврат на вкладку: без исключений', p10.errorsSeen().join(' | '));
+    p10.dom.window.close();
+
     console.log('\nпроверок: ' + checked + ', провалов: ' + failed);
     console.log(failed === 0 ? 'DOM-ПРОВЕРКА: OK' : 'DOM-ПРОВЕРКА: ПРОВАЛЫ');
     process.exit(failed === 0 ? 0 : 1);
