@@ -226,6 +226,12 @@ final class Quiz
     /** Allowed characters for a public link name (ASCII, lowercase, dash safe). */
     public const LINK_ALIAS_PATTERN = '/^[a-z0-9][a-z0-9-]{0,47}$/';
     public const LINK_ALIAS_MAX_LENGTH = 48;
+    /**
+     * 1.0.30: потолок личного лимита времени, минут. 4320 = трое суток.
+     * Его используют и поле формы, и сохранение настроек, чтобы граница не
+     * могла разойтись; 0 по-прежнему означает «без лимита».
+     */
+    public const TIME_LIMIT_MAX_MINUTES = 4320;
 
     /** Transliteration used so that a Russian olympiad name yields a readable URL part. */
     private const LINK_ALIAS_TRANSLIT = [
@@ -503,8 +509,28 @@ final class Quiz
      * Вызывается на записи и на чтении, чтобы ни одна дорожка (REST, Ajax,
      * импорт настроек) не сохранила «сырое» значение.
      */
+    /**
+     * 1.0.30: единственная функция, которая решает, сколько минут можно
+     * поставить в «Лимит времени». Отрицательное и нечисловое значение — как 0,
+     * то есть «без лимита» (это осознанно: пустое поле не должно превращаться
+     * в «ноль минут на всё»).
+     */
+    public static function normalize_time_limit($raw): int
+    {
+        $minutes = (int)$raw;
+        if ($minutes <= 0) {
+            return 0;
+        }
+        return min(self::TIME_LIMIT_MAX_MINUTES, $minutes);
+    }
+
     public static function normalize_custom_settings(array &$settings): void
     {
+        if (array_key_exists('time_limit', $settings)) {
+            // Граница зашита здесь, а не только в max у поля формы: сетевой импорт
+            // и прямое сохранение настроек обязаны давать тот же результат.
+            $settings['time_limit'] = self::normalize_time_limit($settings['time_limit']);
+        }
         if (array_key_exists('custom_fields', $settings)) {
             $settings['custom_fields'] = ParticipantFields::sanitize_defs((array)$settings['custom_fields']);
         }

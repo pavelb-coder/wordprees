@@ -162,7 +162,7 @@ final class Admin
                 'description' => wp_kses_post($_POST['description'] ?? ''),
                 'status'      => sanitize_key($_POST['status'] ?? 'publish'),
                 'settings'    => [
-                    'time_limit'        => max(0, (int)($_POST['time_limit'] ?? 0)),
+                    'time_limit'        => Quiz::normalize_time_limit($_POST['time_limit'] ?? 0),
                     'start_time'        => sanitize_text_field($_POST['start_time'] ?? ''),
                     'end_time'          => sanitize_text_field($_POST['end_time'] ?? ''),
                     // Расписание и лимит попыток для организаторов: 0 = привычный предпросмотр.

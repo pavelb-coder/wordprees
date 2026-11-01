@@ -395,8 +395,8 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                         <tr>
                             <th scope="row"><label for="time_limit"><?php esc_html_e('Лимит времени (минут):', 'wp-olympiad'); ?></label></th>
                             <td>
-                                <input type="number" name="time_limit" id="time_limit" value="<?php echo esc_attr((string)$time_limit); ?>" min="0" max="600" step="1" class="small-text">
-                                <p class="description"><?php esc_html_e('Время на выполнение после нажатия «Начать». Укажите 0 для неограниченного теста.', 'wp-olympiad'); ?></p>
+                                <input type="number" name="time_limit" id="time_limit" value="<?php echo esc_attr((string)$time_limit); ?>" min="0" max="<?php echo (int)\WPOlympiad\Quiz::TIME_LIMIT_MAX_MINUTES; ?>" step="1" class="small-text">
+                                <p class="description"><?php echo esc_html(sprintf(__('Время на выполнение после нажатия «Начать». Укажите 0 для неограниченного теста. Больше %d минут задать нельзя — сервер опустит до этого значения.', 'wp-olympiad'), (int)\WPOlympiad\Quiz::TIME_LIMIT_MAX_MINUTES)); ?></p>
                             </td>
                         </tr>
                         <tr>
