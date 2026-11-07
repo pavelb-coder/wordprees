@@ -844,7 +844,13 @@ final class RestApi
                 'org'     => ['show' => (bool)$quiz->get_setting('show_org', 1), 'required' => (bool)$quiz->get_setting('require_org', 1)],
                 'phone'   => ['show' => (bool)$quiz->get_setting('show_phone', 0), 'required' => (bool)$quiz->get_setting('require_phone', 0)],
                 'city'    => ['show' => (bool)$quiz->get_setting('show_city', 0), 'required' => (bool)$quiz->get_setting('require_city', 0)],
-                'agreement' => ['show' => (bool)$quiz->get_setting('require_agreement', 0), 'required' => (bool)$quiz->get_setting('require_agreement', 0)],
+                'agreement' => [
+                    'show'     => (bool)$quiz->get_setting('require_agreement', 0),
+                    'required' => (bool)$quiz->get_setting('require_agreement', 0),
+                    // 1.0.31: ровно то же, что видит участник под чекбоксом:
+                    // без требования согласия ссылок во внешнем контракте нет.
+                    'links'    => (bool)$quiz->get_setting('require_agreement', 0) ? $quiz->get_agreement_links() : [],
+                ],
             ],
             'shared_texts'         => self::shared_texts_dict($quiz),
             'questions'            => self::public_questions($quiz),

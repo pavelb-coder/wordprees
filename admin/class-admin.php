@@ -232,6 +232,11 @@ final class Admin
 
                     'require_agreement'        => !empty($_POST['require_agreement']) ? 1 : 0,
                     'agreement_text'           => sanitize_textarea_field($_POST['agreement_text'] ?? ''),
+                    // 1.0.31: ссылки, прикрепляемые к согласию участника.
+                    'agreement_rules_url'        => esc_url_raw(trim((string)($_POST['agreement_rules_url'] ?? ''))),
+                    'agreement_rules_text'       => sanitize_text_field($_POST['agreement_rules_text'] ?? ''),
+                    'agreement_privacy_url'      => esc_url_raw(trim((string)($_POST['agreement_privacy_url'] ?? ''))),
+                    'agreement_privacy_text'     => sanitize_text_field($_POST['agreement_privacy_text'] ?? ''),
 
                     'show_anti_cheat_notice'   => !empty($_POST['show_anti_cheat_notice']) ? 1 : 0,
                     'anti_cheat_notice_text'   => sanitize_textarea_field($_POST['anti_cheat_notice_text'] ?? ''),

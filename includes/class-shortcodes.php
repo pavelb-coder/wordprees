@@ -344,6 +344,8 @@ final class Shortcodes
 
         $req_agreement = (bool)$quiz->get_setting('require_agreement', 0);
         $agreement_text = (string)$quiz->get_setting('agreement_text', __('Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.', 'wp-olympiad'));
+        // 1.0.31: что участник может прочесть, не снимая галочки.
+        $agreement_links = $req_agreement ? $quiz->get_agreement_links() : [];
 
         $show_ac = (bool)$quiz->get_setting('show_anti_cheat_notice', 1);
         $ac_text = (string)$quiz->get_setting('anti_cheat_notice_text', __('🛡️ Внимание! Во время тестирования ведётся контроль переключения вкладок и активности окна. Пожалуйста, не закрывайте страницу до завершения.', 'wp-olympiad'));
@@ -499,6 +501,13 @@ final class Shortcodes
                                     <input type="checkbox" name="agreement" required style="margin-top:2px;">
                                     <span><?php echo esc_html($agreement_text); ?> <span class="wpo-required">*</span></span>
                                 </label>
+                                <?php if (!empty($agreement_links)): ?>
+                                    <span class="wpo-agreement-links" style="display:block; margin:6px 0 0 24px;">
+                                        <?php foreach ($agreement_links as $wpo_agreement_link): ?>
+                                            <a href="<?php echo esc_url($wpo_agreement_link['url']); ?>" target="_blank" rel="noopener noreferrer" style="display:block; font-size:12px; text-decoration:underline;"><?php echo esc_html($wpo_agreement_link['text']); ?></a>
+                                        <?php endforeach; ?>
+                                    </span>
+                                <?php endif; ?>
                             </div>
                         <?php endif; ?>
 

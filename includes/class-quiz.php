@@ -148,6 +148,11 @@ final class Quiz
 
             'require_agreement'        => 0,
             'agreement_text'           => 'Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.',
+            // 1.0.31: прикреплённые к согласию ссылки — правила и обработка данных.
+            'agreement_rules_url'      => '',
+            'agreement_rules_text'     => '',
+            'agreement_privacy_url'    => '',
+            'agreement_privacy_text'   => '',
 
             // 1.0.21: дополнительные поля анкеты и вывод вопросов по группам.
             'custom_fields'            => [],
@@ -232,6 +237,16 @@ final class Quiz
      * могла разойтись; 0 по-прежнему означает «без лимита».
      */
     public const TIME_LIMIT_MAX_MINUTES = 4320;
+
+    /**
+     * 1.0.31: что участник может прочесть перед тем, как поставить галочку
+     * согласия. Ключ — вид ссылки, значение — подпись по умолчанию, которая
+     * подставляется, если организатор не придумал свою.
+     */
+    private const AGREEMENT_LINK_KINDS = [
+        'rules'   => 'Полный текст правил олимпиады',
+        'privacy' => 'Согласие на обработку персональных данных',
+    ];
 
     /** Transliteration used so that a Russian olympiad name yields a readable URL part. */
     private const LINK_ALIAS_TRANSLIT = [
@@ -524,12 +539,80 @@ final class Quiz
         return min(self::TIME_LIMIT_MAX_MINUTES, $minutes);
     }
 
+    /**
+     * 1.0.31: чистка одной прикреплённой ссылки. Адрес принимает только
+     * разрешённые WordPress протоколы (http, https, mailto и т. п.), поэтому
+     * «javascript:…» превращается в пустую строку, то есть в «ссылки нет».
+     * Пустой текст остаётся пустым — подпись по умолчанию подставляет тот, кто
+     * читает, иначе она застыла бы в базе непереведённой.
+     */
+    public static function normalize_agreement_link($url, $text): array
+    {
+        $raw = trim((string)$url);
+        if ($raw !== '' && !preg_match('#^[a-z][a-z0-9+.\-]*:#i', $raw)) {
+            // Адрес без протокола. WordPress дописал бы к нему http://; для
+            // ссылок на правила это почти всегда ошибка, поэтому выбираем https.
+            $raw = 'https://' . ltrim($raw, '/');
+        }
+        $clean_url = (string)esc_url_raw($raw);
+        $clean_text = trim(sanitize_text_field((string)$text));
+
+        return [
+            'url'  => $clean_url,
+            'text' => $clean_text,
+        ];
+    }
+
+    /**
+     * 1.0.31: ссылки согласия этой олимпиады, готовые к выводу. Единственный
+     * источник и для формы участника, и для внешнего API: разойтись в
+     * фильтрации или в подписях они не могут.
+     *
+     * @return array<int, array{url: string, text: string, kind: string}>
+     */
+    public function get_agreement_links(): array
+    {
+        $links = [];
+        foreach (array_keys(self::AGREEMENT_LINK_KINDS) as $kind) {
+            $link = self::normalize_agreement_link(
+                (string)$this->get_setting('agreement_' . $kind . '_url', ''),
+                (string)$this->get_setting('agreement_' . $kind . '_text', '')
+            );
+            if ($link['url'] === '') {
+                continue;
+            }
+            $link['kind'] = $kind;
+            $link['text'] = $link['text'] !== ''
+                ? $link['text']
+                : __(self::AGREEMENT_LINK_KINDS[$kind], 'wp-olympiad');
+            $links[] = $link;
+        }
+
+        return $links;
+    }
+
     public static function normalize_custom_settings(array &$settings): void
     {
         if (array_key_exists('time_limit', $settings)) {
             // Граница зашита здесь, а не только в max у поля формы: сетевой импорт
             // и прямое сохранение настроек обязаны давать тот же результат.
             $settings['time_limit'] = self::normalize_time_limit($settings['time_limit']);
+        }
+        // 1.0.31: ссылки согласия. Граница тоже здесь, а не только в max у поля
+        // формы: сетевой импорт и прямое сохранение настроек обязаны давать тот
+        // же результат, что и сохранение из админки.
+        foreach (array_keys(self::AGREEMENT_LINK_KINDS) as $wpo_kind) {
+            $wpo_url_key  = 'agreement_' . $wpo_kind . '_url';
+            $wpo_text_key = 'agreement_' . $wpo_kind . '_text';
+            if (!array_key_exists($wpo_url_key, $settings) && !array_key_exists($wpo_text_key, $settings)) {
+                continue;
+            }
+            $wpo_link = self::normalize_agreement_link(
+                $settings[$wpo_url_key] ?? '',
+                $settings[$wpo_text_key] ?? ''
+            );
+            $settings[$wpo_url_key]  = $wpo_link['url'];
+            $settings[$wpo_text_key] = $wpo_link['text'];
         }
         if (array_key_exists('custom_fields', $settings)) {
             $settings['custom_fields'] = ParticipantFields::sanitize_defs((array)$settings['custom_fields']);

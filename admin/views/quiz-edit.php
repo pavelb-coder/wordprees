@@ -105,6 +105,11 @@ $field_city_placeholder = $is_new ? 'Москва' : (string)$quiz->get_setting(
 
 $require_agreement = $is_new ? 0 : (int)$quiz->get_setting('require_agreement', 0);
 $agreement_text = $is_new ? 'Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.' : (string)$quiz->get_setting('agreement_text', 'Я подтверждаю корректность введённых данных и согласен с правилами проведения олимпиады.');
+// 1.0.31: прикреплённые к согласию ссылки (правила и обработка данных).
+$agreement_rules_url = $is_new ? '' : (string)$quiz->get_setting('agreement_rules_url', '');
+$agreement_rules_text = $is_new ? '' : (string)$quiz->get_setting('agreement_rules_text', '');
+$agreement_privacy_url = $is_new ? '' : (string)$quiz->get_setting('agreement_privacy_url', '');
+$agreement_privacy_text = $is_new ? '' : (string)$quiz->get_setting('agreement_privacy_text', '');
 
 $show_anti_cheat_notice = $is_new ? 1 : (int)$quiz->get_setting('show_anti_cheat_notice', 1);
 
@@ -295,6 +300,25 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                             </strong>
                                         </div>
                                         <textarea name="agreement_text" rows="2" class="large-text" placeholder="<?php esc_attr_e('Текст пользовательского соглашения...', 'wp-olympiad'); ?>"><?php echo esc_textarea($agreement_text); ?></textarea>
+
+                                        <!-- 1.0.31: ссылки, прикрепляемые к согласию -->
+                                        <div style="margin-top:10px; display:grid; gap:10px;">
+                                            <div>
+                                                <div style="font-size:12px; color:#475569; margin-bottom:4px;">📎 <?php esc_html_e('Ссылка на правила', 'wp-olympiad'); ?></div>
+                                                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                                    <input type="url" name="agreement_rules_url" value="<?php echo esc_attr($agreement_rules_url); ?>" class="regular-text" placeholder="https://&#8230;/rules" style="flex:1 1 260px;">
+                                                    <input type="text" name="agreement_rules_text" value="<?php echo esc_attr($agreement_rules_text); ?>" class="regular-text" placeholder="<?php esc_attr_e('Полный текст правил олимпиады', 'wp-olympiad'); ?>" style="flex:1 1 240px;">
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div style="font-size:12px; color:#475569; margin-bottom:4px;">🔒 <?php esc_html_e('Ссылка на согласие на обработку данных', 'wp-olympiad'); ?></div>
+                                                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                                    <input type="url" name="agreement_privacy_url" value="<?php echo esc_attr($agreement_privacy_url); ?>" class="regular-text" placeholder="https://&#8230;/privacy" style="flex:1 1 260px;">
+                                                    <input type="text" name="agreement_privacy_text" value="<?php echo esc_attr($agreement_privacy_text); ?>" class="regular-text" placeholder="<?php esc_attr_e('Согласие на обработку персональных данных', 'wp-olympiad'); ?>" style="flex:1 1 240px;">
+                                                </div>
+                                            </div>
+                                            <p class="description" style="margin:0;"><?php esc_html_e('Ссылки появятся под чекбоксом согласия и откроются в новой вкладке. Заполнять необязательно; адрес без протокола дополняется https://, а ссылки вида javascript: не сохраняются.', 'wp-olympiad'); ?></p>
+                                        </div>
                                     </div>
                                 </div>
                             </td>
