@@ -81,6 +81,9 @@ $it('1.0.31: под чекбоксом согласия выводятся пр�
         $html3 = (string)Shortcodes::render_quiz(['id' => (string)$quiz_id]);
         $al(!str_contains($html3, 'wpo-agreement-links'), 'Пустые ссылки вывели блок');
         $al(str_contains($html3, 'name="agreement"'), 'Исчез сам чекбокс согласия');
+        // Байт-нейтральность: без ссылок между подписью чекбокса и закрывающим div
+        // не должно появиться ни одной лишней строки.
+        $al(str_contains($html3, "</label>\n                            </div>"), 'Разметка без ссылок получила лишние строки');
         return true;
     } finally {
         Quiz::delete($quiz_id);

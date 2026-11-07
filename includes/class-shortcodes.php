@@ -223,6 +223,32 @@ final class Shortcodes
         ]);
     }
 
+    /**
+     * 1.0.31: HTML ссылок под чекбоксом согласия. Пустой список отдаёт пустую
+     * строку: у олимпиад без прикреплённых ссылок разметка стартовой страницы
+     * остаётся байт-в-байт прежней, включая пробелы.
+     */
+    private static function agreement_links_html(array $links): string
+    {
+        if (empty($links)) {
+            // Один перевод строки — именно он завершал строку с `</label>` и до
+            // появления ссылок: разметка олимпиады без них остаётся байт-в-байт прежней.
+            return "\n";
+        }
+
+        $out = "
+                                <span class=\"wpo-agreement-links\" style=\"display:block; margin:6px 0 0 24px;\">";
+        foreach ($links as $link) {
+            $out .= "
+                                    <a href=\"" . esc_url($link['url']) . "\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"display:block; font-size:12px; text-decoration:underline;\">"
+                . esc_html($link['text'])
+                . "</a>";
+        }
+        $out .= "\n                                </span>";
+
+        return $out;
+    }
+
     public static function render_quiz(array|string $atts): string
     {
         $atts = shortcode_atts([
@@ -500,14 +526,7 @@ final class Shortcodes
                                 <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:13px; color:#475569;">
                                     <input type="checkbox" name="agreement" required style="margin-top:2px;">
                                     <span><?php echo esc_html($agreement_text); ?> <span class="wpo-required">*</span></span>
-                                </label>
-                                <?php if (!empty($agreement_links)): ?>
-                                    <span class="wpo-agreement-links" style="display:block; margin:6px 0 0 24px;">
-                                        <?php foreach ($agreement_links as $wpo_agreement_link): ?>
-                                            <a href="<?php echo esc_url($wpo_agreement_link['url']); ?>" target="_blank" rel="noopener noreferrer" style="display:block; font-size:12px; text-decoration:underline;"><?php echo esc_html($wpo_agreement_link['text']); ?></a>
-                                        <?php endforeach; ?>
-                                    </span>
-                                <?php endif; ?>
+                                </label><?php echo self::agreement_links_html($agreement_links); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped; вывод уже собран с экранированием. ?>
                             </div>
                         <?php endif; ?>
 
