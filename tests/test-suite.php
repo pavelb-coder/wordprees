@@ -2660,7 +2660,7 @@ $it('Шаблон в import не размещается; вручную доба
         $found = NetworkImport::scan_network_folder_for_import_files($quiz);
         if (array_column($found, 'name') !== ['questions_template.xlsx']) return false;
         $import = NetworkImport::import_from_network($id, 'import/questions_template.xlsx', 'append');
-        return !empty($import['success']) && $import['imported_count'] === 13 && count(Quiz::get($id)->get_questions(false)) === 13;
+        return !empty($import['success']) && $import['imported_count'] === 14 && count(Quiz::get($id)->get_questions(false)) === 14;
     } finally { Quiz::delete($id); exec('rm -rf ' . escapeshellarg($root)); }
 });
 
@@ -2714,7 +2714,7 @@ $it('Отключение стартовой страницы: прямой за
 // ---------------------------------------------------------------------------
 // 66. Единственный Excel-шаблон без макросов; пользовательский XLSM читается
 // ---------------------------------------------------------------------------
-$it('Excel-шаблон без макросов: 13 типов, списки, импорт XLSX и пользовательского XLSM', function (): bool {
+$it('Excel-шаблон без макросов: 14 типов, списки, импорт XLSX и пользовательского XLSM', function (): bool {
     $xlsx = NetworkImport::get_template_xlsx();
     if (!str_starts_with($xlsx, "PK\x03\x04") || strlen($xlsx) < 5000 || NetworkImport::get_template_xlsm() !== '') return false;
     $temp = tempnam(sys_get_temp_dir(), 'wpo_macro_compat_');
@@ -2733,11 +2733,11 @@ $it('Excel-шаблон без макросов: 13 типов, списки, и
         $user_xlsm = (string)file_get_contents($temp);
         $parsed = NetworkImport::parse_questions_content($xlsx, 'Мои_вопросы.xlsx');
         $macro_parsed = NetworkImport::parse_questions_content($user_xlsm, 'Мои_вопросы.xlsm');
-        $expected = ['single', 'multi', 'dropdown', 'boolean', 'number', 'text', 'matching', 'ordering', 'fill_blank', 'slider', 'word_scramble', 'dictation', 'essay'];
+        $expected = ['single', 'multi', 'dropdown', 'boolean', 'number', 'text', 'matching', 'ordering', 'fill_blank', 'slider', 'word_scramble', 'dictation', 'file', 'essay'];
         if (array_column($parsed, 'question_type') !== $expected || array_column($macro_parsed, 'question_type') !== $expected) return false;
         $id = Quiz::create(['title' => 'XLSX: все типы, без макросов']);
         $result = NetworkImport::import_to_quiz($id, $parsed, 'replace'); $questions = Quiz::get($id)->get_questions(false);
-        if (empty($result['success']) || $result['imported_count'] !== 13 || count($questions) !== 13) return false;
+        if (empty($result['success']) || $result['imported_count'] !== 14 || count($questions) !== 14) return false;
         return $questions[0]->points === 3 && $questions[0]->penalty === 1
             && (float)($questions[4]->options['target_value'] ?? 0) === 9.8
             && count($questions[6]->options['pairs'] ?? []) === 4;
@@ -3253,9 +3253,9 @@ $it('Целостность классов: нет ссылок на несущ�
 });
 
 // ---------------------------------------------------------------------------
-$it('Шаблон импорта: 13 типов заданий, русские заголовки, сквозной импорт CSV/XLSX/JSON', function (): bool {
+$it('Шаблон импорта: 14 типов заданий, русские заголовки, сквозной импорт CSV/XLSX/JSON', function (): bool {
     $supported = array_keys(Question::supported_types());
-    if (count($supported) !== 13) return false;
+    if (count($supported) !== 14) return false;
 
     // 1. Схема шаблона: 17 колонок, порядок совпадает с column_keys(), все типы покрыты
     $columns = ImportTemplate::columns();
@@ -3311,14 +3311,14 @@ $it('Шаблон импорта: 13 типов заданий, русские �
     }
     if (ImportTemplate::normalize_type('совершенно неизвестный тип') !== 'single') return false;
 
-    // 4. CSV-шаблон: BOM, разделитель «;», 13 строк, все типы разбираются без ошибок
+    // 4. CSV-шаблон: BOM, разделитель «;», 14 строк, все типы разбираются без ошибок
     $csv = NetworkImport::get_template_csv();
     if (!str_starts_with($csv, "\xEF\xBB\xBF")) return false;
     $header_line = strtok(substr($csv, 3), "\n");
     if ($header_line !== implode(';', $keys)) return false;
 
     $analysis = NetworkImport::analyze_questions_content($csv, 'template.csv');
-    if ($analysis['stats']['total'] !== 13 || $analysis['stats']['importable'] !== 13) {
+    if ($analysis['stats']['total'] !== 14 || $analysis['stats']['importable'] !== 14) {
         echo "\n    CSV: " . json_encode($analysis['stats'], JSON_UNESCAPED_UNICODE) . "\n    ";
         return false;
     }
@@ -3330,24 +3330,24 @@ $it('Шаблон импорта: 13 типов заданий, русские �
     $json_raw = NetworkImport::get_template_json();
     $json_data = json_decode($json_raw, true);
     if (!is_array($json_data) || ($json_data['format'] ?? '') !== 'wp-olympiad-questions') return false;
-    if (count($json_data['questions'] ?? []) !== 13) return false;
+    if (count($json_data['questions'] ?? []) !== 14) return false;
     $json_parsed = NetworkImport::parse_questions_content($json_raw, 'template.json');
-    if (count($json_parsed) !== 13) return false;
+    if (count($json_parsed) !== 14) return false;
 
-    // 6. README содержит все 13 типов и подсказку по extra
+    // 6. README содержит все 14 типов и подсказку по extra
     $readme = NetworkImport::get_template_readme();
     foreach ($supported as $type) {
         if (mb_strpos($readme, $type) === false) return false;
     }
     if (mb_strpos($readme, 'extra') === false) return false;
 
-    // 7. Единственный XLSX-шаблон: все 13 типов, без мусора с листа «Инструкция»
+    // 7. Единственный XLSX-шаблон: все 14 типов, без мусора с листа «Инструкция»
     foreach (['questions_template.xlsx'] as $excel_file) {
         $path = dirname(__DIR__) . '/templates/' . $excel_file;
         if (!file_exists($path)) return false;
         $binary = (string)file_get_contents($path);
         $excel_analysis = NetworkImport::analyze_questions_content($binary, $excel_file);
-        if ($excel_analysis['stats']['importable'] !== 13 || $excel_analysis['stats']['errors'] !== 0) {
+        if ($excel_analysis['stats']['importable'] !== 14 || $excel_analysis['stats']['errors'] !== 0) {
             echo "\n    {$excel_file}: " . json_encode($excel_analysis['stats'], JSON_UNESCAPED_UNICODE) . "\n    ";
             return false;
         }
@@ -3355,24 +3355,24 @@ $it('Шаблон импорта: 13 типов заданий, русские �
         if (array_values(array_unique($excel_types)) !== $supported) return false;
     }
 
-    // 8. Сквозной импорт в базу: 13 вопросов, параметры каждого типа сохранены
+    // 8. Сквозной импорт в базу: 14 вопросов, параметры каждого типа сохранены
     $quiz_id = Quiz::create([
-        'title'  => 'Олимпиада: полный шаблон (13 типов)',
+        'title'  => 'Олимпиада: полный шаблон (14 типов)',
         'status' => 'draft',
     ]);
     if (!$quiz_id) return false;
 
     $import = NetworkImport::import_to_quiz($quiz_id, $analysis['questions'], 'replace');
-    if (empty($import['success']) || (int)$import['imported_count'] !== 13) return false;
+    if (empty($import['success']) || (int)$import['imported_count'] !== 14) return false;
 
     $stored = Question::get_by_quiz($quiz_id);
-    if (count($stored) !== 13) return false;
+    if (count($stored) !== 14) return false;
 
     $by_type = [];
     foreach ($stored as $question) {
         $by_type[$question->question_type] = $question;
     }
-    if (count($by_type) !== 13) return false;
+    if (count($by_type) !== 14) return false;
 
     // single: 4 варианта, один правильный
     $single = $by_type['single'];
@@ -3467,8 +3467,8 @@ $it('Шаблон импорта: 13 типов заданий, русские �
     file_put_contents($net_dir . '/import/questions_template.csv', $csv);
     $probe = NetworkImport::analyze_import_file(Quiz::get($quiz_id), 'import/questions_template.csv', ['path' => $net_dir, 'type' => 'local']);
     if (empty($probe['success'])) return false;
-    if ((int)$probe['stats']['importable'] !== 13) return false;
-    if (mb_strpos($probe['message'], '13') === false) return false;
+    if ((int)$probe['stats']['importable'] !== 14) return false;
+    if (mb_strpos($probe['message'], '14') === false) return false;
 
     exec('rm -rf ' . escapeshellarg($net_dir));
     Quiz::delete($quiz_id);
@@ -3672,14 +3672,14 @@ $it("Чтение файлов заданий из сетевой папки (lo
     if (mb_strpos((string)$blank['message'], 'не содержит данных') === false) return false;
 
     // 3. Полный цикл: экспорт вопросов олимпиады → запись в папку → чтение и импорт без ошибок
-    //    Исходная олимпиада создаётся из шаблона (13 типов заданий) — тест не зависит от данных сайта.
+    //    Исходная олимпиада создаётся из шаблона (14 типов заданий) — тест не зависит от данных сайта.
     $source_id = Quiz::create(['title' => 'Источник для выгрузки заданий', 'status' => 'publish']);
     $source = Quiz::get($source_id);
     if (!$source) return false;
 
     file_put_contents($dir . '/шаблон-источник.csv', NetworkImport::get_template_csv());
     $seeded = NetworkImport::import_from_network($source_id, 'шаблон-источник.csv', 'append', $cfg);
-    if (empty($seeded['success']) || (int)$seeded['imported_count'] !== 13) {
+    if (empty($seeded['success']) || (int)$seeded['imported_count'] !== 14) {
         echo "\n  ¬ шаблон не импортировался: " . ($seeded['message'] ?? '') . "\n";
         exec('rm -rf ' . escapeshellarg($dir));
         Quiz::delete($quiz_id);
@@ -4387,6 +4387,7 @@ require __DIR__ . '/test-run-mirror.php';
 require __DIR__ . '/test-browser-close-reset.php';
 require __DIR__ . '/test-time-limit-cap.php';
 require __DIR__ . '/test-agreement-links.php';
+require __DIR__ . '/test-attachments.php';
 
 echo "\n=======================================================\n";
 printf("ИТОГ ТЕСТИРОВАНИЯ: Пройдено %d из %d тестов (%d%%)\n", $passed, $total, $total ? (int)round(100 * $passed / $total) : 100);

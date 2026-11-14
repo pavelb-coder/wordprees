@@ -153,7 +153,10 @@ final class Quiz
             'agreement_rules_text'     => '',
             'agreement_privacy_url'    => '',
             'agreement_privacy_text'   => '',
-
+            // 1.0.32: вложения участников — тип задания «Прикрепить файл».
+            'attachment_max_size_mb'     => 10,
+            'attachment_max_count'       => 3,
+            'attachment_kinds'           => ['document', 'text', 'image'],
             // 1.0.21: дополнительные поля анкеты и вывод вопросов по группам.
             'custom_fields'            => [],
             'question_groups'          => [],
@@ -624,6 +627,16 @@ final class Quiz
             $per_page = (int)$settings['questions_per_page'];
             $settings['questions_per_page'] = $per_page > 0 ? min(50, $per_page) : 0;
         }
+
+        // 1.0.32: лимиты вложений. Один нормализатор на все дорожки: форма
+        // админки, сетевой импорт и прямое сохранение настроек обязаны сходиться.
+        $wpo_attachment_keys = ['attachment_max_size_mb', 'attachment_max_count', 'attachment_kinds'];
+        if (array_intersect($wpo_attachment_keys, array_keys($settings)) !== []) {
+            $wpo_attachment = Attachments::normalize(array_intersect_key($settings, array_flip($wpo_attachment_keys)));
+            foreach ($wpo_attachment as $wpo_key => $wpo_value) {
+                $settings[$wpo_key] = $wpo_value;
+            }
+        }
     }
 
     /** Дополнительные поля анкеты: описания, готовые к рендеру и проверке. */
@@ -637,6 +650,11 @@ final class Quiz
     {
         return QuestionGroups::sanitize_defs((array)($this->settings['question_groups'] ?? []));
     }
+
+    /** 1.0.32: лимиты вложений этой олимпиады, готовые к проверке и выводу. */
+    public function get_attachment_limits(): array
+    {
+        return Attachments::limits($this);    }
 
     public function has_question_groups(): bool
     {
@@ -718,8 +736,10 @@ final class Quiz
     {
         if ($id > 0) {
             unset(self::$runtime_cache[$id]);
+            Attachments::reset_store_cache($id);
         } else {
             self::$runtime_cache = [];
+            Attachments::reset_store_cache();
         }
     }
 

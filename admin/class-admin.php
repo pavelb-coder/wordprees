@@ -237,7 +237,11 @@ final class Admin
                     'agreement_rules_text'       => sanitize_text_field($_POST['agreement_rules_text'] ?? ''),
                     'agreement_privacy_url'      => esc_url_raw(trim((string)($_POST['agreement_privacy_url'] ?? ''))),
                     'agreement_privacy_text'     => sanitize_text_field($_POST['agreement_privacy_text'] ?? ''),
-
+                    // 1.0.32: лимиты вложений; потолок и список видов приводит Attachments::normalize() в Quiz::normalize_custom_settings().
+                    // Attachments::normalize() в Quiz::normalize_custom_settings().
+                    'attachment_max_size_mb'     => (int)($_POST['attachment_max_size_mb'] ?? 0),
+                    'attachment_max_count'       => (int)($_POST['attachment_max_count'] ?? 0),
+                    'attachment_kinds'           => array_map('sanitize_key', (array)($_POST['attachment_kinds'] ?? [])),
                     'show_anti_cheat_notice'   => !empty($_POST['show_anti_cheat_notice']) ? 1 : 0,
                     'anti_cheat_notice_text'   => sanitize_textarea_field($_POST['anti_cheat_notice_text'] ?? ''),
 

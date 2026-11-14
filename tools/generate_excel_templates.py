@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Build only questions_template.xlsx from the shared 13-type import schema.
+"""Build only questions_template.xlsx from the shared 14-type import schema.
 
 The template has dropdowns, column hints and instructions; no VBA or XLSM is
 produced. CSV/JSON remain supported user import formats, not bundled samples.

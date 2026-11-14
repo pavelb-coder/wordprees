@@ -110,7 +110,21 @@ $agreement_rules_url = $is_new ? '' : (string)$quiz->get_setting('agreement_rule
 $agreement_rules_text = $is_new ? '' : (string)$quiz->get_setting('agreement_rules_text', '');
 $agreement_privacy_url = $is_new ? '' : (string)$quiz->get_setting('agreement_privacy_url', '');
 $agreement_privacy_text = $is_new ? '' : (string)$quiz->get_setting('agreement_privacy_text', '');
-
+// 1.0.32: лимиты вложений для заданий типа «Прикрепить файл».
+$attachment_max_size_mb = $is_new ? \WPOlympiad\Attachments::DEFAULT_MAX_SIZE_MB : (int)$quiz->get_setting('attachment_max_size_mb', \WPOlympiad\Attachments::DEFAULT_MAX_SIZE_MB);
+$attachment_max_count = $is_new ? \WPOlympiad\Attachments::DEFAULT_MAX_COUNT : (int)$quiz->get_setting('attachment_max_count', \WPOlympiad\Attachments::DEFAULT_MAX_COUNT);
+$attachment_kinds = $is_new ? [] : (array)$quiz->get_setting('attachment_kinds', []);
+if (!$attachment_kinds) {
+    $attachment_kinds = \WPOlympiad\Attachments::default_kinds();
+}
+$attachment_note = '';
+if (!$is_new) {
+    $attachment_root = \WPOlympiad\Attachments::root_dir($quiz);
+    $attachment_parent = dirname($attachment_root);
+    if (is_dir($attachment_root) ? !is_writable($attachment_root) : !is_writable($attachment_parent)) {
+        $attachment_note = sprintf(__('Папка вложений «%s» недоступна для записи — загрузка файлов будет отклонена.', 'wp-olympiad'), $attachment_root);
+    }
+}
 $show_anti_cheat_notice = $is_new ? 1 : (int)$quiz->get_setting('show_anti_cheat_notice', 1);
 
 // 1.0.21: дополнительные поля анкеты и группы (разделы) вопросов.
@@ -421,6 +435,48 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <td>
                                 <input type="number" name="time_limit" id="time_limit" value="<?php echo esc_attr((string)$time_limit); ?>" min="0" max="<?php echo (int)\WPOlympiad\Quiz::TIME_LIMIT_MAX_MINUTES; ?>" step="1" class="small-text">
                                 <p class="description"><?php echo esc_html(sprintf(__('Время на выполнение после нажатия «Начать». Укажите 0 для неограниченного теста. Больше %d минут задать нельзя — сервер опустит до этого значения.', 'wp-olympiad'), (int)\WPOlympiad\Quiz::TIME_LIMIT_MAX_MINUTES)); ?></p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><?php esc_html_e('Вложения участников:', 'wp-olympiad'); ?></th>
+                            <td>
+                                <?php
+                                $wpo_att_store = ['mode' => '', 'type' => ''];
+                                $wpo_att_pending = [];
+                                if (!$is_new) {
+                                    $wpo_att_store = \WPOlympiad\Attachments::store($quiz);
+                                    $wpo_att_pending = \WPOlympiad\Attachments::pending($quiz);
+                                }
+                                ?>
+                                <?php if ($wpo_att_store['mode'] === 'spool'): ?>
+                                    <p class="description" style="margin:0 0 8px;color:#9a6700;">
+                                        <?php echo esc_html(sprintf(__('Сетевая папка недоступна PHP как путь (транспорт %s): работы участников собираются в закрытой папке сайта и копируются в сетевую папку при сдаче и при выгрузке протоколов.', 'wp-olympiad'), $wpo_att_store['type'])); ?>
+                                    </p>
+                                <?php endif; ?>
+                                <?php if ($wpo_att_pending): ?>
+                                    <p class="description" style="margin:0 0 8px;color:#b32d2e;">
+                                        <?php echo esc_html(sprintf(__('Не доставлено в сетевую папку: %d. Повтор — при ближайшей выгрузке протоколов.', 'wp-olympiad'), count($wpo_att_pending))); ?>
+                                        <?php echo esc_html((string)($wpo_att_pending[0]['error'] ?? '')); ?>
+                                    </p>
+                                <?php endif; ?>
+                                <p style="margin-top:0;">
+                                    <label for="attachment_max_size_mb"><?php esc_html_e('Максимальный размер файла, МБ:', 'wp-olympiad'); ?></label>
+                                    <input type="number" name="attachment_max_size_mb" id="attachment_max_size_mb" value="<?php echo (int)$attachment_max_size_mb; ?>" min="1" max="<?php echo (int)\WPOlympiad\Attachments::MAX_SIZE_MB_LIMIT; ?>" class="small-text">
+                                    <label for="attachment_max_count" style="margin-left:16px;"><?php esc_html_e('Файлов на одно задание:', 'wp-olympiad'); ?></label>
+                                    <input type="number" name="attachment_max_count" id="attachment_max_count" value="<?php echo (int)$attachment_max_count; ?>" min="1" max="<?php echo (int)\WPOlympiad\Attachments::MAX_COUNT_LIMIT; ?>" class="small-text">
+                                </p>
+                                <p style="margin:8px 0 0;">
+                                    <?php foreach (\WPOlympiad\Attachments::KINDS as $attachment_kind => $attachment_kind_info): ?>
+                                        <label style="margin-right:16px; display:inline-block;">
+                                            <input type="checkbox" name="attachment_kinds[]" value="<?php echo esc_attr($attachment_kind); ?>" <?php checked(in_array($attachment_kind, $attachment_kinds, true)); ?>>
+                                            <?php echo esc_html($attachment_kind_info['label']); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </p>
+                                <p class="description"><?php esc_html_e('Действует для заданий типа «Прикрепить файл». Файлы складываются в отдельную подпапку «вложения» сетевой папки олимпиады: прямой ссылки на них нет, отдача идёт через проверку прав.', 'wp-olympiad'); ?></p>
+                                <?php if ($attachment_note !== ''): ?>
+                                    <p class="description" style="color:#b32d2e;"><?php echo esc_html($attachment_note); ?></p>
+                                <?php endif; ?>
                             </td>
                         </tr>
                         <tr>

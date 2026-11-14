@@ -99,6 +99,10 @@ final class Question
                 'label'       => __('Интерактивный диктант', 'wp-olympiad'),
                 'description' => __('Текст с орфограммами/пунктограммами вида {=верно|ошибка} и аудированием', 'wp-olympiad'),
             ],
+            'file' => [
+                'label'       => __('Прикрепить файл', 'wp-olympiad'),
+                'description' => __('Участник загружает файл работы; проверка ручная. Лимиты размера, количества и допустимых видов задаются в настройках олимпиады.', 'wp-olympiad'),
+            ],
             'essay' => [
                 'label'       => __('Развёрнутый ответ / Решение (Эссе)', 'wp-olympiad'),
                 'description' => __('Текстовое решение или эссе, оцениваемое жюри/преподавателем вручную', 'wp-olympiad'),
@@ -251,6 +255,9 @@ final class Question
     public static function compute_max_points(string $type, int $base_points, array $options): int
     {
         switch ($type) {
+            case Attachments::TYPE:
+                // Балл назначает жюри; потолок — столько, сколько стоит задание.
+                return max(0, $base_points);
             case 'single':
             case 'dropdown':
             case 'boolean':
@@ -374,6 +381,10 @@ final class Question
                 $clean['ignore_punct'] = isset($options['ignore_punct']) ? (!empty($options['ignore_punct']) ? 1 : 0) : 1;
                 $clean['ignore_whitespace'] = isset($options['ignore_whitespace']) ? (!empty($options['ignore_whitespace']) ? 1 : 0) : 1;
                 $clean['typo_tolerance'] = max(0, min(10, (int)($options['typo_tolerance'] ?? 1)));
+                break;
+
+            case Attachments::TYPE:
+                $clean['upload_hint'] = mb_substr(sanitize_text_field($options['upload_hint'] ?? ''), 0, 300);
                 break;
 
             case 'essay':
@@ -647,6 +658,18 @@ final class Question
 
             case 'text':
                 $data['placeholder'] = __('Введите краткий ответ...', 'wp-olympiad');
+                break;
+
+            case Attachments::TYPE:
+                $wpo_limits = $this->quiz_id ? Attachments::limits(Quiz::get((int)$this->quiz_id)) : Attachments::limits(Quiz::detached_defaults());
+                $data['limits'] = [
+                    'max_bytes' => (int)$wpo_limits['max_bytes'],
+                    'max_count' => (int)$wpo_limits['attachment_max_count'],
+                    'exts'      => $wpo_limits['exts'],
+                    'hint'      => Attachments::describe_limits($wpo_limits),
+                ];
+                $data['placeholder'] = '';
+                $data['upload_hint'] = (string)($this->options['upload_hint'] ?? '');
                 break;
 
             case 'essay':

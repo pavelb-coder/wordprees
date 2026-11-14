@@ -518,6 +518,18 @@ $types = \WPOlympiad\Question::supported_types();
                     </div>
                 </div>
 
+                <!-- 11a. File attachment (1.0.32) -->
+                <div class="wpo-type-panel wpo-panel-file" style="<?php echo $qtype === 'file' ? '' : 'display:none;'; ?>">
+                    <div class="wpo-field" style="margin-bottom:10px;">
+                        <strong>📎 <?php esc_html_e('Файл работы', 'wp-olympiad'); ?></strong>
+                        <p class="description"><?php esc_html_e('Участник прикрепляет один или несколько файлов. Оценивание только ручное: балл выставляет жюри на странице проверки работы. Лимиты размера, количества и допустимых видов задаются в настройках олимпиады.', 'wp-olympiad'); ?></p>
+                    </div>
+                    <div class="wpo-field">
+                        <label><span><?php esc_html_e('Подсказка участнику:', 'wp-olympiad'); ?></span></label>
+                        <input type="text" class="widefat wpo-file-upload-hint" value="<?php echo esc_attr($q->options['upload_hint'] ?? ''); ?>" placeholder="<?php esc_attr_e('Например: один PDF до 10 МБ или фото титульной страницы', 'wp-olympiad'); ?>">
+                    </div>
+                </div>
+
                 <!-- 11. Essay Option -->
                 <div class="wpo-type-panel wpo-panel-essay" style="<?php echo $qtype === 'essay' ? '' : 'display:none;'; ?>">
                     <div class="wpo-field" style="margin-bottom:12px;">

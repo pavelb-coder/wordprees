@@ -232,7 +232,7 @@ foreach ($questions as $question_obj) {
                 <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:12px 16px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                     <div>
                         <strong style="color:#1e40af; display:block; font-size:13px;">📄 <?php esc_html_e('Шаблон для заполнения вопросов:', 'wp-olympiad'); ?></strong>
-                        <span style="font-size:12px; color:#475569;"><?php esc_html_e('Все 13 типов заданий: выбор, соответствия, последовательность, пропуски, шкала, анаграмма, диктант, эссе и др. Заголовки можно писать по-русски.', 'wp-olympiad'); ?></span>
+                        <span style="font-size:12px; color:#475569;"><?php esc_html_e('Все 14 типов заданий: выбор, соответствия, последовательность, пропуски, шкала, анаграмма, диктант, эссе, прикрепление файла. Заголовки можно писать по-русски.', 'wp-olympiad'); ?></span>
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
                         <a href="<?php echo esc_url(admin_url('admin.php?wpo_action=download_question_template&format=xlsx')); ?>" class="button button-small button-primary" title="<?php esc_attr_e('Стандартный файл Excel с выпадающими списками', 'wp-olympiad'); ?>">

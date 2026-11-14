@@ -68,6 +68,28 @@ final class RestApi
             'permission_callback' => '__return_true',
         ]);
 
+        // 1.0.32: вложения участников — загрузка идёт до отправки работы.
+        register_rest_route(self::NAMESPACE, '/attachment', [
+            'methods'             => 'POST',
+            'callback'            => [self::class, 'handle_attachment_upload'],
+            'permission_callback' => '__return_true',
+        ]);
+        register_rest_route(self::NAMESPACE, '/attachment-remove', [
+            'methods'             => 'POST',
+            'callback'            => [self::class, 'handle_attachment_remove'],
+            'permission_callback' => '__return_true',
+        ]);
+        register_rest_route(self::NAMESPACE, '/attachment-list', [
+            'methods'             => 'POST',
+            'callback'            => [self::class, 'handle_attachment_list'],
+            'permission_callback' => '__return_true',
+        ]);
+        register_rest_route(self::NAMESPACE, '/attachment-file', [
+            'methods'             => 'GET',
+            'callback'            => [self::class, 'handle_attachment_file'],
+            'permission_callback' => '__return_true',
+        ]);
+
         // Submit Answers
         register_rest_route(self::NAMESPACE, '/submit', [
             'methods'             => 'POST',
@@ -403,6 +425,143 @@ final class RestApi
         return $locked;
     }
 
+    // ------------------------------------------------------- 1.0.32: вложения
+
+    /**
+     * Общая проверка: живой attempt по токену, задание этой олимпиады и его тип.
+     *
+     * @return array{attempt: Attempt, quiz: Quiz, question: Question, bucket: string}|WP_Error
+     */
+    private static function attachment_context(WP_REST_Request $request)
+    {
+        $token = sanitize_text_field((string)($request->get_param('token') ?? ''));
+        $attempt = $token !== '' ? Attempt::get_by_token($token) : null;
+        if (!$attempt instanceof Attempt) {
+            return new WP_Error('invalid_attempt', __('Попытка не найдена.', 'wp-olympiad'), ['status' => 400]);
+        }
+        if ($attempt->status !== 'in_progress') {
+            return new WP_Error('already_submitted', __('Работа уже отправлена, вложения больше не принимаются.', 'wp-olympiad'), ['status' => 400]);
+        }
+        $quiz = Quiz::get((int)$attempt->quiz_id);
+        if (!$quiz instanceof Quiz) {
+            return new WP_Error('quiz_not_found', __('Олимпиада не найдена.', 'wp-olympiad'), ['status' => 404]);
+        }
+        $question_id = (int)($request->get_param('question_id') ?? 0);
+        $question = Question::get($question_id);
+        if (!$question instanceof Question || (int)$question->quiz_id !== (int)$quiz->id) {
+            return new WP_Error('wpo_attachment_question', __('Задание не принадлежит этой олимпиаде.', 'wp-olympiad'), ['status' => 400]);
+        }
+        if ($question->question_type !== Attachments::TYPE) {
+            return new WP_Error('wpo_attachment_type', __('В этом задании файл не требуется.', 'wp-olympiad'), ['status' => 400]);
+        }
+
+        return [
+            'attempt'  => $attempt,
+            'quiz'     => $quiz,
+            'question' => $question,
+            'bucket'   => Attachments::bucket($token),
+        ];
+    }
+
+    public static function handle_attachment_upload(WP_REST_Request $request)
+    {
+        $ctx = self::attachment_context($request);
+        if (is_wp_error($ctx)) {
+            return $ctx;
+        }
+        $params = $request->get_file_params();
+        $file = $params['file'] ?? ($params['attachment'] ?? null);
+        if (!is_array($file)) {
+            return new WP_Error('wpo_no_file', __('Файл не передан.', 'wp-olympiad'), ['status' => 400]);
+        }
+        $entry = Attachments::accept($ctx['quiz'], $ctx['bucket'], (int)$ctx['question']->id, $file, Attachments::limits($ctx['quiz']));
+        if (is_wp_error($entry)) {
+            return $entry;
+        }
+
+        return new WP_REST_Response(['success' => true, 'file' => $entry], 201);
+    }
+
+    public static function handle_attachment_remove(WP_REST_Request $request)
+    {
+        $ctx = self::attachment_context($request);
+        if (is_wp_error($ctx)) {
+            return $ctx;
+        }
+        $id = sanitize_text_field((string)($request->get_param('id') ?? ''));
+        $removed = Attachments::remove($ctx['quiz'], $ctx['bucket'], $id, (int)$ctx['question']->id);
+
+        return new WP_REST_Response(['success' => $removed, 'removed' => $removed ? 1 : 0], $removed ? 200 : 404);
+    }
+
+    public static function handle_attachment_list(WP_REST_Request $request)
+    {
+        $ctx = self::attachment_context($request);
+        if (is_wp_error($ctx)) {
+            return $ctx;
+        }
+        $question_id = (int)($request->get_param('question_id') ?? 0);
+        $files = Attachments::list_for($ctx['quiz'], $ctx['bucket'], $question_id);
+        foreach ($files as $i => $file) {
+            // Клиенту важно отличать «загружен» от «пропал с диска».
+            $files[$i]['exists'] = is_wp_error(Attachments::resolve($ctx['quiz'], (string)($file['rel'] ?? ''))) ? 0 : 1;
+        }
+
+        return new WP_REST_Response([
+            'success' => true,
+            'files'   => $files,
+            'limits'  => self::attachment_limits_payload($ctx['quiz']),
+        ], 200);
+    }
+
+    /**
+     * Отдача файла. Организатору — по quiz_id + rel; владельцу попытки — только
+     * её собственной, по токену ран-сессии. Прямая ссылка на папку не работает:
+     * каталог закрыт, а имя файла непредсказуемо.
+     */
+    public static function handle_attachment_file(WP_REST_Request $request)
+    {
+        $rel = (string)($request->get_param('rel') ?? '');
+        $quiz_id = (int)($request->get_param('quiz_id') ?? 0);
+        $quiz = $quiz_id > 0 ? Quiz::get($quiz_id) : null;
+        if (!$quiz instanceof Quiz) {
+            return new WP_Error('quiz_not_found', __('Олимпиада не найдена.', 'wp-olympiad'), ['status' => 404]);
+        }
+
+        $allowed = is_user_logged_in() && current_user_can('manage_options');
+        if (!$allowed) {
+            $token = sanitize_text_field((string)($request->get_param('token') ?? ''));
+            $attempt = $token !== '' ? Attempt::get_by_token($token) : null;
+            $allowed = $attempt instanceof Attempt
+                && (int)$attempt->quiz_id === (int)$quiz->id
+                && str_starts_with($rel, Attachments::bucket($token) . '/');
+        }
+        if (!$allowed) {
+            return new WP_Error('wpo_forbidden', __('Файл доступен только организатору олимпиады и её владельцу.', 'wp-olympiad'), ['status' => 403]);
+        }
+
+        $abs = Attachments::resolve($quiz, $rel);
+        if (is_wp_error($abs)) {
+            return $abs;
+        }
+        $name = Attachments::display_name((string)($request->get_param('name') ?? ''));
+
+        Attachments::stream($abs, $name);
+    }
+
+    /** Ограничения вложений для клиента: то же, что видит сервер при проверке. */
+    public static function attachment_limits_payload(Quiz $quiz): array
+    {
+        $limits = Attachments::limits($quiz);
+
+        return [
+            'max_bytes' => (int)$limits['max_bytes'],
+            'max_count' => (int)$limits['attachment_max_count'],
+            'exts'      => $limits['exts'],
+            'hint'      => Attachments::describe_limits($limits),
+        ];
+    }
+
     public static function handle_submit(WP_REST_Request $request): WP_REST_Response|WP_Error
     {
         $token = sanitize_text_field($request->get_param('token') ?? '');
@@ -494,6 +653,13 @@ final class RestApi
             );
         }
 
+        // 1.0.32: вместо id вложений — проверенные метаданные; список id, на
+        // которые сослались, нужен, чтобы почистить неиспользованные файлы.
+        $wpo_kept_files = [];
+        $bucket = Attachments::bucket($token);
+        $user_answers = Attachments::resolve_answers($quiz, $bucket, (array)$user_answers, $wpo_kept_files);
+        Attachments::purge_unreferenced($quiz, $bucket, $wpo_kept_files);
+
         // Grade attempt
         $grading = Grader::grade($quiz, $attempt, $user_answers, $locked_questions);
 
@@ -516,6 +682,12 @@ final class RestApi
             $wpdb->query('ROLLBACK');
             return new WP_Error('submission_failed', __('Ошибка сохранения результатов в базу данных.', 'wp-olympiad'), ['status' => 500]);
         }
+
+        // Режим «spool»: файлы участника лежат на сервере — после сдачи их надо
+        // отдать в сетевую папку, чтобы их увидело жюри. Неудача не отменяет
+        // сдачу: список недоставленного виден организатору и повторяется при
+        // выгрузке протоколов.
+        $attachment_delivery = Attachments::flush_to_share($quiz, $bucket, $wpo_kept_files);
 
         // Dispatch external webhook if configured
         $webhook_url = (string)$quiz->get_setting('webhook_url', '');

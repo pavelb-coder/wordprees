@@ -89,7 +89,7 @@ $it('Комплект шаблонов: пользовательские questio
         $pkg_assert(empty($deploy['success']) && file_get_contents($root . '/import/questions.csv') === $csv && file_get_contents($root . '/import/questions.json') === $json, 'Disabled template placement changed genuine inputs');
         foreach (['questions.csv', 'questions.json'] as $name) {
             $import = NetworkImport::import_from_network($id, 'import/' . $name, 'replace');
-            $pkg_assert(!empty($import['success']) && $import['imported_count'] === 13, 'User input format disabled: ' . $name);
+            $pkg_assert(!empty($import['success']) && $import['imported_count'] === 14, 'User input format disabled: ' . $name);
         }
         $out = NetworkExport::export_quiz($id, ['type' => 'local', 'path' => $root]);
         // 1.0.16: выгрузка ответов больше не пишет задания, но снимает старые файлы «вопросы/»
@@ -101,7 +101,7 @@ $it('Комплект шаблонов: пользовательские questio
         $retire = NetworkExport::export_quiz($id, ['type' => 'local', 'path' => $root]);
         $pkg_assert(!empty($retire['success']) && !file_exists($root . '/вопросы/questions.csv') && !file_exists($root . '/вопросы/questions.json') && !is_dir($root . '/вопросы'), 'Legacy question aliases survived the retirement');
         $pkg_assert(file_get_contents($root . '/import/questions.csv') === $csv, 'Retirement reached import folder');
-        return count(Quiz::get($id)->get_questions(false)) === 13;
+        return count(Quiz::get($id)->get_questions(false)) === 14;
     } finally { Quiz::delete($id); $pkg_cleanup($root); }
 });
 

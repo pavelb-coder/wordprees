@@ -170,6 +170,9 @@ final class Grader
             case 'essay':
                 return self::grade_essay($question, $user_answer);
 
+            case Attachments::TYPE:
+                return self::grade_attachment($question, $user_answer);
+
             default:
                 return [
                     'awarded_points'      => 0,
@@ -864,6 +867,31 @@ final class Grader
             'is_correct'          => $all_correct ? 1 : ($awarded > 0 ? null : 0),
             'needs_manual_review' => false,
             'review_comment'      => ($all_correct ? '✓ ' : '') . $comment,
+        ];
+    }
+
+    /**
+     * 1.0.32: задание «Прикрепить файл». Автоматически оценить содержимое
+     * нельзя, поэтому приложенный файл — это «на ручной проверке», а его
+     * отсутствие — законный ноль без очереди на просмотр.
+     */
+    private static function grade_attachment(Question $q, mixed $user_answer): array
+    {
+        $files = Attachments::answer_files($user_answer);
+        if (!$files) {
+            return [
+                'awarded_points'      => 0,
+                'is_correct'          => 0,
+                'needs_manual_review' => false,
+                'review_comment'      => __('Файл не приложен', 'wp-olympiad'),
+            ];
+        }
+
+        return [
+            'awarded_points'      => 0,
+            'is_correct'          => null,
+            'needs_manual_review' => true,
+            'review_comment'      => Attachments::summarize($files),
         ];
     }
 

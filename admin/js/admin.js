@@ -50,6 +50,7 @@
             $card.find('.wpo-panel-word_scramble').toggle(type === 'word_scramble');
             $card.find('.wpo-panel-dictation').toggle(type === 'dictation');
             $card.find('.wpo-panel-essay').toggle(type === 'essay');
+            $card.find('.wpo-panel-file').toggle(type === 'file');
 
             // Switch radio vs checkbox for choices
             var inputType = (type === 'multi') ? 'checkbox' : 'radio';
@@ -824,6 +825,8 @@
                 options.target_word = options.words[0] || '';
                 options.extra_letters = $card.find('.wpo-scramble-extra').val().trim();
                 options.case_sensitive = $card.find('.wpo-scramble-case').is(':checked') ? 1 : 0;
+            } else if (qtype === 'file') {
+                options.upload_hint = $card.find('.wpo-file-upload-hint').val().trim();
             } else if (qtype === 'dictation') {
                 options.template = $card.find('.wpo-dictation-template').val().trim();
                 options.audio_url = $card.find('.wpo-dictation-audio').val().trim();

@@ -34,7 +34,7 @@ final class ImportTemplate
         return [
             'type' => [
                 'label'    => 'Тип задания',
-                'hint'     => 'Код типа: single, multi, dropdown, boolean, number, text, matching, ordering, fill_blank, slider, word_scramble, dictation, essay. Можно писать по-русски: «один выбор», «тест», «соответствие»…',
+                'hint'     => 'Код типа: single, multi, dropdown, boolean, number, text, matching, ordering, fill_blank, slider, word_scramble, dictation, essay, file. Можно писать по-русски: «один выбор», «тест», «соответствие»…',
                 'example'  => 'single',
                 'width'    => 17,
                 'required' => true,
@@ -368,7 +368,14 @@ final class ImportTemplate
             'развернутый ответ'     => 'essay',
             'сочинение'             => 'essay',
             'решение'               => 'essay',
-            'long answer'           => 'essay',
+            'long answer'           => 'essay',            'прикрепить файл'       => 'file',
+            'прикрепление файла'    => 'file',
+            'загрузка файла'        => 'file',
+            'вложение'              => 'file',
+            'файл работы'           => 'file',
+            'attachment'            => 'file',
+            'upload'                => 'file',
+            'file'                  => 'file',
             'open answer'           => 'essay',
         ];
 
@@ -761,6 +768,25 @@ final class ImportTemplate
                 'template'    => 'Быстро {=ск|згк}ать по {=лест|лезт}нице.',
                 'extra'       => 'scoring=proportional; mistakes=1',
             ],
+            'file' => [
+                'type'        => 'file',
+                'title'       => 'Прикрепите файл с решением задачи №3: PDF или фотографию титульной страницы.',
+                'points'      => '10',
+                'penalty'     => '0',
+                'group_name'  => 'Часть 3: Развёрнутые решения',
+                'choices'     => '',
+                'correct'     => '',
+                'target_value'=> '',
+                'tolerance'   => '',
+                'answers'     => '',
+                'explanation' => 'Файлы этого задания проверяет жюри вручную: автоматической оценки нет.',
+                'is_required' => '1',
+                'content'     => '',
+                'image_url'   => '',
+                'shared_text_id' => '',
+                'template'    => '',
+                'extra'       => 'upload_hint=Один PDF до 10 МБ или фото титульной страницы',
+            ],
             'essay' => [
                 'type'        => 'essay',
                 'title'       => 'Сформулируйте третий закон Ньютона и опишите пример его проявления в технике.',
@@ -974,6 +1000,14 @@ final class ImportTemplate
                         'template'       => 'Быстро {=ск|згк}ать по {=лест|лезт}нице.',
                         'scoring_mode'   => 'proportional',
                         'allowed_mistakes' => 1,
+                    ],
+                ],
+                [
+                    'question_type' => 'file',
+                    'title'         => 'Прикрепите файл с решением задачи №3: PDF или фотографию титульной страницы.',
+                    'points'        => 10,
+                    'options'       => [
+                        'upload_hint' => 'Один PDF до 10 МБ или фото титульной страницы',
                     ],
                 ],
                 [

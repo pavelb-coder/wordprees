@@ -437,6 +437,9 @@ final class Export
                 }
                 return $raw;
 
+            case Attachments::TYPE:
+                return Attachments::summarize(Attachments::answer_files($raw));
+
             case 'slider':
             case 'numeric':
             case 'short_text':
@@ -614,6 +617,13 @@ final class Export
                     $extra_parts[] = 'mistakes=' . (int)($opts['allowed_mistakes'] ?? 0);
                     if (!empty($opts['audio_url'])) {
                         $extra_parts[] = 'audio_url=' . (string)$opts['audio_url'];
+                    }
+                    break;
+
+                case Attachments::TYPE:
+                    $hint = (string)($opts['upload_hint'] ?? '');
+                    if ($hint !== '') {
+                        $extra_parts[] = 'upload_hint=' . $hint;
                     }
                     break;
 

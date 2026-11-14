@@ -827,6 +827,198 @@
             }
         }
 
+        // ── 1.0.32: вложения (тип задания «Прикрепить файл») ────────────────
+        // Файл уходит на сервер сразу при выборе: в ответе лежит список id, и
+        // после перезагрузки страницы список имён восстанавливается с сервера,
+        // а не из памяти вкладки.
+        attachmentStore() {
+            if (!this.attachments) this.attachments = {};
+            return this.attachments;
+        }
+
+        attachmentLimits(q) {
+            const raw = (q && q.limits) || {};
+            return {
+                maxBytes: parseInt(raw.max_bytes, 10) || 10485760,
+                maxCount: parseInt(raw.max_count, 10) || 3,
+                exts: Array.isArray(raw.exts) ? raw.exts : [],
+                hint: raw.hint || ''
+            };
+        }
+
+        isUploading() {
+            return (this.pendingUploads || 0) > 0;
+        }
+
+        humanSize(bytes) {
+            const b = parseInt(bytes, 10) || 0;
+            if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' ГБ';
+            if (b >= 1048576) return (b / 1048576).toFixed(1) + ' МБ';
+            if (b >= 1024) return Math.round(b / 1024) + ' КБ';
+            return b + ' Б';
+        }
+
+        async apiPostForm(endpoint, form) {
+            if (!config.restUrl) {
+                throw new Error('для загрузки файлов нужен доступный REST API');
+            }
+            const headers = {};
+            if (config.restNonce) {
+                headers['X-WP-Nonce'] = config.restNonce;
+            }
+            const res = await fetch(`${config.restUrl}${endpoint}`, {
+                method: 'POST',
+                headers: headers,
+                body: form,
+                credentials: 'same-origin'
+            });
+            return res.json();
+        }
+
+        attachmentCard(q) {
+            if (!this.qContainer) return null;
+            return this.qContainer.querySelector('.wpo-question-card-inner[data-id="' + q.id + '"]');
+        }
+
+        attachmentStatusShow(q, text) {
+            const card = this.attachmentCard(q);
+            const el = card ? card.querySelector('.wpo-attachment-status') : null;
+            if (!el) return;
+            el.textContent = text || '';
+            el.style.display = text ? '' : 'none';
+        }
+
+        renderAttachmentList(q, listEl) {
+            if (!listEl) return;
+            const store = this.attachmentStore();
+            const files = store[q.id] || [];
+            listEl.innerHTML = files.map((f) => `
+                <li class="wpo-attachment-item" data-attachment-id="${f.id}" style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+                    <span class="wpo-attachment-name">📎 ${this.escapeHtml(f.name)}</span>
+                    <span class="description">${this.humanSize(f.size)}</span>
+                    <button type="button" class="wpo-btn wpo-btn-ghost wpo-attachment-remove" data-attachment-id="${f.id}">Убрать</button>
+                </li>`).join('');
+            listEl.querySelectorAll('.wpo-attachment-remove').forEach((btn) => {
+                btn.addEventListener('click', () => this.removeAttachment(q, btn.getAttribute('data-attachment-id'), listEl));
+            });
+        }
+
+        syncAttachmentAnswer(q) {
+            const store = this.attachmentStore();
+            const files = store[q.id] || [];
+            if (files.length) {
+                this.answers[q.id] = { files: files.map((f) => f.id) };
+            } else {
+                delete this.answers[q.id];
+            }
+            this.updateNavState();
+            this.recordMirror();
+        }
+
+        bindAttachmentEvents(inner, q) {
+            const input = inner.querySelector('.wpo-attachment-input');
+            const listEl = inner.querySelector('.wpo-attachment-list');
+            if (!input) return;
+            const limits = this.attachmentLimits(q);
+            input.addEventListener('change', async () => {
+                const chosen = Array.prototype.slice.call(input.files || []);
+                input.value = '';
+                for (let i = 0; i < chosen.length; i++) {
+                    await this.uploadAttachment(q, chosen[i], limits, listEl);
+                }
+                // Сервер — источник правды: список перечитываем даже если
+                // какая-то загрузка отвалилась (напр. не хватило лимита).
+                this.refreshAttachments(q, listEl);
+            });
+            this.renderAttachmentList(q, listEl);
+            this.refreshAttachments(q, listEl);
+        }
+
+        async uploadAttachment(q, file, limits, listEl) {
+            const store = this.attachmentStore();
+            const files = store[q.id] || (store[q.id] = []);
+            const dot = file.name.lastIndexOf('.');
+            const ext = dot > 0 ? file.name.slice(dot + 1).toLowerCase() : '';
+            if (limits.exts.length && limits.exts.indexOf(ext) === -1) {
+                alert('Файл «' + file.name + '» пропущен: расширение .' + ext + ' не разрешено олимпиадой.');
+                return;
+            }
+            if (file.size > limits.maxBytes) {
+                alert('Файл «' + file.name + '» больше ' + Math.round(limits.maxBytes / 1048576) + ' МБ и не загружен.');
+                return;
+            }
+            if (files.length >= limits.maxCount) {
+                alert('К этому заданию можно прикрепить не больше ' + limits.maxCount + ' файлов.');
+                return;
+            }
+            const form = new FormData();
+            form.append('token', this.token);
+            form.append('question_id', q.id);
+            form.append('file', file, file.name);
+            this.pendingUploads = (this.pendingUploads || 0) + 1;
+            this.attachmentStatusShow(q, 'Загружаем «' + file.name + '»…');
+            let res = null;
+            try {
+                res = await this.apiPostForm('/attachment', form);
+            } catch (e) {
+                res = { success: false, message: 'Загрузка не удалась: ' + e.message };
+            } finally {
+                this.pendingUploads--;
+            }
+            if (res && res.success && res.file) {
+                files.push({ id: res.file.id, name: res.file.name, size: res.file.size });
+                this.renderAttachmentList(q, listEl);
+                this.syncAttachmentAnswer(q);
+                this.attachmentStatusShow(q, '');
+            } else {
+                this.attachmentStatusShow(q, '');
+                alert((res && (res.message || (res.data && res.data.message))) || 'Сервер не принял файл.');
+            }
+        }
+
+        removeAttachment(q, id, listEl) {
+            const store = this.attachmentStore();
+            store[q.id] = (store[q.id] || []).filter((f) => String(f.id) !== String(id));
+            this.renderAttachmentList(q, listEl);
+            this.syncAttachmentAnswer(q);
+            const form = new FormData();
+            form.append('token', this.token);
+            form.append('question_id', q.id);
+            form.append('id', id);
+            this.apiPostForm('/attachment-remove', form).catch(() => {
+                // Не удалось удалить сразу — при сдаче лишнее уберётся на сервере.
+            });
+        }
+
+        refreshAttachments(q, listEl) {
+            if (!this.token || !config.restUrl) return;
+            const form = new FormData();
+            form.append('token', this.token);
+            form.append('question_id', q.id);
+            this.apiPostForm('/attachment-list', form).then((res) => {
+                if (!res || !res.success) return;
+                const answer = this.answers[q.id];
+                const known = (((answer && answer.files) || [])).map(String);
+                const keep = new Set(known);
+                const store = this.attachmentStore();
+                const onServer = (res.files || [])
+                    .filter((f) => f && f.exists !== 0)
+                    .map((f) => ({ id: f.id, name: f.name, size: f.size }));
+                // Зеркала нет (чистка localStorage, другой браузер) — берём то,
+                // что уже лежит на сервере для этого задания.
+                store[q.id] = known.length
+                    ? onServer.filter((f) => keep.has(String(f.id)))
+                    : onServer;
+                if (store[q.id].length) {
+                    this.answers[q.id] = { files: store[q.id].map((f) => f.id) };
+                } else if (answer) {
+                    delete this.answers[q.id];
+                }
+                this.renderAttachmentList(q, listEl);
+                this.syncAttachmentAnswer(q);
+            }).catch(() => {});
+        }
+
         isQuestionAnswered(qid) {
             const val = this.answers[qid];
             if (val === undefined || val === null) return false;
@@ -1123,6 +1315,17 @@
                                class="wpo-input wpo-input-text"
                                value="${savedAns !== undefined ? this.escapeHtml(String(savedAns)) : ''}"
                                placeholder="${q.placeholder || 'Введите ответ...'}">
+                    </div>
+                `;
+            } else if (q.question_type === 'file') {
+                const limits = this.attachmentLimits(q);
+                const accept = limits.exts.map((e) => '.' + e).join(',');
+                html += `
+                    <div class="wpo-form-group wpo-attachment-group">
+                        <input type="file" class="wpo-attachment-input" accept="${accept}"${limits.maxCount > 1 ? ' multiple' : ''}>
+                        <p class="description" style="margin:6px 0 0;">${this.escapeHtml(q.upload_hint || limits.hint || '')}</p>
+                        <ul class="wpo-attachment-list" style="list-style:none;margin:8px 0 0;padding:0;"></ul>
+                        <p class="wpo-attachment-status description" style="display:none;margin:0;"></p>
                     </div>
                 `;
             } else if (q.question_type === 'essay') {
@@ -1470,6 +1673,8 @@
                     this.answers[q.id] = txtInput.value.trim();
                     this.updateNavState();
                 });
+            } else if (q.question_type === 'file') {
+                this.bindAttachmentEvents(inner, q);
             } else if (q.question_type === 'essay') {
                 const area = inner.querySelector('.wpo-textarea');
                 area.addEventListener('input', () => {
@@ -1884,6 +2089,13 @@
 
         async submitAnswers(forced) {
             if (this.isSubmitting) return;
+
+            // 1.0.32: пока файл летит на сервер, сдавать нельзя — иначе он
+            // останется в папке попытки, но не попадёт в ответ.
+            if (this.isUploading()) {
+                alert('Дождитесь окончания загрузки файлов.');
+                return;
+            }
 
             // Enforce required questions check unless forced by timer expiration
             if (!forced) {

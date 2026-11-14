@@ -15,7 +15,7 @@ $exports_fixture = static function (): array {
 };
 $exports_cleanup = static function (string $root, int $id): void { Quiz::delete($id); exec('rm -rf ' . escapeshellarg($root)); };
 
-$it('Экспорт вопросов: только пять русских файлов, CSV/JSON полностью сохраняют 13 типов', function () use ($exports_assert, $exports_fixture, $exports_cleanup): bool {
+$it('Экспорт вопросов: только пять русских файлов, CSV/JSON полностью сохраняют 14 типов', function () use ($exports_assert, $exports_fixture, $exports_cleanup): bool {
     [$root, $id] = $exports_fixture();
     try {
         $quiz = Quiz::get($id); $result = NetworkExport::export_questions_to_network($quiz, ['type' => 'local', 'path' => $root]);
@@ -23,7 +23,7 @@ $it('Экспорт вопросов: только пять русских фа�
         $exports_assert(!in_array('вопросы/questions.csv', $result['files'], true) && !in_array('вопросы/questions.json', $result['files'], true), 'English aliases still generated');
         $csv = glob($root . '/вопросы/вопросы_*.csv'); $json = glob($root . '/вопросы/вопросы_*.json');
         $exports_assert(count($csv) === 1 && count($json) === 1, 'Localized lossless files missing');
-        $exports_assert(count(NetworkImport::parse_questions_content(file_get_contents($csv[0]), basename($csv[0]))) === 13 && count(NetworkImport::parse_questions_content(file_get_contents($json[0]), basename($json[0]))) === 13, 'Localized export lost question data');
+        $exports_assert(count(NetworkImport::parse_questions_content(file_get_contents($csv[0]), basename($csv[0]))) === 14 && count(NetworkImport::parse_questions_content(file_get_contents($json[0]), basename($json[0]))) === 14, 'Localized export lost question data');
         $package = NetworkExport::generate_export_files($quiz);
         $question_files = array_values(array_filter(array_keys($package['files']), static fn($f) => str_starts_with($f, 'вопросы/')));
         $exports_assert($question_files === [], 'Пакет выгрузки ответов содержит файлы заданий');

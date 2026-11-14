@@ -108,13 +108,21 @@ foreach ($questions as $q) {
             $type = $q ? $q->question_type : 'unknown';
             $max_points = $q ? (int)round($q->points) : 1;
             $awarded = (int)round((float)$r['awarded_points']);
-            $is_essay = ($type === 'essay');
+            // 1.0.32: вложения оцениваются так же, как эссе — только вручную.
+            $is_essay = ($type === 'essay' || $type === 'file');
+            $attachment_files = [];
             $user_answer = $r['user_answer'];
 
             // Decode if JSON
             $decoded_ans = json_decode($user_answer, true);
-            if (is_array($decoded_ans)) {
-                $user_answer = implode(', ', $decoded_ans);
+            if ($type === 'file') {
+                // Ответ-вложения — описание файлов, а не список строк.
+                $attachment_files = \WPOlympiad\Attachments::answer_files(is_array($decoded_ans) ? $decoded_ans : []);
+                $user_answer = \WPOlympiad\Attachments::summarize($attachment_files);
+            } elseif (is_array($decoded_ans)) {
+                $user_answer = implode(', ', array_map(static function ($v) {
+                    return is_scalar($v) ? (string)$v : wp_json_encode($v);
+                }, $decoded_ans));
             }
             ?>
             <div class="wpo-admin-card wpo-response-card" data-resp-id="<?php echo esc_attr((string)$r['id']); ?>" style="margin-bottom:15px;">
@@ -139,6 +147,30 @@ foreach ($questions as $q) {
                 <div class="wpo-user-answer-box" style="background:#f8fafc; padding:12px; border-radius:6px; border:1px solid #e2e8f0; margin-bottom:12px;">
                     <span class="description"><strong><?php esc_html_e('Ответ участника:', 'wp-olympiad'); ?></strong></span>
                     <div style="margin-top:6px; font-size:14px; white-space:pre-wrap;"><?php echo esc_html($user_answer ?: '—'); ?></div>
+                    <?php if ($attachment_files && $quiz instanceof \WPOlympiad\Quiz): ?>
+                        <ul class="wpo-attachment-review" style="margin:8px 0 0; padding-left:18px;">
+                            <?php foreach ($attachment_files as $attachment_file): ?>
+                                <?php
+                                $attachment_rel = (string)($attachment_file['rel'] ?? '');
+                                $attachment_missing = is_wp_error(\WPOlympiad\Attachments::resolve($quiz, $attachment_rel));
+                                $attachment_url = add_query_arg([
+                                    'rel'     => rawurlencode($attachment_rel),
+                                    'name'    => rawurlencode((string)($attachment_file['name'] ?? '')),
+                                    'quiz_id' => (int)$quiz->id,
+                                ], rest_url(\WPOlympiad\RestApi::NAMESPACE . '/attachment-file'));
+                                ?>
+                                <li style="margin-bottom:4px;">
+                                    <?php if (!$attachment_missing): ?>
+                                        <a href="<?php echo esc_url($attachment_url); ?>" download><?php echo esc_html((string)($attachment_file['name'] ?: 'файл')); ?></a>
+                                    <?php else: ?>
+                                        <span style="color:#b32d2e;"><?php echo esc_html((string)($attachment_file['name'] ?: 'файл')); ?></span>
+                                        <span class="description"><?php esc_html_e('— файл не найден в папке вложений', 'wp-olympiad'); ?></span>
+                                    <?php endif; ?>
+                                    <span class="description">(<?php echo esc_html(\WPOlympiad\Attachments::human_size((int)($attachment_file['size'] ?? 0))); ?><?php echo !empty($attachment_file['sha256']) ? ', SHA-256 ' . esc_html(substr((string)$attachment_file['sha256'], 0, 12)) : ''; ?>)</span>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
                 </div>
 
                 <?php if ($q && !empty($q->options['explanation'])): ?>

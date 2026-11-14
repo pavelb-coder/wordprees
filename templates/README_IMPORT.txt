@@ -15,7 +15,7 @@
 
 КОЛОНКИ ТАБЛИЦЫ (порядок важен только для CSV)
    1. type             Тип задания  (обязательно)
-      Код типа: single, multi, dropdown, boolean, number, text, matching, ordering, fill_blank, slider, word_scramble, dictation, essay. Можно писать по-русски: «один выбор», «тест», «соответствие»…
+      Код типа: single, multi, dropdown, boolean, number, text, matching, ordering, fill_blank, slider, word_scramble, dictation, essay, file. Можно писать по-русски: «один выбор», «тест», «соответствие»…
       пример: single
    2. title            Текст вопроса  (обязательно)
       Формулировка задания. Обязательное поле. Для fill_blank и dictation допускаются пропуски вида {ответ|синоним}.
@@ -100,6 +100,8 @@
   • dictation      Вставьте пропущенные буквы:
       template:     Быстро {=ск|згк}ать по {=лест|лезт}нице.
       extra:        scoring=proportional; mistakes=1
+  • file           Прикрепите файл с решением задачи №3: PDF или фотографию титульной страницы.
+      extra:        upload_hint=Один PDF до 10 МБ или фото титульной страницы
   • essay          Сформулируйте третий закон Ньютона и опишите пример его проявления в технике.
       extra:        min_words=50; max_words=250; keywords=сила|противодействие|отдача; min_keywords=2
 

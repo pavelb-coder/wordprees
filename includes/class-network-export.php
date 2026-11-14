@@ -156,6 +156,16 @@ final class NetworkExport
         DesktopEditor::ensure_for_quiz($quiz, $override_config);
 
         // Compatibility hook; never delete untracked files from the connected root.
+        // 1.0.32: вместе с протоколами в пакет кладутся и файлы участников —
+        // иначе ссылки из CSV ведут в никуда. Ничего не удаляется: копируем найденное.
+        $attachment_report = ['copied' => 0, 'missing' => 0, 'transport' => 'none', 'message' => ''];
+        $attachment_dest = (string)($delivery['destination'] ?? '');
+        // Путь назначения может быть недоступен как путь в ФС (SMB без монтирования,
+        // WebDAV, FTP) — тогда export_to сам отдаёт файлы тем же транспортом.
+        if ($attachment_dest !== '' || Attachments::mode($quiz) === 'spool') {
+            $attachment_report = Attachments::export_to($quiz, Attachments::rows_for_quiz($quiz), $attachment_dest);
+        }
+
         self::cleanup_loose_root_export_files($delivery['destination'] ?? '', $config);
 
         $download_url = wp_nonce_url(
@@ -175,6 +185,8 @@ final class NetworkExport
               . ($questions_notice !== '' ? ' ' . $questions_notice : '')
               . ($reports_notice !== '' ? ' ' . $reports_notice : ''),
             'destination'  => $delivery['destination'],
+            // 1.0.32: сколько файлов участников попало в пакет и сколько не нашлось.
+            'attachments'  => $attachment_report,
             'questions_included' => false,
             'removed_question_files' => $questions_removed,
             'questions_directory' => (string) ($questions_cleanup['directory'] ?? ''),
@@ -648,6 +660,7 @@ final class NetworkExport
             'slider'     => 'Шкала / Ползунок',
             'word_scramble' => 'Слово из букв',
             'dictation'  => 'Интерактивный диктант',
+            'file'       => 'Прикрепление файла',
             'essay'      => 'Развёрнутый ответ / Эссе',
         ];
 
@@ -764,8 +777,8 @@ final class NetworkExport
                 }
                 return !empty($lines) ? implode('; ', $lines) : '—';
 
-            case 'essay':
-                return __('Ручная проверка жюри (развёрнутое решение)', 'wp-olympiad');
+            case Attachments::TYPE:
+                return __('Ручная проверка: приложенные файлы', 'wp-olympiad');
 
             default:
                 return '—';
@@ -1249,7 +1262,33 @@ final class NetworkExport
      * @param array $parsed
      * @return string
      */
-    public static function translate_smb_error(string $raw_error, array $parsed): string
+    /** Имя файла для сообщения: без служебных каталогов. */
+    private static function friendly_file_label(string $name): string
+    {
+        $name = str_replace('\\\\', '\/', $name);
+        $name = trim($name, '/');
+
+        return $name === '' ? $name : basename($name);
+    }
+
+    /** Строка вывода smbclient относится к одному из наших файлов? */
+    private static function line_mentions_any(string $line, array $files, array $written_tmp): bool
+    {
+        foreach (array_keys($files) as $name) {
+            if ($name !== '' && (stripos($line, (string)$name) !== false || stripos($line, str_replace('/', '\\', (string)$name)) !== false)) {
+                return true;
+            }
+        }
+        foreach ($written_tmp as $tmp_file) {
+            if (strpos($line, (string)$tmp_file) !== false || stripos($line, basename((string)$tmp_file)) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function translate_smb_error(string $raw_error, array $parsed, array $skipped_files = []): string
     {
         if (str_contains($raw_error, 'NT_STATUS_LOGON_FAILURE')) {
             return sprintf(__('Ошибка авторизации SMB (NT_STATUS_LOGON_FAILURE): неверный логин или пароль для доступа к «%s».', 'wp-olympiad'), $parsed['unc']);
@@ -1266,7 +1305,39 @@ final class NetworkExport
         if (str_contains($raw_error, 'NT_STATUS_CONNECTION_REFUSED')) {
             return sprintf(__('Соединение отклонено: хост %s не принимает подключения по протоколу SMB (порт 445). Проверьте работу службы общего доступа.', 'wp-olympiad'), $parsed['host']);
         }
-        if (str_contains($raw_error, 'NT_STATUS_HOST_UNREACHABLE')) {
+        if (str_contains($raw_error, 'NT_STATUS_SHARING_VIOLATION')) {
+            return sprintf(
+                /* translators: 1: file list, 2: share */
+                __('%1$s файл уже открыт другим пользователем или программой на сервере (NT_STATUS_SHARING_VIOLATION) и не может быть перезаписан. Закройте его на %2$s и повторите выгрузку — либо дождитесь, пока его освободит антивирус или индекатор.', 'wp-olympiad'),
+                $skipped_files ? sprintf(
+                    /* translators: %s: file names */
+                    __('Файл «%s»', 'wp-olympiad'),
+                    implode('», «', array_map(static fn($n) => self::friendly_file_label($n), array_slice($skipped_files, 0, 3))) . (count($skipped_files) > 3 ? sprintf(__(' и ещё %d', 'wp-olympiad'), count($skipped_files) - 3) : '')
+                ) : __('Файл', 'wp-olympiad'),
+                $parsed['unc'] ?? $parsed['service'] ?? ''
+            );
+        }
+        if (str_contains($raw_error, 'NT_STATUS_OBJECT_NAME_NOT_FOUND')) {
+            return sprintf(
+                /* translators: %s: destination path */
+                __('На сервере не найден каталог назначения «%s» (NT_STATUS_OBJECT_NAME_NOT_FOUND): путь к сетевой папке указан неверно или подпапку удалили.', 'wp-olympiad'),
+                $parsed['unc'] ?? ''
+            );
+        }
+        if (str_contains($raw_error, 'NT_STATUS_OBJECT_NAME_COLLISION') && $skipped_files) {
+            return sprintf(
+                /* translators: %s: file names */
+                __('Файл «%s» уже есть в сетевой папке и защищён от перезаписи (NT_STATUS_OBJECT_NAME_COLLISION). Уберите запрет на запись для этого файла или переименуйте его.', 'wp-olympiad'),
+                implode('», «', array_map(static fn($n) => self::friendly_file_label($n), array_slice($skipped_files, 0, 3)))
+            );
+        }
+        if (str_contains($raw_error, 'NT_STATUS_ACCOUNT_DISABLED')) {
+            return __('Учётная запись для доступа к сетевой папке отключена в Active Directory (NT_STATUS_ACCOUNT_DISABLED).', 'wp-olympiad');
+        }
+        if (str_contains($raw_error, 'NT_STATUS_PASSWORD_EXPIRED')) {
+            return __('Срок действия пароля учётной записи для сетевой папки истёк (NT_STATUS_PASSWORD_EXPIRED): смените пароль и обновите настройки.', 'wp-olympiad');
+        }
+        if ($skipped_files && str_contains($raw_error, 'NT_STATUS_ACCESS_DENIED')) {
             return sprintf(__('Сетевой хост %s недостижим (NT_STATUS_HOST_UNREACHABLE).', 'wp-olympiad'), $parsed['host']);
         }
 
@@ -1402,15 +1473,44 @@ final class NetworkExport
         @unlink($creds_file);
         self::delete_directory_recursive($tmp_dir);
 
+        $blob = implode("\n", $output_lines);
+
+        // Что реально записано: smbclient на каждый файл печатает «putting file <локальный путь> as …».
+        $delivered = [];
+        foreach ($written_tmp as $name => $tmp_file) {
+            if (preg_match('/putting file[^\n]*' . preg_quote($tmp_file, '/') . '[^\n]* as /i', $blob)) {
+                $delivered[] = (string)$name;
+            }
+        }
+        $failed = array_values(array_diff(array_map('strval', array_keys($files)), $delivered));
+
         $unexpected = [];
         foreach ($output_lines as $line) {
             preg_match_all('/NT_STATUS_[A-Z0-9_]+/', $line, $statuses);
             if (!$statuses[0]) continue;
             $directory_exists = str_contains($line, 'making remote directory')
                 && !array_diff($statuses[0], ['NT_STATUS_OBJECT_NAME_COLLISION', 'NT_STATUS_OBJECT_NAME_EXISTS']);
-            if (!$directory_exists) $unexpected = array_merge($unexpected, $statuses[0]);
+            $per_file = $failed && self::line_mentions_any($line, $files, $written_tmp);
+            if (!$directory_exists && !$per_file) $unexpected = array_merge($unexpected, $statuses[0]);
         }
-        if ($exit_code === 0 && !$unexpected) {
+
+        // Часть файлов не легла (например, открыт другим пользователем), но остальное
+        // доставлено: считаем выгрузку состоявшейся и сообщаем, что пропущено.
+        if ($delivered && !$unexpected) {
+            $result = [
+                'success'     => true,
+                'destination' => $parsed['unc'],
+                'files'       => $delivered,
+                'size'        => array_sum(array_map(static fn($name) => strlen((string)($files[$name] ?? '')), $delivered)),
+            ];
+            if ($failed) {
+                $result['skipped'] = $failed;
+                $result['message'] = self::translate_smb_error($blob, $parsed, $failed);
+            }
+            return $result;
+        }
+
+        if ($exit_code === 0 && !$unexpected && !$failed) {
             return [
                 'success'     => true,
                 'destination' => $parsed['unc'],
@@ -1419,7 +1519,7 @@ final class NetworkExport
             ];
         }
 
-        $error_msg = self::translate_smb_error(implode("\n", $output_lines), $parsed);
+        $error_msg = self::translate_smb_error($blob, $parsed, $failed);
         return [
             'success' => false,
             'message' => $error_msg,

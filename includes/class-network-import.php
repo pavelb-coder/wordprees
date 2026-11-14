@@ -2351,6 +2351,10 @@ final class NetworkImport
                 $options['case_sensitive'] = $case_sensitive;
                 break;
 
+            case Attachments::TYPE:
+                $options['upload_hint'] = mb_substr(sanitize_text_field((string)($extra['upload_hint'] ?? '')), 0, 300);
+                break;
+
             case 'essay':
                 $options['min_words'] = max(0, (int)ImportTemplate::to_float($extra['min_words'] ?? 0, 0.0));
                 $options['max_words'] = max(0, (int)ImportTemplate::to_float($extra['max_words'] ?? 0, 0.0));
