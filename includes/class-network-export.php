@@ -1224,6 +1224,13 @@ final class NetworkExport
      */
     public static function get_smbclient_binary(): ?string
     {
+        // Путь можно задать явно (например, статический smbclient из сборки или
+        // тестовая заглушка): фильтр проверяется раньше поиска по стандартным местам.
+        $custom = (string) apply_filters('wpo_smbclient_binary', '');
+        if ($custom !== '' && @file_exists($custom) && @is_executable($custom)) {
+            return $custom;
+        }
+
         $candidates = [
             '/usr/bin/smbclient',
             '/usr/local/bin/smbclient',

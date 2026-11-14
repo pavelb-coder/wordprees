@@ -651,6 +651,98 @@ $it('1.0.32: ошибки SMB переводятся по-человечески
     return true;
 });
 
+$it('1.0.32: занятый файл на SMB не отменяет выгрузку протоколов', function () use ($at_assert): bool {
+    $dir = sys_get_temp_dir() . '/wpo_smb_stub_' . wp_generate_password(8, false, false);
+    if (!wp_mkdir_p($dir)) {
+        return true;
+    }
+    // Заглушка smbclient печатает ровно то, что наблюдали на сервере: коллизию mkdir
+    // на существующей папке, удачный put протокола и SHARING_VIOLATION на занятом exe.
+    $logic = "<?php\n"
+        . "\$argv = array_slice(\$argv, 1);\n"
+        . "\$cmds = '';\n"
+        . "for (\$i = 0; \$i < count(\$argv); \$i++) { if (\$argv[\$i] === '-c' && isset(\$argv[\$i + 1])) { \$cmds = \$argv[\$i + 1]; } }\n"
+        . "echo 'NT_STATUS_OBJECT_NAME_COLLISION making remote directory \\\\\\\\olimp' . PHP_EOL;\n"
+        . "\$fail = false;\n"
+        . "if (getenv('WPO_STUB_GLOBAL') !== false && getenv('WPO_STUB_GLOBAL') !== '') {\n"
+        . "    echo 'ntstatus_error: NT_STATUS_' . getenv('WPO_STUB_GLOBAL') . ' (global) ' . PHP_EOL;\n"
+        . "    \$fail = true;\n"
+        . "}\n"
+        . "if (preg_match_all('/put \"([^\"]+)\" \"([^\"]+)\"/', \$cmds, \$m, PREG_SET_ORDER)) {\n"
+        . "    foreach (\$m as \$p) {\n"
+        . "        if (getenv('WPO_STUB_ALL_FAIL') === '1') {\n"
+        . "            echo 'ntstatus_error: NT_STATUS_' . ((getenv('WPO_STUB_STATUS') ?: 'SHARING_VIOLATION')) . ' opening remote file ' . \$p[2] . PHP_EOL;\n"
+        . "            \$fail = true;\n"
+        . "            continue;\n"
+        . "        }\n"
+        . "        if (stripos(\$p[2], 'QuestionStudio.exe') !== false) {\n"
+        . "            echo 'ntstatus_error: NT_STATUS_SHARING_VIOLATION opening remote file ' . \$p[2] . PHP_EOL;\n"
+        . "            \$fail = true;\n"
+        . "            continue;\n"
+        . "        }\n"
+        . "        echo 'putting file ' . \$p[1] . ' as ' . \$p[2] . ' (100.0%)' . PHP_EOL;\n"
+        . "    }\n"
+        . "} elseif (getenv('WPO_STUB_STATUS') !== false && getenv('WPO_STUB_STATUS') !== '') {\n"
+        . "    echo 'ntstatus_error: NT_STATUS_' . getenv('WPO_STUB_STATUS') . PHP_EOL;\n"
+        . "    \$fail = true;\n"
+        . "}\n"
+        . "exit(\$fail ? 1 : 0);\n";
+    $php_stub = $dir . '/smbclient.php';
+    $sh_stub = $dir . '/smbclient';
+    file_put_contents($php_stub, $logic);
+    file_put_contents($sh_stub, "#!/bin/sh\nexec php " . escapeshellarg($php_stub) . ' "$@"' . "\n");
+    @chmod($php_stub, 0644);
+    @chmod($sh_stub, 0755);
+    if (!is_executable($sh_stub) || !is_file($php_stub)) {
+        exec('rm -rf ' . escapeshellarg($dir));
+        return true; // ФС без exec — проверка неприменима
+    }
+    $add_filter = static fn() => add_filter('wpo_smbclient_binary', static fn() => $sh_stub);
+    $add_filter();
+    $config = [
+        'type'     => 'smb',
+        'path'     => '//10.200.10.10/kvant/olimp',
+        'user'     => '',
+        'password' => '',
+    ];
+    $files = [
+        'сводный_протокол.csv'  => "участник;балл\n",
+        'import/QuestionStudio.exe' => 'binary',
+    ];
+    try {
+        $res = NetworkExport::deliver_files_public($files, $config);
+        $at_assert(!empty($res['success']), 'Выгрузка не засчитала записанные файлы', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(in_array('сводный_протокол.csv', (array)($res['files'] ?? []), true), 'Записанный файл не определён', json_encode($res['files'] ?? []));
+        $at_assert(($res['skipped'] ?? []) === ['import/QuestionStudio.exe'], 'Занятый файл не помечен пропущенным', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res['message'] ?? ''), 'открыт другим') !== false, 'Причина пропуска не объяснена', (string)($res['message'] ?? ''));
+        $at_assert(stripos((string)($res['message'] ?? ''), 'QuestionStudio.exe') !== false, 'Имя занятого файла не названо', (string)($res['message'] ?? ''));
+
+        remove_all_filters('wpo_smbclient_binary');
+        $add_filter();
+
+        // Если не записан ни один файл — выгрузка неудачна, а не «успешна с пустотой».
+        putenv('WPO_STUB_ALL_FAIL=1');
+        $_ENV['WPO_STUB_ALL_FAIL'] = '1';
+        $res2 = NetworkExport::deliver_files_public($files, $config);
+        $at_assert(empty($res2['success']), 'Пустая выгрузка признана успешной', json_encode($res2, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res2['message'] ?? ''), 'открыт другим') !== false, 'Причина отказа не объяснена', (string)($res2['message'] ?? ''));
+
+        // Сбой авторизации не должен теряться за частичным успехом: put-ы «получились»,
+        // но в выводе есть не привязанная к файлу строка LOGON_FAILURE — выгрузка неудачна.
+        putenv('WPO_STUB_ALL_FAIL');
+        putenv('WPO_STUB_GLOBAL=LOGON_FAILURE');
+        $res3 = NetworkExport::deliver_files_public($files, $config);
+        $at_assert(empty($res3['success']), 'Ошибка входа не помешала признать выгрузку успешной', json_encode($res3, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res3['message'] ?? ''), 'авторизации') !== false, 'Ошибка входа не объяснена', (string)($res3['message'] ?? ''));
+        return true;
+    } finally {
+        remove_all_filters('wpo_smbclient_binary');
+        putenv('WPO_STUB_ALL_FAIL');
+        putenv('WPO_STUB_GLOBAL');
+        exec('rm -rf ' . escapeshellarg($dir));
+    }
+});
+
 $it('1.0.32: форма редактора и просмотр попытки показывают вложения', function () use ($at_assert, $at_fixture, $at_drop, $at_file): bool {
     $repo = WP_OLYMPIAD_PATH;
     $card = (string)file_get_contents($repo . '/admin/views/question-item-card.php');
