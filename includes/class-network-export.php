@@ -1297,14 +1297,28 @@ final class NetworkExport
             return null;
         }
         $commands = [];
+        $share_prefix = '';
         if (!empty($parsed['subdir'])) {
             foreach (explode('/', trim((string) $parsed['subdir'], '/')) as $p) {
-                $commands[] = 'cd "' . $p . '"';
+                $share_prefix .= ($share_prefix === '' ? '' : '\\') . $p;
             }
         }
         foreach ($names as $name) {
-            $commands[] = 'ls "' . str_replace('/', '\\', $name) . '"';
+            $rel = trim(str_replace('\\\\', '/', (string) $name), '/\\');
+            $abs = ($share_prefix === '' ? '' : $share_prefix . '\\') . $rel;
+            // Каталоги могли исчезнуть на share — создаём их по сегментам, иначе
+            // «ls» ответит OBJECT_PATH_NOT_FOUND и проверка размера станет невозможна.
+            // «dirname» не понимает «\» как разделитель: нормализуем путь заранее,
+            // иначе цепочка каталогов молча схлопнется в «.".
+            foreach (self::smb_mkdir_chain(dirname(str_replace('\\', '/', $abs))) as $mk) {
+                $commands[] = $mk;
+            }
+            $commands[] = 'ls "' . str_replace('/', '\\', $abs) . '"';
         }
+        // Одинаковые «mkdir» от разных файлов и от префикса шары сливаются в
+        // одну команду: smbclient и так терпит коллизию каталога, но лишний
+        // вывод размывает разбор отказа построчно.
+        $commands = array_values(array_unique($commands));
         $auth = ($auth_args !== '') ? $auth_args : '-N';
         $full = sprintf(
             '%s %s %s -c %s -t 15 2>&1',
@@ -1340,6 +1354,17 @@ final class NetworkExport
         $name = trim($name, '/');
 
         return $name === '' ? $name : basename($name);
+    }
+
+    /** Строка вывода относится к файлу, отказ по которому уже разобран (принят или отложен). */
+    private static function line_mentions_blocked(string $line, array $blocked): bool
+    {
+        if (!$blocked) {
+            return false;
+        }
+        $base = strtolower(self::remote_basename($line));
+
+        return $base !== '' && isset($blocked[$base]);
     }
 
     /** Строка вывода smbclient относится к одному из наших файлов? */
@@ -1395,6 +1420,13 @@ final class NetworkExport
                 $parsed['unc'] ?? ''
             );
         }
+        if (str_contains($raw_error, 'NT_STATUS_OBJECT_PATH_NOT_FOUND')) {
+            return sprintf(
+                /* translators: %s: share path */
+                __('Сетевая папка не найдена на сервере (NT_STATUS_OBJECT_PATH_NOT_FOUND): папка «вложения» внутри «%s» отсутствует или была удалена. Плагин создаёт её и подпапки олимпиады сам при каждой выгрузке — если отказ повторяется, дайте учётной записи право создавать папки в этой сетевой шарке.', 'wp-olympiad'),
+                $parsed['unc'] ?? ''
+            );
+        }
         if (str_contains($raw_error, 'NT_STATUS_OBJECT_NAME_COLLISION') && $skipped_files) {
             return sprintf(
                 /* translators: 1: file names, 2: share path */
@@ -1415,6 +1447,170 @@ final class NetworkExport
 
         $clean = trim((string)preg_replace('/\s+/', ' ', strip_tags($raw_error)));
         return sprintf(__('Ошибка выгрузки в сетевую папку «%s»: %s', 'wp-olympiad'), $parsed['unc'], $clean ?: 'Неизвестная ошибка SMB');
+    }
+
+    /**
+     * Команды «mkdir» по каждому сегменту пути: smbclient не умеет создавать вложенные
+     * каталоги одной командой, а на отказе от полного пути остаётся только
+     * NT_STATUS_OBJECT_PATH_NOT_FOUND при записи файла.
+     *
+     * @return array<int,string>
+     */
+    private static function smb_mkdir_chain(string $rel): array
+    {
+        $rel = trim(str_replace('\\', '/', $rel), '/');
+        if ($rel === '' || $rel === '.') {
+            return [];
+        }
+        $parts = array_values(array_filter(explode('/', $rel), 'strlen'));
+        $commands = [];
+        $current = '';
+        foreach ($parts as $part) {
+            if ($current === '') {
+                $current = $part;
+            } else {
+                $current .= '\\' . $part;
+            }
+            $commands[] = 'mkdir "' . $current . '"';
+        }
+
+        return $commands;
+    }
+
+    /**
+     * Снять признак «только для чтения» с файлов на share (setmode … -r).
+     *
+     * Атрибут трогается только для переданных имён, содержимое файлов не меняется:
+     * это ответ на NT_STATUS_OBJECT_NAME_COLLISION, когда файл на сервере лежит
+     * защищённым от перезаписи.
+     *
+     * @param array<int,string> $names имена относительно корня подключения
+     * @return array{success: bool, count: int, message: string, codes: array, raw: string, mode: string}
+     */
+    public static function smb_unprotect(array $names, array $config): array
+    {
+        $result = ['success' => false, 'count' => 0, 'failed' => 0, 'message' => '', 'codes' => [], 'raw' => '', 'mode' => ''];
+        $parsed = self::parse_smb_path((string)($config['path'] ?? ''));
+        if (!$parsed) {
+            $result['message'] = sprintf(__('Некорректный путь к сетевой папке Windows (SMB): %s', 'wp-olympiad'), $config['path'] ?? '');
+
+            return $result;
+        }
+        $smb_bin = self::get_smbclient_binary();
+        if (!$smb_bin) {
+            $result['message'] = __('Для работы с сетевой папкой Windows на сервере Linux требуется утилита smbclient.', 'wp-olympiad');
+
+            return $result;
+        }
+        [$auth_args, $creds_file] = self::smb_auth_args($config, $parsed);
+
+        $commands = [];
+        $prefix = '';
+        if (!empty($parsed['subdir'])) {
+            foreach (explode('/', trim((string) $parsed['subdir'], '/')) as $p) {
+                $prefix .= ($prefix === '' ? '' : '\\') . $p;
+            }
+        }
+        $targets = [];
+        foreach (array_values(array_unique(array_filter(array_map('strval', $names)))) as $name) {
+            $rel = trim(str_replace('\\\\', '/', (string) $name), '/\\');
+            $abs = ($prefix === '' ? '' : $prefix . '\\') . $rel;
+            $commands[] = 'setmode "' . str_replace('/', '\\', $abs) . '" -r';
+            // Нормализованный путь: по нему узнаём, на какой именно файл
+            // сервер ответил отказом, а не приписываем отказ всему списку.
+            $targets[] = strtolower(str_replace([ '\\', '/' ], '/', $abs));
+        }
+        $result['count'] = count($targets);
+        if (!$commands) {
+            @unlink((string)$creds_file);
+
+            return $result;
+        }
+
+        $full = sprintf(
+            '%s %s %s -c %s -t 25 2>&1',
+            escapeshellcmd($smb_bin),
+            escapeshellarg($parsed['service']),
+            $auth_args,
+            escapeshellarg(implode('; ', $commands))
+        );
+        $lines = [];
+        $code = 1;
+        @exec($full, $lines, $code);
+        @unlink((string)$creds_file);
+
+        $blob = implode("\n", $lines);
+        $result['mode'] = 'smb';
+        $result['codes'] = self::status_codes($blob);
+        $result['raw'] = mb_substr(trim((string)preg_replace('/\s+/', ' ', strip_tags($blob))), 0, 900);
+        // setmode не печатает ничего, когда всё удалось: судим по выводу сервера.
+        // Отказ засчитывается только тому файлу, чей путь сервер назвал сам;
+        // иначе «сняли защиту» превращается в «отдали команду».
+        $blob_norm = strtolower(str_replace([ '\\', '/' ], '/', $blob));
+        $refused   = [];
+        foreach (explode("\n", $blob_norm) as $line) {
+            if (!preg_match('/error|failed|cannot|denied|violation|no_such|not_found|invalid|read.?only|protected/i', $line)) {
+                continue;
+            }
+            foreach ($targets as $norm) {
+                if ($norm !== '' && (strpos($line, $norm) !== false || strpos($line, ltrim($norm, '/')) !== false)) {
+                    $refused[ $norm ] = true;
+                }
+            }
+        }
+        $blind = (bool) preg_match('/error|failed|cannot|denied|violation|no_such|not_found|invalid|read.?only|protected/i', $blob_norm);
+        if ($blind && !$refused && count($targets) === 1) {
+            $refused[ $targets[0] ] = true; // отказ без пути при одном файле относится к нему
+        }
+        $result['failed'] = count($refused);
+        $result['count'] = max(0, count($targets) - count($refused));
+        $result['success'] = $result['count'] > 0;
+        if (!$result['success']) {
+            $result['message'] = self::translate_smb_error($blob, $parsed);
+        } elseif ($result['failed'] > 0) {
+            $result['message'] = sprintf(
+                /* translators: 1: number of files */
+                _n(
+                    'Защиту удалось снять только с %1$d файла: остальные сервер не отдал.',
+                    'Защиту удалось снять только с %1$d файлов: остальные сервер не отдал.',
+                    $result['count'],
+                    'wp-olympiad'
+                ),
+                $result['count']
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Файл аргументов авторизации smbclient (создаётся при указанном логине).
+     *
+     * @return array{0:string,1:string} аргументы и путь к файлу (пустая строка — файла нет)
+     */
+    private static function smb_auth_args(array $config, array $parsed): array
+    {
+        $user = !empty($config['user']) ? (string)$config['user'] : (string)($parsed['user'] ?? '');
+        $pass = !empty($config['password']) ? (string)$config['password'] : (string)($parsed['password'] ?? '');
+        if ($user === '' && $pass === '') {
+            return ['-N', ''];
+        }
+
+        $domain = '';
+        if (str_contains($user, '\\')) {
+            [$domain, $user] = explode('\\', $user, 2);
+        } elseif (str_contains($user, '/')) {
+            [$domain, $user] = explode('/', $user, 2);
+        }
+        $creds_file = (string)tempnam(sys_get_temp_dir(), 'wpo_smb_creds_');
+        $creds_content = "username = {$user}\npassword = {$pass}\n";
+        if ($domain !== '') {
+            $creds_content .= "domain = {$domain}\n";
+        }
+        file_put_contents($creds_file, $creds_content);
+        @chmod($creds_file, 0600);
+
+        return ['-A ' . escapeshellarg($creds_file), $creds_file];
     }
 
     /**
@@ -1510,24 +1706,35 @@ final class NetworkExport
             $auth_args = '-N';
         }
 
-        // Build SMB commands
+        // Пути каталогов и файлов отдаём полными от корня шары: относительно cwd
+        // разные версии smbclient разбирают их по-своему, и файл уезжает не туда.
         $commands = [];
+        $share_prefix = '';
         if (!empty($parsed['subdir'])) {
-            $parts = explode('/', trim($parsed['subdir'], '/'));
+            $parts = explode('/', trim((string) $parsed['subdir'], '/'));
             foreach ($parts as $p) {
-                $commands[] = 'mkdir "' . $p . '"';
-                $commands[] = 'cd "' . $p . '"';
+                $share_prefix .= ($share_prefix === '' ? '' : '\\') . $p;
+                $commands[] = 'mkdir "' . $share_prefix . '"';
             }
         }
 
         foreach ($written_tmp as $name => $path_tmp) {
-            $parent_rel = dirname($name);
-            if ($parent_rel !== '.' && !empty($parent_rel)) {
-                $commands[] = 'mkdir "' . str_replace('/', '\\', $parent_rel) . '"';
+            // smbclient создаёт только один каталог за команду: «mkdir a\b\c» при
+            // отсутствующем «b» отвечает OBJECT_PATH_NOT_FOUND, и put некуда класть.
+            $rel = trim(str_replace('\\\\', '/', (string) $name), '/\\');
+            $abs = ($share_prefix === '' ? '' : $share_prefix . '\\') . $rel;
+            // «dirname» не понимает «\» как разделитель: нормализуем путь заранее,
+            // иначе цепочка каталогов молча схлопнется в «.".
+            foreach (self::smb_mkdir_chain(dirname(str_replace('\\', '/', $abs))) as $mk) {
+                $commands[] = $mk;
             }
-            $commands[] = 'put "' . $path_tmp . '" "' . str_replace('/', '\\', $name) . '"';
+            $commands[] = 'put "' . $path_tmp . '" "' . str_replace('/', '\\', $abs) . '"';
         }
 
+        // Одинаковые «mkdir» от разных файлов и от префикса шары сливаются в
+        // одну команду: smbclient и так терпит коллизию каталога, но лишний
+        // вывод размывает разбор отказа построчно.
+        $commands = array_values(array_unique($commands));
         $cmd_str = implode('; ', $commands);
         $full_cmd = sprintf(
             '%s %s %s -c %s -t 25 2>&1',
@@ -1561,8 +1768,10 @@ final class NetworkExport
         $verified = [];
         $mismatch = [];
         $stale_note = '';
+        $blocked = [];
+        $file_collisions = [];
         if ($failed) {
-            $blocked = [];
+            $collision_names = [];
             foreach ($output_lines as $line) {
                 if (str_contains($line, 'making remote directory')) {
                     continue; // создание каталога — не про файл
@@ -1573,6 +1782,11 @@ final class NetworkExport
                 $base = self::remote_basename($line);
                 if ($base !== '') {
                     $blocked[strtolower($base)] = 'NT_STATUS_' . $mm[1];
+                }
+                // Коллизия именно файла (put/open), а не каталога: только она даёт
+                // право говорить «файл уже есть, снимите защиту с файла».
+                if (($mm[1] === 'OBJECT_NAME_COLLISION' || $mm[1] === 'OBJECT_NAME_EXISTS') && $base !== '') {
+                    $collision_names[] = $base;
                 }
             }
             foreach ($failed as $name) {
@@ -1614,6 +1828,90 @@ final class NetworkExport
                 }
                 $failed = array_values(array_diff(array_map('strval', array_keys($files)), $delivered));
             }
+
+            foreach ($collision_names as $cn) {
+                if ($cn === '') {
+                    continue;
+                }
+                foreach ($failed as $name) {
+                    if (strcasecmp(basename(str_replace('\\', '/', (string) $name)), $cn) === 0) {
+                        $file_collisions[] = (string) $name;
+                    }
+                }
+            }
+            $file_collisions = array_values(array_unique($file_collisions));
+        }
+
+        // Файл на share защищён от перезаписи, а содержимое на сервере отличается от
+        // того, что принёс участник: это ровно тот случай, о котором говорит
+        // «снимите защиту с файла». Атрибут «только для чтения» снимаем сами (до этого
+        // момента содержимое не менялось) и пробуем записать файл ещё раз.
+        $unprotect_note = '';
+        $unprotected = 0;
+        $retry = array_values(array_intersect($mismatch, $file_collisions));
+        $retry_blob = '';
+        $retry_puts = [];
+        if ($retry && $smb_bin) {
+            $retry_tmp = $tmp_dir . '/retry';
+            if (!wp_mkdir_p($retry_tmp)) {
+                $retry = [];
+            }
+        }
+        foreach ($retry as $name) {
+            $content = (string) ($files[$name] ?? '');
+            $safe = preg_replace('#[^a-zA-Z0-9._-]#u', '_', basename(str_replace('\\', '/', (string) $name)));
+            $local = $retry_tmp . '/' . $safe;
+            if (@file_put_contents($local, $content) !== strlen($content)) {
+                continue;
+            }
+            $rel = trim(str_replace('\\\\', '/', (string) $name), '/\\');
+            $remote = str_replace('/', '\\', (!empty($parsed['subdir']) ? trim((string) $parsed['subdir'], '/') . '\\' : '') . $rel);
+            $retry_puts[] = ['local' => $local, 'remote' => $remote, 'name' => (string) $name];
+        }
+        if ($retry_puts) {
+            $cmds = [];
+            foreach ($retry_puts as $rp) {
+                foreach (self::smb_mkdir_chain(dirname(str_replace('\\', '/', $rp['remote']))) as $mk) {
+                    $cmds[] = $mk;
+                }
+                $cmds[] = 'setmode "' . $rp['remote'] . '" -r';
+            }
+            foreach ($retry_puts as $rp) {
+                $cmds[] = 'put "' . $rp['local'] . '" "' . $rp['remote'] . '"';
+            }
+            $retry_cmd = sprintf(
+                '%s %s %s -c %s -t 25 2>&1',
+                escapeshellcmd($smb_bin),
+                escapeshellarg($parsed['service']),
+                $auth_args,
+                escapeshellarg(implode('; ', $cmds))
+            );
+            $retry_lines = [];
+            $retry_code = 1;
+            @exec($retry_cmd, $retry_lines, $retry_code);
+            $retry_blob = implode("\n", $retry_lines);
+            $blob .= "\n" . $retry_blob;
+            foreach ($retry_puts as $rp) {
+                if (preg_match('/ as \\\\?' . preg_quote($rp['remote'], '/') . '(\\s|$)/i', $retry_blob)) {
+                    $delivered[] = $rp['name'];
+                    $unprotected++;
+                    $mismatch = array_values(array_diff($mismatch, [$rp['name']]));
+                    $blocked[strtolower(basename(str_replace('\\', '/', $rp['name'])))] = 'NT_STATUS_UNPROTECTED_AND_WRITTEN';
+                }
+            }
+            $failed = array_values(array_diff(array_map('strval', array_keys($files)), $delivered));
+            if (!$mismatch) {
+                $stale_note = '';
+            }
+            if ($unprotected > 0) {
+                $unprotect_note = sprintf(
+                    /* translators: %d: number of files */
+                    __('С файлов снят атрибут «только для чтения» (setmode -r), после чего они записаны заново: %d.', 'wp-olympiad'),
+                    $unprotected
+                );
+            } else {
+                $unprotect_note = __('Атрибут «только для чтения» с файлов снят (setmode -r), но сервер всё равно не принял запись: права на саму папку нужно менять на стороне сервера.', 'wp-olympiad');
+            }
         }
 
         // Временные файлы и файл учётных данных больше не нужны (creds нужен был
@@ -1629,7 +1927,10 @@ final class NetworkExport
             $directory_exists = str_contains($line, 'making remote directory')
                 && !array_diff($statuses[0], ['NT_STATUS_OBJECT_NAME_COLLISION', 'NT_STATUS_OBJECT_NAME_EXISTS']);
             $per_file = ($failed || $existing) && self::line_mentions_any($line, $files, $written_tmp);
-            if (!$directory_exists && !$per_file) $unexpected = array_merge($unexpected, $statuses[0]);
+            // Отказ по уже принятому файлу (в том числе ответ второй попытки после
+            // setmode) не превращает успешную выгрузку в ошибку.
+            $known_block = $blocked && self::line_mentions_blocked($line, $blocked);
+            if (!$directory_exists && !$per_file && !$known_block) $unexpected = array_merge($unexpected, $statuses[0]);
         }
 
         // Часть файлов не легла (например, открыт другим пользователем), но остальное
@@ -1645,7 +1946,15 @@ final class NetworkExport
                 $result['skipped'] = $failed;
                 $result['message'] = $stale_note !== ''
                     ? $stale_note
-                    : self::translate_smb_error($blob, $parsed, $failed);
+                    : self::translate_smb_error($blob, $parsed, $file_collisions ?: $failed);
+                if ($unprotect_note !== '') {
+                    $result['message'] = trim((string) $result['message'] . ' ' . $unprotect_note);
+                }
+            } elseif ($unprotect_note !== '') {
+                $result['message'] = $unprotect_note;
+            }
+            if ($unprotected > 0) {
+                $result['unprotected'] = $unprotected;
             }
             // «уже на месте» — это принятые нами записи, а не отказ транспорта.
             $result['existing'] = array_values(array_intersect($existing, $delivered));
@@ -1656,11 +1965,12 @@ final class NetworkExport
                 $result['stale'] = $mismatch;
             }
             if (!$failed && $existing && $verified !== $existing) {
-                $result['message'] = sprintf(
+                $already_note = sprintf(
                     /* translators: %d: number of files */
                     __('Уже лежало в сетевой папке, повторная запись не потребовалась: %d.', 'wp-olympiad'),
                     count($existing)
                 );
+                $result['message'] = trim(($unprotect_note !== '' ? $unprotect_note . ' ' : '') . $already_note);
             }
             $result['codes'] = self::status_codes($blob);
             return $result;
@@ -1677,8 +1987,8 @@ final class NetworkExport
         }
 
         $error_msg = $stale_note !== ''
-            ? $stale_note
-            : self::translate_smb_error($blob, $parsed, $failed);
+            ? trim($stale_note . ($unprotect_note !== '' ? ' ' . $unprotect_note : ''))
+            : self::translate_smb_error($blob, $parsed, $file_collisions);
 
         return [
             'success' => false,

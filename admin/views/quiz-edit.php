@@ -453,22 +453,9 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         <?php echo esc_html(sprintf(__('Сетевая папка недоступна PHP как путь (транспорт %s): работы участников собираются в закрытой папке сайта и копируются в сетевую папку при сдаче и при выгрузке протоколов.', 'wp-olympiad'), $wpo_att_store['type'])); ?>
                                     </p>
                                 <?php endif; ?>
-                                <?php $wpo_att_notice = sanitize_key($_GET['attachment_delivery'] ?? ''); ?>
-                                <?php if ($wpo_att_notice === 'sent'): ?>
-                                    <div class="notice notice-success inline" style="margin:0 0 8px;">
-                                        <p><?php echo esc_html(sprintf(__('Вложения доставлены в сетевую папку заново: %d.', 'wp-olympiad'), (int)($_GET['n'] ?? 0))); ?></p>
-                                    </div>
-                                <?php elseif ($wpo_att_notice === 'empty'): ?>
-                                    <div class="notice notice-info inline" style="margin:0 0 8px;">
-                                        <p><?php esc_html_e('Файлов, которые нужно доставить, нет: всё уже лежит в сетевой папке.', 'wp-olympiad'); ?></p>
-                                    </div>
-                                <?php elseif ($wpo_att_notice === 'error'): ?>
-                                    <div class="notice notice-error inline" style="margin:0 0 8px;">
-                                        <p><?php esc_html_e('Сетевая папка по-прежнему недоступна для записи — доставка отложена. Проверьте подключение и повторите.', 'wp-olympiad'); ?></p>
-                                    </div>
-                                <?php endif; ?>
                                 <?php
                                 $wpo_att_notice = sanitize_key($_GET['attachment_delivery'] ?? '');
+                                $wpo_unp_notice = sanitize_key($_GET['attachment_unprotect'] ?? '');
                                 $wpo_att_last = $is_new ? [] : \WPOlympiad\Attachments::last_delivery($quiz);
                                 ?>
                                 <?php if ($wpo_att_notice === 'sent'): ?>
@@ -503,6 +490,19 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         <?php endif; ?>
                                     </div>
                                 <?php endif; ?>
+                                <?php if ($wpo_unp_notice === 'ok'): ?>
+                                    <div class="notice notice-success inline" style="margin:0 0 8px;">
+                                        <p><?php echo esc_html(sprintf(__('Защита «только для чтения» снята с файлов: %d. Нажмите «Доставить сейчас», чтобы записать их заново.', 'wp-olympiad'), (int)($_GET['n'] ?? 0))); ?></p>
+                                    </div>
+                                <?php elseif ($wpo_unp_notice === 'partial'): ?>
+                                    <div class="notice notice-warning inline" style="margin:0 0 8px;">
+                                        <p><?php echo esc_html(sprintf(__('Защиту удалось снять не со всего: снято файлов %1$d, сервер не отдал %2$d. Остальное меняется на самой файловой шаре — после этого нажмите «Доставить сейчас».', 'wp-olympiad'), (int)($_GET['n'] ?? 0), (int)($_GET['f'] ?? 0))); ?></p>
+                                    </div>
+                                <?php elseif ($wpo_unp_notice === 'error'): ?>
+                                    <div class="notice notice-error inline" style="margin:0 0 8px;">
+                                        <p><?php esc_html_e('Защиту снять не удалось: сервер отклонил setmode. Права на папку меняются на самой файловой шаре, не плагином.', 'wp-olympiad'); ?><?php if (!empty($_GET['codes'])): ?> <?php echo esc_html(sprintf(__('Коды сервера: %s', 'wp-olympiad'), (string)wp_unslash($_GET['codes']))); ?><?php endif; ?></p>
+                                    </div>
+                                <?php endif; ?>
                                 <?php if ($wpo_att_pending): ?>
                                     <p class="description" style="margin:0 0 8px;color:#b32d2e;">
                                         <?php echo esc_html(sprintf(__('Не доставлено в сетевую папку: %d. Повтор — при ближайшей выгрузке протоколов.', 'wp-olympiad'), count($wpo_att_pending))); ?>
@@ -522,6 +522,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                             <br><?php echo esc_html((string)$wpo_att_error); ?>
                                         <?php endforeach; ?>
                                         <a class="button button-small" style="margin-left:8px;" href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . (int)$quiz->id . '&wpo_action=redeliver_attachments'), 'wpo_redeliver_attachments_' . (int)$quiz->id)); ?>"><?php esc_html_e('Доставить сейчас', 'wp-olympiad'); ?></a>
+                                        <a class="button button-small" style="margin-left:8px;" href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . (int)$quiz->id . '&wpo_action=unprotect_attachments'), 'wpo_unprotect_attachments_' . (int)$quiz->id)); ?>"><?php esc_html_e('Убрать защиту файлов', 'wp-olympiad'); ?></a>
                                         <?php $wpo_att_delivered = count(\WPOlympiad\Attachments::delivered_marks($quiz)); ?>
                                         <?php if ($wpo_att_delivered): ?>
                                             <span style="color:#50575e;margin-left:8px;"><?php echo esc_html(sprintf(__('уже доставлено и не переписывается: %d', 'wp-olympiad'), $wpo_att_delivered)); ?></span>

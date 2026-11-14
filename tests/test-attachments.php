@@ -750,13 +750,17 @@ $it('1.0.32: занятый файл на SMB не отменяет выгруз
  *
  * @return array{0:string,1:string,2:callable}
  */
-$at_smb_stub = static function () use ($at_assert): array {
+$at_smb_stub = static function (?string $state = null) use ($at_assert): array {
     $dir = sys_get_temp_dir() . '/wpo_smb_stub_' . wp_generate_password(8, false, false);
     $at_assert(wp_mkdir_p($dir), 'Не удалось создать каталог заглушки');
     $helper = WP_OLYMPIAD_PATH . '/tests/smb-client-stub.php';
     $at_assert(is_file($helper), 'Заглушка smbclient не найдена');
     $bin = $dir . '/smbclient';
     $log = $dir . '/calls.log';
+    if ($state !== null) {
+        putenv('WPO_STUB_STATE=' . $state);
+        $_ENV['WPO_STUB_STATE'] = $state;
+    }
     file_put_contents($bin, "#!/bin/sh\nexec php " . escapeshellarg($helper) . ' "$@"' . "\n");
     @chmod($bin, 0755);
     $at_assert(is_executable($bin), 'Каталог тестов смонтирован с noexec — проверка невозможна');
@@ -765,7 +769,7 @@ $at_smb_stub = static function () use ($at_assert): array {
     add_filter('wpo_smbclient_binary', $filter);
     $cleanup = static function () use ($dir, $bin, $log): void {
         remove_all_filters('wpo_smbclient_binary');
-        foreach (['WPO_STUB_MODE', 'WPO_STUB_SIZE', 'WPO_STUB_LOG', 'WPO_STUB_ALL_FAIL', 'WPO_STUB_GLOBAL', 'WPO_STUB_STATUS'] as $k) {
+        foreach (['WPO_STUB_MODE', 'WPO_STUB_SIZE', 'WPO_STUB_LOG', 'WPO_STUB_ALL_FAIL', 'WPO_STUB_GLOBAL', 'WPO_STUB_STATUS', 'WPO_STUB_STATE', 'WPO_STUB_EXISTING', 'WPO_STUB_READONLY'] as $k) {
             putenv($k);
         }
         exec('rm -rf ' . escapeshellarg($dir));
@@ -1013,6 +1017,234 @@ $it('1.0.35: страница олимпиады показывает причи
             delete_option(Attachments::last_delivery_option($id));
             Quiz::delete($id);
         }
+    }
+});
+
+$it('1.0.36: отсутствующие папки на share создаются по сегментам, put не получает OBJECT_PATH_NOT_FOUND', function () use ($at_assert, $at_smb_stub, $at_env, $at_unc_host): bool {
+    $state = sys_get_temp_dir() . '/wpo_smb_state_' . wp_generate_password(6, false, false) . '.json';
+    [, $log, $cleanup] = $at_smb_stub($state);
+    try {
+        // Ровно картина с сервера: \\host\kvant\olimp существует, а «вложения» в ней нет.
+        $at_env(['WPO_STUB_MODE' => 'missingdir', 'WPO_STUB_EXISTING' => 'olimp']);
+        $config = ['type' => 'smb', 'path' => '//' . $at_unc_host . '/kvant/olimp', 'user' => '', 'password' => ''];
+        $name = 'вложения/olympiad-2/0613669172928f87/6ca192eb137477ebb3b98c99.docx';
+        $res = NetworkExport::deliver_files_public([$name => "содержимое вложения\n"], $config);
+        $at_assert(!empty($res['success']), 'Выгрузка не удалась: папки не созданы', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(($res['files'] ?? []) === [$name], 'Файл не записан', json_encode($res, JSON_UNESCAPED_UNICODE));
+
+        $calls = (string)file_get_contents($log);
+        // Плагин заходит в папку выгрузки и создаёт недостающее по одному сегменту.
+        $at_assert(substr_count($calls, 'mkdir "') >= 4, 'Каталоги не создавались по сегментам', $calls);
+        foreach (['mkdir "olimp"', 'mkdir "olimp\вложения"', 'mkdir "olimp\вложения\olympiad-2"', 'mkdir "olimp\вложения\olympiad-2\0613669172928f87"'] as $needle) {
+            $at_assert(strpos($calls, $needle) !== false, 'Цепочка каталогов не полная: ' . $needle, $calls);
+        }
+        $at_assert(substr_count($calls, 'put "') === 1, 'put отправлен не один раз', $calls);
+
+        // Коллизия создания каталога не должна выдаваться за «файл уже есть, снимите защиту».
+        $at_assert(stripos((string)($res['message'] ?? ''), 'снимите защиту') === false, 'Коллизия каталога объяснена как защита файла', (string)($res['message'] ?? ''));
+        return true;
+    } finally {
+        $cleanup();
+        @unlink($state);
+    }
+});
+
+$it('1.0.36: OBJECT_PATH_NOT_FOUND и коллизия каталога разбираются как отсутствующая папка, а не как защита файла', function () use ($at_assert): bool {
+    $parsed = ['unc' => '\\\\10.200.10.10\\kvant\\olimp', 'service' => '//10.200.10.10/kvant', 'host' => '10.200.10.10', 'share' => 'kvant', 'subdir' => 'olimp'];
+    $raw = "NT_STATUS_OBJECT_NAME_COLLISION making remote directory \\olimp\nntstatus_error: NT_STATUS_OBJECT_PATH_NOT_FOUND opening remote file \\olimp\\вложения\\olympiad-2\\6ca192eb137477ebb3b98c99.docx";
+    $msg = NetworkExport::translate_smb_error($raw, $parsed, []);
+    $at_assert(stripos($msg, 'не найдена на сервере') !== false, 'Отсутствие папки не названо причиной', $msg);
+    $at_assert(stripos($msg, 'вложения') !== false, 'Не сказано, какую папку создать', $msg);
+    $at_assert(stripos($msg, 'снимите защиту с файла') === false, 'Коллизия каталога выдана за защиту файла', $msg);
+
+    // Коллизия именно файла — по-прежнему называется защитой файла.
+    $msg2 = NetworkExport::translate_smb_error("ntstatus_error: NT_STATUS_OBJECT_NAME_COLLISION opening remote file \\olimp\\вложения\\olympiad-2\\отчёт.pdf", $parsed, ['olimp/вложения/olympiad-2/отчёт.pdf']);
+    $at_assert(stripos($msg2, 'снимите защиту с файла') !== false, 'Защита файла не названа', $msg2);
+    $at_assert(stripos($msg2, 'отчёт.pdf') !== false, 'Имя защищённого файла не приведено', $msg2);
+    return true;
+});
+
+$it('1.0.36: защищённый «только для чтения» файл с другим содержимым — защита снимается и файл записывается', function () use ($at_assert, $at_smb_stub, $at_env): bool {
+    $state = sys_get_temp_dir() . '/wpo_smb_ro_' . wp_generate_password(6, false, false) . '.json';
+    [, $log, $cleanup] = $at_smb_stub($state);
+    try {
+        $config = ['type' => 'smb', 'path' => '//10.200.10.10/kvant/olimp', 'user' => '', 'password' => ''];
+        $name = 'вложения/olympiad-2/0613669172928f87/6ca192eb137477ebb3b98c99.docx';
+        $first = NetworkExport::deliver_files_public([$name => "первая версия документа\r\n"], $config);
+        $at_assert(!empty($first['success']), 'Первая запись не прошла', json_encode($first, JSON_UNESCAPED_UNICODE));
+        $at_assert(substr_count((string)file_get_contents($log), 'setmode') === 0, 'Защита снята без необходимости', (string)file_get_contents($log));
+
+        // Файл на share закрыли от перезаписи, а участник принёс другое содержимое.
+        $at_env(['WPO_STUB_MODE' => 'readonly', 'WPO_STUB_READONLY' => '1']);
+        $res = NetworkExport::deliver_files_public([$name => "исправленная версия документа\r\n"], $config);
+        $at_assert(!empty($res['success']), 'Защита не помогла записать новую версию', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert((int)($res['unprotected'] ?? 0) === 1, 'Снятие защиты не отражено в отчёте', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res['message'] ?? ''), 'снят') !== false && stripos((string)($res['message'] ?? ''), 'записаны заново') !== false, 'Отчёт не объясняет, что защита снята', (string)($res['message'] ?? ''));
+        $calls = (string)file_get_contents($log);
+        $at_assert(preg_match('/setmode "[^"]*6ca192eb137477ebb3b98c99\.docx" -r/', $calls) === 1, 'setmode -р не отправлен на сервер', $calls);
+        $at_assert(substr_count($calls, 'put "') === 3, 'Ожидался повторный put после снятия защиты', $calls);
+
+        // Чужое содержимое без коллизии (например, файл занят) — трогать ничего нельзя.
+        @unlink($state);
+        $at_env(['WPO_STUB_MODE' => 'locked', 'WPO_STUB_SIZE' => '999999']);
+        $res2 = NetworkExport::deliver_files_public([$name => "ещё одна версия\r\n"], $config);
+        $at_assert(empty($res2['success']), 'Занятый чужой файл признан записанным', json_encode($res2, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res2['message'] ?? ''), 'другой размер') !== false, 'Причина расхождения не названа', (string)($res2['message'] ?? ''));
+        return true;
+    } finally {
+        $cleanup();
+        @unlink($state);
+    }
+});
+
+$it('1.0.36: кнопка «Убрать защиту файлов» снимает setmode -r только с файлов плагина', function () use ($at_assert, $at_smb_stub, $at_env, $at_unc_host): bool {
+    $state = sys_get_temp_dir() . '/wpo_smb_unp_' . wp_generate_password(6, false, false) . '.json';
+    [, $log, $cleanup] = $at_smb_stub($state);
+    $id = 0;
+    try {
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения защита ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        $quiz = Quiz::get($id);
+        $at_assert(Attachments::mode($quiz) === 'spool', 'Ожидается доставка транспортом');
+
+        // Модель сервера: файл вложений лежит и защищён, чужим файлам плагин не хозяин.
+        $slug = (string)\WPOlympiad\NetworkExport::build_safe_slug($quiz);
+        $store = Attachments::store($quiz);
+        $att = strtolower(str_replace('/', '\\', 'olimp/вложения/' . $slug . '/0613669172928f87/сводный_протокол.csv'));
+        $foreign = 'olimp\\import\\questionstudio.exe';
+        file_put_contents($state, json_encode([
+            'dirs' => ['olimp', 'olimp\\вложения', 'olimp\\вложения\\' . strtolower($slug), 'olimp\\вложения\\' . strtolower($slug) . '\\0613669172928f87', strtolower(str_replace('/', '\\', 'вложения/' . $slug . '/0613669172928f87'))],
+            'files' => [
+                $att => ['size' => 12],
+                $foreign => ['size' => 12],
+            ],
+            'readonly' => [$att, $foreign],
+        ]));
+        update_option(Attachments::pending_option($id), [[
+            'bucket' => '0613669172928f87',
+            'name' => 'сводный_протокол.csv',
+            'rel' => '0613669172928f87/сводный_протокол.csv',
+            'error' => 'файл защищён',
+            'codes' => ['NT_STATUS_OBJECT_NAME_COLLISION'],
+        ]], false);
+        Attachments::reset_store_cache($id);
+        $at_assert(($store['mode'] ?? '') === 'spool', 'Ожидается доставка через транспорт', (string)($store['mode'] ?? ''));
+
+        $res = Attachments::unprotect_share($quiz);
+        $at_assert(!empty($res['success']), 'Защита не снята', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(($res['mode'] ?? '') === 'smb', 'Защита снимается не транспортом', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $calls = (string)file_get_contents($log);
+        $at_assert($calls !== '' && stripos($calls, 'setmode') !== false, 'Команда setmode на сервер не отправлена', $calls);
+        $at_assert(strpos($calls, 'QuestionStudio.exe') === false, 'Плагин трогает чужие файлы на share', $calls);
+        $at_assert(stripos($calls, 'сводный_протокол.csv') !== false, 'Имя файла плагина в команде не видно', $calls);
+        $at_assert(stripos($calls, '0613669172928f87\\') !== false || stripos($calls, '0613669172928f87\\"') !== false, 'setmode отправлен с косыми чертами', $calls);
+        $at_assert(stripos($calls, '-r') !== false, 'Флаг снятия атрибутов не передан', $calls);
+        $at_assert((int)($res['unprotected'] ?? 0) === 1, 'Число снятых защит неверно', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $st = json_decode((string)file_get_contents($state), true);
+        // Заглушка приводит пути к нижнему регистру — сравниваем так же.
+        $readonly = array_map('strtolower', array_map('strval', (array)($st['readonly'] ?? [])));
+        $left = array_values(array_filter($readonly, static fn($k) => $k !== strtolower($foreign)));
+        $at_assert($left === [], 'Защита файла плагина осталась', json_encode($st['readonly'] ?? []));
+        $at_assert(in_array(strtolower($foreign), $readonly, true), 'Чужой файл потерял защиту, хотя плагин его не трогает', json_encode($st['readonly'] ?? []));
+
+        // Строки pending тоже участвуют: защита снимается и с того, что не донеслось.
+        $att2 = '6ca192eb137477ebb3b98c99.docx';
+        $name_csv = 'сводный_протокол.csv';
+        update_option(Attachments::pending_option($id), [[
+            'bucket' => '0613669172928f87',
+            'name' => $att2,
+            'rel' => '0613669172928f87/' . $att2,
+            'error' => 'файл защищён',
+            'codes' => ['NT_STATUS_OBJECT_NAME_COLLISION'],
+        ]], false);
+        $st = json_decode((string)file_get_contents($state), true);
+        $att_key = strtolower(str_replace('/', '\\', 'olimp/вложения/' . $slug . '/0613669172928f87/6ca192eb137477ebb3b98c99.docx'));
+        $st['files'][$att_key] = ['size' => 40];
+        $st['readonly'] = [$att_key];
+        file_put_contents($state, json_encode($st));
+        // Часть файлов уже лежала на шаре (отметка о доставке): снятие защиты
+        // обязана учитывать оба списка — и недонесённое, и доставленное.
+        Attachments::mark_delivered($quiz, [ '0613669172928f87/' . $name_csv => 12 ]);
+        $res2 = Attachments::unprotect_share($quiz);
+        $at_assert(($res2['total'] ?? 0) >= 2, 'Список защищённых файлов неполный', json_encode($res2, JSON_UNESCAPED_UNICODE));
+        $at_assert((int)($res2['unprotected'] ?? 0) >= 1, 'Защита с недоставленного файла не снята', json_encode($res2, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)file_get_contents($log), $att2) !== false, 'Недоставленный файл в команду не попал');
+
+        // Интерфейс: кнопка и обработчик существуют, старая формулировка уходит.
+        $repo = (string)(defined('WP_OLYMPIAD_PATH') ? WP_OLYMPIAD_PATH : dirname(__DIR__));
+        $view = (string)file_get_contents($repo . '/admin/views/quiz-edit.php');
+        $admin = (string)file_get_contents($repo . '/admin/class-admin.php');
+        $at_assert(substr_count($view, 'Убрать защиту файлов') === 1, 'Кнопка снятия защиты не одна');
+        $at_assert(stripos($view, 'по-прежнему недоступна для записи') === false, 'Старая формулировка «папка недоступна» осталась');
+        $at_assert(stripos($view, 'wpo_action=unprotect_attachments') !== false, 'Кнопка не ведёт на обработчик снятия защиты', '');
+        $at_assert(stripos($admin, "\$action === 'unprotect_attachments'") !== false && substr_count($admin, 'wpo_unprotect_attachments_') >= 1, 'Обработчик снятия защиты не подключён', '');
+        return true;
+    } finally {
+        $cleanup();
+        @unlink($state);
+        if ($id) {
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::last_delivery_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.36: отказ сервера по одному файлу не записывается на весь список', function () use ($at_assert, $at_smb_stub, $at_unc_host): bool {
+    $state = sys_get_temp_dir() . '/wpo_smb_honest_' . wp_generate_password(6, false, false) . '.json';
+    [, $log, $cleanup] = $at_smb_stub($state);
+    $BS = chr(92);
+    $tail = 'вложения' . $BS . 'olympiad-2' . $BS . '0613669172928f87';
+    $present = 'olimp' . $BS . $tail . $BS . 'present.docx';
+    $absent = 'olimp' . $BS . $tail . $BS . 'absent.docx';
+    try {
+        // Модель сервера: «present» лежит и защищён, файла «absent» нет вовсе.
+        file_put_contents($state, json_encode([
+            'dirs'     => ['olimp', 'olimp' . $BS . 'вложения'],
+            'files'    => [ strtolower($present) => ['size' => 10] ],
+            'readonly' => [ strtolower($present) ],
+        ]));
+        $config = ['type' => 'smb', 'path' => '//' . $at_unc_host . '/kvant/olimp', 'user' => '', 'password' => ''];
+        $res = NetworkExport::smb_unprotect([
+            $tail . '/present.docx',
+            $tail . '/absent.docx',
+        ], $config);
+        $dump = json_encode($res, JSON_UNESCAPED_UNICODE);
+        $at_assert(substr_count((string)file_get_contents($log), 'setmode') === 2, 'Команды отправлены не по всем файлам', (string)file_get_contents($log));
+        $at_assert((int)($res['count'] ?? 0) === 1, 'Подтверждённым считается только тот файл, который сервер отдал', $dump);
+        $at_assert((int)($res['failed'] ?? 0) === 1, 'Отказ по второму файлу потерян', $dump);
+        $at_assert(!empty($res['success']), 'Частичный успех не распознан', $dump);
+        $at_assert(($res['message'] ?? '') !== '', 'О частичном результате молчат', $dump);
+        $st = json_decode((string)file_get_contents($state), true);
+        $at_assert((array)($st['readonly'] ?? []) === [], 'Защиту не сняли с доступного файла', json_encode($st));
+
+        // Когда не отдан ни один файл — успех объявлять нельзя.
+        $res2 = NetworkExport::smb_unprotect([ $tail . '/absent.docx' ], $config);
+        $dump2 = json_encode($res2, JSON_UNESCAPED_UNICODE);
+        $at_assert(empty($res2['success']), 'Успех при отказе всех файлов', $dump2);
+        $at_assert((int)($res2['count'] ?? 0) === 0, 'Счётчик снятых защит завышен', $dump2);
+        $at_assert((int)($res2['failed'] ?? 0) === 1, 'Отказ не учтён', $dump2);
+
+        // Интерфейс: частичный результат отличается и от «ок», и от «ошибки».
+        $repo = (string)(defined('WP_OLYMPIAD_PATH') ? WP_OLYMPIAD_PATH : dirname(__DIR__));
+        $admin = (string)file_get_contents($repo . '/admin/class-admin.php');
+        $view = (string)file_get_contents($repo . '/admin/views/quiz-edit.php');
+        $at_assert(stripos($admin, "attachment_unprotect=partial") !== false, 'Частичный результат не передаётся в редирект', '');
+        $at_assert(stripos($view, "wpo_unp_notice === 'partial'") !== false, 'Частичный результат не показан организатору', '');
+        return true;
+    } finally {
+        $cleanup();
+        @unlink($state);
     }
 });
 

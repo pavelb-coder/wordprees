@@ -1480,6 +1480,100 @@ class Attachments
         return $result;
     }
 
+    /**
+     * Снять защиту «только для чтения» с файлов олимпиады в сетевой папке.
+     *
+     * Задевает только те имена, которые принёс сам плагин (вложения attempts и
+     * реестр доставленного): чужие файлы на share не трогаются никогда.
+     *
+     * @return array{success: bool, unprotected: int, total: int, mode: string, message: string, raw: string, names: array}
+     */
+    public static function unprotect_share(Quiz $quiz): array
+    {
+        $store = self::store($quiz);
+        $result = ['success' => false, 'unprotected' => 0, 'failed' => 0, 'total' => 0, 'mode' => '', 'message' => '', 'raw' => '', 'names' => []];
+        $names = [];
+        foreach (self::pending($quiz) as $item) {
+            if (is_array($item)) {
+                $bucket = (string) ($item['bucket'] ?? '');
+                $name = (string) ($item['name'] ?? '');
+                if ($name === '') {
+                    continue;
+                }
+                $names[] = self::DIR . '/' . $store['slug'] . '/' . ($bucket !== '' ? $bucket . '/' : '') . $name;
+            }
+        }
+        foreach (array_keys(self::delivered_marks($quiz)) as $rel) {
+            $rel = str_replace('\\', '/', (string) $rel);
+            $names[] = self::DIR . '/' . $store['slug'] . '/'
+                . (preg_match('#^[a-f0-9]{16}/#', $rel) ? $rel : basename($rel));
+        }
+        $names = array_values(array_unique(array_filter($names)));
+        $result['total'] = count($names);
+        if (!$names) {
+            $result['message'] = __('Снимать защиту не с чего: плагин не знает ни об одном файле этой олимпиады в сетевой папке.', 'wp-olympiad');
+
+            return $result;
+        }
+
+        if ($store['share'] !== '' && self::writable_dir($store['share'])) {
+            $count = 0;
+            foreach ($names as $name) {
+                $tail = preg_replace('#^' . preg_quote(self::DIR . '/' . $store['slug'] . '/', '#') . '([^/]+/)?#', '', str_replace('\\', '/', $name));
+                $abs = rtrim($store['share'], '/\\') . '/' . $tail;
+                if (is_file($abs)) {
+                    @chmod($abs, 0666);
+                    if (!self::is_readonly($abs)) {
+                        $count++;
+                    }
+                }
+            }
+            $result['mode'] = 'filesystem';
+            $result['unprotected'] = $count;
+            $result['failed'] = max(0, $result['total'] - $count);
+            $result['success'] = $count > 0;
+            $result['names'] = array_slice(array_map(static fn($n) => basename(str_replace('\\', '/', (string) $n)), $names), 0, 8);
+            if (!$count) {
+                $result['message'] = __('Ни одного файла плагина по этому пути не найдено: папка выгрузки доступна только по сети, а не путём. Воспользуйтесь «Доставить сейчас» — защита снимается автоматически при несовпадении содержимого.', 'wp-olympiad');
+            }
+
+            return $result;
+        }
+
+        if ($store['type'] !== 'smb') {
+            $result['mode'] = 'unsupported';
+            $result['message'] = sprintf(
+                /* translators: 1: transport, 2: share path */
+                __('Сетевая папка «%2$s» работает через транспорт %1$s: снять атрибут «только для чтения» можно только на самом сервере.', 'wp-olympiad'),
+                $store['type'],
+                (string) ($store['config']['path'] ?? '')
+            );
+
+            return $result;
+        }
+
+        $sent = NetworkExport::smb_unprotect($names, $store['config']);
+        $result['mode'] = 'smb';
+        $result['unprotected'] = (int) ($sent['count'] ?? 0);
+        $result['failed'] = (int) ($sent['failed'] ?? 0);
+        $result['success'] = !empty($sent['success']);
+        $result['message'] = (string) ($sent['message'] ?? '');
+        $result['raw'] = (string) ($sent['raw'] ?? '');
+        $result['codes'] = array_values(array_map('strval', (array) ($sent['codes'] ?? [])));
+        $result['names'] = array_slice(array_map(static fn($n) => basename(str_replace('\\', '/', (string) $n)), $names), 0, 8);
+        self::reset_store_cache((int) $quiz->id);
+
+        return $result;
+    }
+
+    /** Файл помечен «только для чтения»? */
+    private static function is_readonly(string $path): bool
+    {
+        clearstatcache(true, $path);
+
+        return DIRECTORY_SEPARATOR === '\\' ? !@is_writeable($path) : ((fileperms($path) & 0o200) === 0);
+    }
+
     /** Последний отчёт о доставке: чем именно ответил транспорт. */
     public static function last_delivery_option(int $quiz_id): string
     {

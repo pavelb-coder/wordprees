@@ -492,6 +492,32 @@ final class Admin
             wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . $query));
             exit;
         }
+        // Снять защиту «только для чтения» с файлов олимпиады в сетевой папке:
+        // организатору её нечем снять, когда путь доступен только по SMB.
+        if ($action === 'unprotect_attachments' && isset($_GET['quiz_id'])) {
+            $quiz_id = (int)$_GET['quiz_id'];
+            check_admin_referer('wpo_unprotect_attachments_' . $quiz_id);
+            $quiz = Quiz::get($quiz_id);
+            if ($quiz === null) {
+                wp_safe_redirect(admin_url('admin.php?page=wp-olympiad'));
+                exit;
+            }
+            $res = Attachments::unprotect_share($quiz);
+            $query = !empty($res['success'])
+                ? '&attachment_unprotect=ok&n=' . (int)($res['unprotected'] ?? 0)
+                : '&attachment_unprotect=error';
+            // Часть файлов сервер не отдал — говорим об этом отдельно, молча
+            // «успех» наполовину сделанного дела организатору не helpful.
+            if (!empty($res['success']) && (int)($res['failed'] ?? 0) > 0) {
+                $query = '&attachment_unprotect=partial&n=' . (int)($res['unprotected'] ?? 0)
+                    . '&f=' . (int)$res['failed'];
+            }
+            if (!empty($res['codes'])) {
+                $query .= '&codes=' . rawurlencode(implode(',', array_slice((array)$res['codes'], 0, 3)));
+            }
+            wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . $query));
+            exit;
+        }
         // Direct Download of Exported Network Protocol File
         if ($action === 'download_network_file' && isset($_GET['quiz_id'])) {
             $quiz_id = (int)$_GET['quiz_id'];
