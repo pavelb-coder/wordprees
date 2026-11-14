@@ -1966,6 +1966,88 @@ $it('1.0.39: интерфейс сообщает состояние папки �
     return true;
 });
 
+$it('1.0.40: режим spool описан как штатный, а не как поломка', function () use ($at_assert, $at_smb_stub, $at_env, $at_file, $at_unc_host): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    try {
+        $view = (string)file_get_contents(WP_OLYMPIAD_PATH . 'admin/views/quiz-edit.php');
+        $at_assert(strpos($view, 'копируются в сетевую папку при сдаче и при выгрузке протоколов') === false,
+            'В форме осталась прежняя формулировка про «при сдаче и при выгрузке»');
+        $at_assert(strpos($view, 'для UNC, WebDAV и FTP это штатный режим') !== false, 'Нет слов о штатном режиме');
+        $at_assert(strpos($view, 'затем автоматически (5 минут … 6 часов)') !== false, 'Автоповтор в тексте не упомянут');
+        $at_assert(strpos($view, '$wpo_att_tone') !== false, 'Цвет сообщения не зависит от состояния');
+
+        // Ни один текст интерфейса больше не сулит единственный способ — выгрузку протоколов.
+        foreach ([
+            'includes/class-attachments.php',
+            'includes/class-network-export.php',
+            'admin/class-admin.php',
+            'admin/views/quiz-edit.php',
+        ] as $file) {
+            $src = (string)file_get_contents(WP_OLYMPIAD_PATH . $file);
+            preg_match_all("/__\(\s*'([^']*выгрузке протоколов[^']*)'/u", $src, $found);
+            foreach ($found[1] as $line) {
+                $at_assert(
+                    stripos($line, 'автоматическ') !== false || stripos($line, 'кнопкой') !== false
+                        || stripos($line, 'донесёт сам') !== false || stripos($line, 'повтор') !== false,
+                    'Строка обещает только выгрузку протоколов: ' . $file . ' — ' . $line
+                );
+            }
+        }
+
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения формулировка ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        $qid = (int)Question::create(['quiz_id' => $id, 'question_type' => 'file', 'title' => 'Файл', 'points' => 5, 'penalty' => 0, 'options' => []]);
+        $quiz = Quiz::get($id);
+        $store = Attachments::store($quiz);
+        $at_assert($store['mode'] === 'spool', 'Ожидался режим spool', (string)$store['mode']);
+        $at_assert(stripos((string)$store['note'], 'штатный режим') !== false, 'Заметка хранилища не переписана', (string)$store['note']);
+        $at_assert(stripos((string)$store['note'], 'при автоматическом повторе') !== false, 'В заметке нет автоповтора', (string)$store['note']);
+        $at_assert(stripos((string)$store['note'], 'при сдаче и при выгрузке протоколов') === false, 'Заметка всё ещё ссылается только на выгрузку', (string)$store['note']);
+
+        // И обещание «при выгрузке протоколов» тоже проверено делом: выгрузка
+        // пакета протоколов доносит то, что числится недоставленным.
+        $at_env(['WPO_STUB_ALL_FAIL' => '1', 'WPO_STUB_STATUS' => 'BAD_NETWORK_NAME']);
+        $attempt = Attempt::start($id, ['name' => 'Экспорт_проба', 'email' => 'exp@example.invalid', 'participant_class' => '10']);
+        $bucket = Attachments::bucket($attempt->token);
+        $file = Attachments::accept($quiz, $bucket, $qid, [
+            'name' => 'скан работы.pdf', 'tmp_name' => $at_file('pdf'), 'error' => UPLOAD_ERR_OK, 'size' => 10,
+        ], Attachments::limits($quiz));
+        $at_assert(is_array($file), 'Файл не принят', is_wp_error($file) ? $file->get_error_message() : '');
+        $void = Attachments::flush_to_share($quiz, $bucket, [(string)$file['id']]);
+        $at_assert((int)$void['copied'] === 0 && count(Attachments::pending($quiz)) === 1, 'Недоставленное не попало в список', json_encode($void, JSON_UNESCAPED_UNICODE));
+
+        $at_env(['WPO_STUB_ALL_FAIL' => '', 'WPO_STUB_STATUS' => '']);
+        $dest = sys_get_temp_dir() . '/wpo_pkg_' . wp_generate_password(6, false, false);
+        wp_mkdir_p($dest);
+        try {
+            Attachments::export_to($quiz, Attachments::rows_for_quiz($quiz), $dest);
+            $at_assert(Attachments::pending($quiz) === [], 'Выгрузка протоколов не донесла недоставленное', json_encode(Attachments::pending($quiz), JSON_UNESCAPED_UNICODE));
+            $at_assert(Attachments::delivered_marks($quiz) !== [], 'Выгрузка протоколов не оставила отметки о доставке');
+        } finally {
+            exec('rm -rf ' . escapeshellarg($dest));
+        }
+        return true;
+    } finally {
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::probe_option($id));
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::retry_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
 $it('1.0.32: форма редактора и просмотр попытки показывают вложения', function () use ($at_assert, $at_fixture, $at_drop, $at_file): bool {
     $repo = WP_OLYMPIAD_PATH;
     $card = (string)file_get_contents($repo . '/admin/views/question-item-card.php');

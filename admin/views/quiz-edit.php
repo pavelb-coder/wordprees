@@ -441,16 +441,26 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                             <th scope="row"><?php esc_html_e('Вложения участников:', 'wp-olympiad'); ?></th>
                             <td>
                                 <?php
-                                $wpo_att_store = ['mode' => '', 'type' => ''];
+                                $wpo_att_store = ['mode' => '', 'type' => '', 'note' => ''];
                                 $wpo_att_pending = [];
+                                $wpo_probe = [];
                                 if (!$is_new) {
                                     $wpo_att_store = \WPOlympiad\Attachments::store($quiz);
                                     $wpo_att_pending = \WPOlympiad\Attachments::pending($quiz);
+                                    if ($quiz instanceof \WPOlympiad\Quiz) {
+                                        $wpo_probe = \WPOlympiad\Attachments::probe_state($quiz);
+                                    }
                                 }
+                                // Янтарём выделяем только настоящие неполадки: недоставленные
+                                // файлы или отказ пробы папки. Сам режим spool для UNC, WebDAV
+                                // и FTP — штатный способ работать с сетевой папкой, а не беда.
+                                $wpo_att_tone = (!empty($wpo_att_pending)
+                                    || (isset($wpo_probe['when']) && (int)$wpo_probe['when'] > 0 && empty($wpo_probe['ok'])))
+                                    ? '#9a6700' : '#50575e';
                                 ?>
                                 <?php if ($wpo_att_store['mode'] === 'spool'): ?>
-                                    <p class="description" style="margin:0 0 8px;color:#9a6700;">
-                                        <?php echo esc_html(sprintf(__('Сетевая папка недоступна PHP как путь (транспорт %s): работы участников собираются в закрытой папке сайта и копируются в сетевую папку при сдаче и при выгрузке протоколов.', 'wp-olympiad'), $wpo_att_store['type'])); ?>
+                                    <p class="description" style="margin:0 0 8px;color:<?php echo esc_attr($wpo_att_tone); ?>;">
+                                        <?php echo esc_html(sprintf(__('Сетевая папка недоступна PHP как путь (транспорт %s) — для UNC, WebDAV и FTP это штатный режим: работы участников лежат в закрытой папке сайта, а на шару их кладёт транспорт. Доставка пробуется при сдаче, затем автоматически (5 минут … 6 часов), кнопкой «Доставить сейчас» и при выгрузке протоколов; папку вложений плагин создаёт сам — см. «Проверить папку вложений».', 'wp-olympiad'), $wpo_att_store['type'])); ?>
                                     </p>
                                 <?php endif; ?>
                                 <?php
@@ -540,7 +550,8 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                     // Папка вложений на сетевой папке: с 1.0.39 её создаёт
                                     // проверка, а не первая сдача работы — и состояние папки
                                     // видно всегда, а не только когда есть недоставленное.
-                                    $wpo_probe = \WPOlympiad\Attachments::probe_state($quiz);
+                                    // $wpo_probe уже вычислен выше — вместе с тоном сообщений.
+                                    $wpo_probe = $wpo_probe ?: \WPOlympiad\Attachments::probe_state($quiz);
                                     $wpo_probe_age = $wpo_probe['when'] > 0 ? max(1, (int)round((time() - $wpo_probe['when']) / 60)) : 0;
                                     $wpo_probe_btn = '<a class="button button-small" style="margin-left:8px;" href="'
                                         . esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . (int)$quiz->id . '&wpo_action=probe_attachments'), 'wpo_probe_attachments_' . (int)$quiz->id))
