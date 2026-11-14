@@ -743,6 +743,155 @@ $it('1.0.32: занятый файл на SMB не отменяет выгруз
     }
 });
 
+/**
+ * Заглушка smbclient (tests/smb-client-stub.php) через обёртку: позволяет проверять
+ * разбор вывода транспорта без SAMBA на стенде. Возвращает путь к «бинарнику» и путь
+ * журнала вызовов.
+ *
+ * @return array{0:string,1:string,2:callable}
+ */
+$at_smb_stub = static function () use ($at_assert): array {
+    $dir = sys_get_temp_dir() . '/wpo_smb_stub_' . wp_generate_password(8, false, false);
+    $at_assert(wp_mkdir_p($dir), 'Не удалось создать каталог заглушки');
+    $helper = WP_OLYMPIAD_PATH . '/tests/smb-client-stub.php';
+    $at_assert(is_file($helper), 'Заглушка smbclient не найдена');
+    $bin = $dir . '/smbclient';
+    $log = $dir . '/calls.log';
+    file_put_contents($bin, "#!/bin/sh\nexec php " . escapeshellarg($helper) . ' "$@"' . "\n");
+    @chmod($bin, 0755);
+    $at_assert(is_executable($bin), 'Каталог тестов смонтирован с noexec — проверка невозможна');
+    putenv('WPO_STUB_LOG=' . $log);
+    $filter = static fn() => $bin;
+    add_filter('wpo_smbclient_binary', $filter);
+    $cleanup = static function () use ($dir, $bin, $log): void {
+        remove_all_filters('wpo_smbclient_binary');
+        foreach (['WPO_STUB_MODE', 'WPO_STUB_SIZE', 'WPO_STUB_LOG', 'WPO_STUB_ALL_FAIL', 'WPO_STUB_GLOBAL', 'WPO_STUB_STATUS'] as $k) {
+            putenv($k);
+        }
+        exec('rm -rf ' . escapeshellarg($dir));
+    };
+
+    return [$bin, $log, $cleanup];
+};
+
+$at_env = static function (array $vars): void {
+    foreach ($vars as $key => $val) {
+        putenv($key . '=' . $val);
+        $_ENV[$key] = (string)$val;
+    }
+};
+
+$it('1.0.34: коллизия имени при записи на SMB означает «файл уже доставлен»', function () use ($at_assert, $at_smb_stub, $at_env): bool {
+    [, $log, $cleanup] = $at_smb_stub();
+    try {
+        $config = ['type' => 'smb', 'path' => '//10.200.10.10/kvant/olimp', 'user' => '', 'password' => ''];
+        $content = "участник;балл\nФёдоров;7\n";
+
+        // Тот же файл доставляют второй раз: Samba отвечает коллизией, файл на месте.
+        $at_env(['WPO_STUB_MODE' => 'collision', 'WPO_STUB_SIZE' => (string)strlen($content)]);
+        $res = NetworkExport::deliver_files_public(['сводный_протокол.csv' => $content], $config);
+        $at_assert(!empty($res['success']), 'Повторная доставка с коллизией признана ошибкой', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(($res['existing'] ?? []) === ['сводный_протокол.csv'], 'Коллизия не распознана как «уже на месте»', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(!isset($res['skipped']), 'Доставленный файл попал в пропущенные', json_encode($res, JSON_UNESCAPED_UNICODE));
+
+        // Размер на сервере другой — значит там чужой или обрезанный файл: это настоящая ошибка.
+        $at_env(['WPO_STUB_SIZE' => (string)(strlen($content) + 77)]);
+        $res2 = NetworkExport::deliver_files_public(['сводный_протокол.csv' => $content], $config);
+        $at_assert(empty($res2['success']), 'Расхождение размера не замечено', json_encode($res2, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res2['message'] ?? ''), 'уже есть в сетевой папке') !== false, 'Причина не объяснена', (string)($res2['message'] ?? ''));
+        return true;
+    } finally {
+        $cleanup();
+    }
+});
+
+$it('1.0.34: доставленный файл не переписывается заново, а «Доставить сейчас» переносит его принудительно', function () use ($at_assert, $at_smb_stub, $at_env, $at_file, $at_unc_host): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    $spool_dir = '';
+    try {
+        $at_assert($bin !== '', 'Заглушка не готова');
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения повтор ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id'       => $id,
+            'question_type' => 'file',
+            'title'         => 'Прикрепите скан.',
+            'points'        => 10,
+            'penalty'       => 0,
+            'options'       => [],
+        ]);
+        $quiz = Quiz::get($id);
+        $at_assert(Attachments::mode($quiz) === 'spool', 'Ожидается режим рабочей папки');
+        $spool_dir = (string)Attachments::store($quiz)['spool'];
+
+        $attempt = Attempt::start($id, ['name' => 'Повтор', 'email' => 'again@example.invalid', 'participant_class' => '11']);
+        $bucket = Attachments::bucket($attempt->token);
+        $file = Attachments::accept($quiz, $bucket, $qid, [
+            'name'     => 'скан.pdf',
+            'tmp_name' => $at_file('pdf'),
+            'error'    => UPLOAD_ERR_OK,
+            'size'     => 10,
+        ], Attachments::limits($quiz));
+        $at_assert(is_array($file), 'Файл не принят', is_wp_error($file) ? $file->get_error_message() : '');
+
+        $submit = new WP_REST_Request('POST', RestApi::NAMESPACE . '/submit');
+        $submit->set_body_params(['token' => $attempt->token, 'answers' => [$qid => [(string)$file['id']]]]);
+        $sent = RestApi::handle_submit($submit);
+        $at_assert(!is_wp_error($sent), 'Сдача отклонена', is_wp_error($sent) ? $sent->get_error_message() : '');
+
+        $calls = (int)substr_count((string)file_get_contents($log), 'put "');
+        $at_assert($calls >= 1, 'После сдачи файл не был отправлен ни разу', (string)$calls);
+        $at_assert(Attachments::pending($quiz) === [], 'Доставленный файл остался в списке недоставленного', json_encode(Attachments::pending($quiz), JSON_UNESCAPED_UNICODE));
+        $marks = Attachments::delivered_marks(Quiz::get($id));
+        $at_assert(isset($marks[(string)$file['rel']]), 'Отметка о доставке не сохранена', json_encode(array_keys($marks)));
+
+        // Вторая выгрузка протоколов не должна заново писать тот же файл.
+        $before = (int)substr_count((string)file_get_contents($log), 'put "');
+        $report = Attachments::export_to(Quiz::get($id), Attachments::rows_for_quiz(Quiz::get($id)), '');
+        $at_assert(($report['already'] ?? 0) === 1, 'Повторная выгрузка не учла доставленный файл', json_encode($report, JSON_UNESCAPED_UNICODE));
+        $after = (int)substr_count((string)file_get_contents($log), 'put "');
+        $at_assert($after === $before, 'Файл переписан повторно', $before . ' -> ' . $after);
+
+        // Принудительная доставка (кнопка «Доставить сейчас») снимает отметки и пишет заново.
+        $res = Attachments::redeliver(Quiz::get($id));
+        $at_assert(($res['sent'] ?? 0) === 1, 'Принудительная доставка не сработала', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $forced = (int)substr_count((string)file_get_contents($log), 'put "');
+        $at_assert($forced === $after + 1, 'Принудительная доставка не вызвала запись', $after . ' -> ' . $forced);
+        $at_assert(count(Attachments::delivered_marks(Quiz::get($id))) === 1, 'Отметка не восстановлена после переноса');
+
+        // Снятая отметка (файл удалили) тоже должна позволять доставку заново.
+        Attachments::forget_delivered(Quiz::get($id));
+        $at_assert(Attachments::delivered_marks(Quiz::get($id)) === [], 'Отметки не сброшены');
+        $again = Attachments::export_to(Quiz::get($id), Attachments::rows_for_quiz(Quiz::get($id)), '');
+        $at_assert(($again['already'] ?? 0) === 0, 'Без отметки файл снова посчитан доставленным', json_encode($again, JSON_UNESCAPED_UNICODE));
+
+        $admin = (string)file_get_contents(WP_OLYMPIAD_PATH . '/admin/class-admin.php');
+        $view = (string)file_get_contents(WP_OLYMPIAD_PATH . '/admin/views/quiz-edit.php');
+        $at_assert(str_contains($admin, "redeliver_attachments"), 'В админке нет обработчика принудительной доставки');
+        $at_assert(str_contains($view, 'wpo_redeliver_attachments_'), 'В форме нет кнопки принудительной доставки');
+        return true;
+    } finally {
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            if ($spool_dir !== '' && is_dir($spool_dir)) {
+                exec('rm -rf ' . escapeshellarg($spool_dir));
+            }
+            Quiz::delete($id);
+        }
+    }
+});
+
 $it('1.0.32: форма редактора и просмотр попытки показывают вложения', function () use ($at_assert, $at_fixture, $at_drop, $at_file): bool {
     $repo = WP_OLYMPIAD_PATH;
     $card = (string)file_get_contents($repo . '/admin/views/question-item-card.php');

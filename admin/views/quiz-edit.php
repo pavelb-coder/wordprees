@@ -453,10 +453,29 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         <?php echo esc_html(sprintf(__('Сетевая папка недоступна PHP как путь (транспорт %s): работы участников собираются в закрытой папке сайта и копируются в сетевую папку при сдаче и при выгрузке протоколов.', 'wp-olympiad'), $wpo_att_store['type'])); ?>
                                     </p>
                                 <?php endif; ?>
+                                <?php $wpo_att_notice = sanitize_key($_GET['attachment_delivery'] ?? ''); ?>
+                                <?php if ($wpo_att_notice === 'sent'): ?>
+                                    <div class="notice notice-success inline" style="margin:0 0 8px;">
+                                        <p><?php echo esc_html(sprintf(__('Вложения доставлены в сетевую папку заново: %d.', 'wp-olympiad'), (int)($_GET['n'] ?? 0))); ?></p>
+                                    </div>
+                                <?php elseif ($wpo_att_notice === 'empty'): ?>
+                                    <div class="notice notice-info inline" style="margin:0 0 8px;">
+                                        <p><?php esc_html_e('Файлов, которые нужно доставить, нет: всё уже лежит в сетевой папке.', 'wp-olympiad'); ?></p>
+                                    </div>
+                                <?php elseif ($wpo_att_notice === 'error'): ?>
+                                    <div class="notice notice-error inline" style="margin:0 0 8px;">
+                                        <p><?php esc_html_e('Сетевая папка по-прежнему недоступна для записи — доставка отложена. Проверьте подключение и повторите.', 'wp-olympiad'); ?></p>
+                                    </div>
+                                <?php endif; ?>
                                 <?php if ($wpo_att_pending): ?>
                                     <p class="description" style="margin:0 0 8px;color:#b32d2e;">
                                         <?php echo esc_html(sprintf(__('Не доставлено в сетевую папку: %d. Повтор — при ближайшей выгрузке протоколов.', 'wp-olympiad'), count($wpo_att_pending))); ?>
                                         <?php echo esc_html((string)($wpo_att_pending[0]['error'] ?? '')); ?>
+                                        <a class="button button-small" style="margin-left:8px;" href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . (int)$quiz->id . '&wpo_action=redeliver_attachments'), 'wpo_redeliver_attachments_' . (int)$quiz->id)); ?>"><?php esc_html_e('Доставить сейчас', 'wp-olympiad'); ?></a>
+                                        <?php $wpo_att_delivered = count(\WPOlympiad\Attachments::delivered_marks($quiz)); ?>
+                                        <?php if ($wpo_att_delivered): ?>
+                                            <span style="color:#50575e;margin-left:8px;"><?php echo esc_html(sprintf(__('уже доставлено и не переписывается: %d', 'wp-olympiad'), $wpo_att_delivered)); ?></span>
+                                        <?php endif; ?>
                                     </p>
                                 <?php endif; ?>
                                 <p style="margin-top:0;">

@@ -10,6 +10,7 @@ use WPOlympiad\Attempt;
 use WPOlympiad\Export;
 use WPOlympiad\NetworkExport;
 use WPOlympiad\NetworkImport;
+use WPOlympiad\Attachments;
 use WPOlympiad\DesktopEditor;
 
 if (!defined('ABSPATH')) {
@@ -463,6 +464,27 @@ final class Admin
             exit;
         }
 
+        // 1.0.34: принудительная доставка вложений участников в сетевую папку.
+        // Отметки о доставленном снимаются, файлы уходят заново — это ответ на
+        // «файл уже есть в сетевой папке» после обрыва записи или ручной правки.
+        if ($action === 'redeliver_attachments' && isset($_GET['quiz_id'])) {
+            $quiz_id = (int)$_GET['quiz_id'];
+            check_admin_referer('wpo_redeliver_attachments_' . $quiz_id);
+            $quiz = Quiz::get($quiz_id);
+            if ($quiz === null) {
+                wp_safe_redirect(admin_url('admin.php?page=wp-olympiad'));
+                exit;
+            }
+            $res = Attachments::redeliver($quiz);
+            $query = $res['sent'] > 0
+                ? '&attachment_delivery=sent&n=' . (int)$res['sent']
+                : ($res['message'] !== '' ? '&attachment_delivery=error' : '&attachment_delivery=empty');
+            if ($res['missing'] > 0) {
+                $query .= '&missing=' . (int)$res['missing'];
+            }
+            wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . $query));
+            exit;
+        }
         // Direct Download of Exported Network Protocol File
         if ($action === 'download_network_file' && isset($_GET['quiz_id'])) {
             $quiz_id = (int)$_GET['quiz_id'];

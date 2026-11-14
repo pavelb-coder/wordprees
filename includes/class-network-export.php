@@ -1269,7 +1269,71 @@ final class NetworkExport
      * @param array $parsed
      * @return string
      */
+    /** Имя файла из строки вывода smbclient (последний сегмент удалённого пути). */
+    private static function remote_basename(string $line): string
+    {
+        if (preg_match('/remote file\s+(.+)$/i', $line, $m)) {
+            $tail = trim($m[1], " \t\"'");
+        } else {
+            $parts = preg_split('/\s+/', trim($line));
+            $tail = (is_array($parts) && $parts) ? (string) end($parts) : '';
+        }
+        $tail = trim(str_replace('\\', '/', $tail), '/');
+
+        return $tail === '' ? '' : basename($tail);
+    }
+
+    /**
+     * Размеры файлов, которые уже лежат на share: -c "ls <имя>" для каждого имени.
+     * null — получить список не удалось (тогда проверять нечем).
+     *
+     * @param array<int,string> $names
+     * @return array<string,int>|null
+     */
+    private static function smb_remote_sizes(array $names, array $parsed, string $auth_args): ?array
+    {
+        $smb_bin = self::get_smbclient_binary();
+        if (!$smb_bin || !$names) {
+            return null;
+        }
+        $commands = [];
+        if (!empty($parsed['subdir'])) {
+            foreach (explode('/', trim((string) $parsed['subdir'], '/')) as $p) {
+                $commands[] = 'cd "' . $p . '"';
+            }
+        }
+        foreach ($names as $name) {
+            $commands[] = 'ls "' . str_replace('/', '\\', $name) . '"';
+        }
+        $auth = ($auth_args !== '') ? $auth_args : '-N';
+        $full = sprintf(
+            '%s %s %s -c %s -t 15 2>&1',
+            escapeshellcmd($smb_bin),
+            escapeshellarg($parsed['service']),
+            $auth,
+            escapeshellarg(implode('; ', $commands))
+        );
+        $lines = [];
+        $code = 1;
+        @exec($full, $lines, $code);
+        if (!$lines) {
+            return null;
+        }
+        $sizes = [];
+        foreach ($lines as $line) {
+            // Формат smbclient: «  имя  A  1234  Fri Oct 24 10:00:00 2025»
+            if (preg_match('/^\s*(\S.*?)\s+[A-Za-z]{1,4}\s+(\d+)\s+\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4}\s*$/', $line, $m)) {
+                $key = strtolower(str_replace('\\', '/', trim($m[1], '"')));
+                $sizes[basename($key)] = (int) $m[2];
+                $sizes[$key] = (int) $m[2];
+            }
+        }
+
+        return $sizes ?: null;
+    }
+
     /** Имя файла для сообщения: без служебных каталогов. */
+
     private static function friendly_file_label(string $name): string
     {
         $name = str_replace('\\\\', '\/', $name);
@@ -1333,9 +1397,10 @@ final class NetworkExport
         }
         if (str_contains($raw_error, 'NT_STATUS_OBJECT_NAME_COLLISION') && $skipped_files) {
             return sprintf(
-                /* translators: %s: file names */
-                __('Файл «%s» уже есть в сетевой папке и защищён от перезаписи (NT_STATUS_OBJECT_NAME_COLLISION). Уберите запрет на запись для этого файла или переименуйте его.', 'wp-olympiad'),
-                implode('», «', array_map(static fn($n) => self::friendly_file_label($n), array_slice($skipped_files, 0, 3)))
+                /* translators: 1: file names, 2: share path */
+                __('Файл «%1$s» уже есть в сетевой папке, а перезапись запрещена правами или атрибутом «только для чтения» (NT_STATUS_OBJECT_NAME_COLLISION). Если содержимое файла не менялось, ничего делать не нужно — он на месте. Иначе снимите защиту с файла на %2$s и повторите выгрузку.', 'wp-olympiad'),
+                implode('», «', array_map(static fn($n) => self::friendly_file_label($n), array_slice($skipped_files, 0, 3))),
+                $parsed['unc'] ?? $parsed['service'] ?? ''
             );
         }
         if (str_contains($raw_error, 'NT_STATUS_ACCOUNT_DISABLED')) {
@@ -1484,6 +1549,8 @@ final class NetworkExport
 
         // Что реально записано: smbclient на каждый файл печатает «putting file <локальный путь> as …».
         $delivered = [];
+        $mismatch = [];
+        $existing = [];
         foreach ($written_tmp as $name => $tmp_file) {
             if (preg_match('/putting file[^\n]*' . preg_quote($tmp_file, '/') . '[^\n]* as /i', $blob)) {
                 $delivered[] = (string)$name;
@@ -1491,13 +1558,60 @@ final class NetworkExport
         }
         $failed = array_values(array_diff(array_map('strval', array_keys($files)), $delivered));
 
+        // Коллизия имени на записи — файл на share уже лежит: так отвечает Samba, когда
+        // smbclient не может перезаписать существующий файл (атрибут «только для чтения»,
+        // запрет удаления, антивирус). Обычно это повторная доставка того же вложения,
+        // поэтому считаем её успешной — но сверяем размер, чтобы не принять обрезанный файл.
+        $existing = [];
+        if ($failed) {
+            $collided = [];
+            foreach ($output_lines as $line) {
+                if (str_contains($line, 'making remote directory')) {
+                    continue; // создание каталога — не про файл
+                }
+                if (!preg_match('/NT_STATUS_OBJECT_NAME_(?:COLLISION|EXISTS)/', $line)) {
+                    continue;
+                }
+                $base = self::remote_basename($line);
+                if ($base !== '') {
+                    $collided[strtolower($base)] = true;
+                }
+            }
+            foreach ($failed as $name) {
+                if (isset($collided[strtolower(basename(str_replace('\\', '/', (string) $name)))])) {
+                    $existing[] = (string) $name;
+                }
+            }
+            if ($existing) {
+                $sizes = self::smb_remote_sizes($existing, $parsed, $auth_args);
+                foreach ($existing as $name) {
+                    $want = strlen((string) ($files[$name] ?? ''));
+                    if ($sizes === null) {
+                        $delivered[] = $name; // проверить нечем — доверяем коллизии
+                        continue;
+                    }
+                    $key = strtolower(str_replace('\\', '/', $name));
+                    if (!isset($sizes[$key]) || (int) $sizes[$key] === $want) {
+                        $delivered[] = $name;
+                    } else {
+                        $mismatch[] = $name; // чужой или обрезанный файл: нужен принудительный put
+                    }
+                }
+                $failed = array_values(array_diff(array_map('strval', array_keys($files)), $delivered));
+            }
+        }
+
+        // Временные файлы больше не нужны (файл учётных данных — нужен до проверки размеров).
+        self::delete_directory_recursive($tmp_dir);
+
         $unexpected = [];
+
         foreach ($output_lines as $line) {
             preg_match_all('/NT_STATUS_[A-Z0-9_]+/', $line, $statuses);
             if (!$statuses[0]) continue;
             $directory_exists = str_contains($line, 'making remote directory')
                 && !array_diff($statuses[0], ['NT_STATUS_OBJECT_NAME_COLLISION', 'NT_STATUS_OBJECT_NAME_EXISTS']);
-            $per_file = $failed && self::line_mentions_any($line, $files, $written_tmp);
+            $per_file = ($failed || $existing) && self::line_mentions_any($line, $files, $written_tmp);
             if (!$directory_exists && !$per_file) $unexpected = array_merge($unexpected, $statuses[0]);
         }
 
@@ -1513,6 +1627,12 @@ final class NetworkExport
             if ($failed) {
                 $result['skipped'] = $failed;
                 $result['message'] = self::translate_smb_error($blob, $parsed, $failed);
+            }
+            if ($existing) {
+                $result['existing'] = $existing;
+            }
+            if ($mismatch) {
+                $result['stale'] = $mismatch;
             }
             return $result;
         }

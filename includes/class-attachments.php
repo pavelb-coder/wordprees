@@ -660,6 +660,8 @@ class Attachments
         if (!is_wp_error($abs)) {
             @unlink($abs);
         }
+        // Файла больше нет — отметка о его доставке тоже должна исчезнуть.
+        self::forget_delivered($quiz, [(string)($entry['rel'] ?? '')]);
         unset($index[$id]);
         self::write_index($dir, $index);
 
@@ -689,6 +691,7 @@ class Attachments
             $abs = self::resolve($quiz, (string)($entry['rel'] ?? ''));
             if (!is_wp_error($abs)) {
                 @unlink($abs);
+                self::forget_delivered($quiz, [(string)($entry['rel'] ?? '')]);
                 $removed++;
             }
         }
@@ -1061,7 +1064,7 @@ class Attachments
      * @param array<int, array{attempt_ref: string, files: array}> $rows
      * @return array{copied: int, missing: int, dir: string}
      */
-    public static function export_to(Quiz $quiz, array $rows, string $dest_dir): array
+    public static function export_to(Quiz $quiz, array $rows, string $dest_dir, bool $force = false): array
     {
         $copied = 0;
         $missing = 0;
@@ -1073,6 +1076,8 @@ class Attachments
         // не существовать — тогда важно, что рядом с ней можно писать.
         $local_dest = $dest_dir !== ''
             && (is_dir($dest_dir) || (is_dir(dirname($dest_dir)) && is_writable(dirname($dest_dir))));
+        $already_delivered = 0;
+        $transport_sizes = [];
         if ($local_dest && !is_dir($dest_dir)) {
             @wp_mkdir_p($dest_dir);
         }
@@ -1104,15 +1109,25 @@ class Attachments
                     }
                     continue;
                 }
-                $via_transport[self::DIR . '/' . $store['slug'] . '/' . $ref . '/' . $safe] = (string)file_get_contents((string)$abs);
+                $rel = (string)($file['rel'] ?? '');
+                $size = (int)($file['size'] ?? @filesize((string)$abs));
+                $key = self::DIR . '/' . $store['slug'] . '/' . $ref . '/' . $safe;
+                if (!$force && self::is_delivered($quiz, $rel)) {
+                    $already_delivered++;
+                    continue;
+                }
+                $via_transport[$key] = (string)file_get_contents((string)$abs);
+                $transport_sizes[$key] = [$rel, $size];
                 $copied++;
             }
         }
 
         $transport_message = '';
         if ($via_transport) {
-            $store = self::store($quiz);
             $sent = NetworkExport::deliver_files_public($via_transport, $store['config']);
+            if (!empty($sent['success'])) {
+                self::mark_delivered($quiz, self::delivered_sizes($sent, $transport_sizes));
+            }
             if (empty($sent['success'])) {
                 $transport_message = (string)($sent['message'] ?? '');
                 $missing += count($via_transport);
@@ -1130,6 +1145,7 @@ class Attachments
         return [
             'copied'    => $copied,
             'missing'   => $missing,
+            'already'   => $already_delivered,
             'dir'       => $target_root,
             'transport' => $local_dest ? 'filesystem' : $store['type'],
             'message'   => $transport_message,
@@ -1245,7 +1261,9 @@ class Attachments
         }
 
         $files = [];
+        $sizes = [];
         $missing = 0;
+        $already = 0;
         foreach (array_unique(array_map('strval', $ids)) as $id) {
             $dir = self::bucket_dir($quiz, $bucket);
             if (is_wp_error($dir)) {
@@ -1258,17 +1276,28 @@ class Attachments
                 $missing++;
                 continue;
             }
-            $files[self::DIR . '/' . $store['slug'] . '/' . $bucket . '/' . basename((string)$abs)] = (string)file_get_contents((string)$abs);
+            $rel = (string)($entry['rel'] ?? '');
+            $size = (int)@filesize((string)$abs);
+            // Тот же файл уже лежит в сетевой папке: вторая запись ничего не добавит,
+            // а на части конфигураций Samba отвечает на это ошибкой коллизии.
+            if (self::is_delivered($quiz, $rel)) {
+                $already++;
+                continue;
+            }
+            $key = self::DIR . '/' . $store['slug'] . '/' . $bucket . '/' . basename((string)$abs);
+            $files[$key] = (string)file_get_contents((string)$abs);
+            $sizes[$key] = [$rel, $size];
         }
 
         if (!$files) {
-            return ['copied' => 0, 'missing' => $missing, 'mode' => 'spool', 'message' => ''];
+            return ['copied' => 0, 'missing' => $missing, 'already' => $already, 'mode' => 'spool', 'message' => ''];
         }
 
         $sent = NetworkExport::deliver_files_public($files, $store['config']);
         if (!empty($sent['success'])) {
+            self::mark_delivered($quiz, self::delivered_sizes($sent, $sizes));
             self::forget_pending($quiz, array_keys($files));
-            return ['copied' => count($files), 'missing' => $missing, 'mode' => 'spool', 'message' => ''];
+            return ['copied' => count($files), 'missing' => $missing, 'already' => $already, 'mode' => 'spool', 'message' => ''];
         }
 
         $message = (string)($sent['message'] ?? '');
@@ -1276,7 +1305,143 @@ class Attachments
             return ['bucket' => $bucket, 'name' => basename($rel), 'rel' => $rel];
         }, array_keys($files)), $message);
 
-        return ['copied' => 0, 'missing' => $missing + count($files), 'mode' => 'spool', 'message' => $message];
+        return ['copied' => 0, 'missing' => $missing + count($files), 'already' => $already, 'mode' => 'spool', 'message' => $message];
+    }
+
+    /**
+     * Какие файлы считать доставленными по ответу транспорта. Отметку ставим только для
+     * тех, что транспорт подтвердил: записал или нашёл на месте с тем же размером.
+     *
+     * @param array<string,int> $sizes ключ транспорта => [rel, размер]
+     * @return array<string,int>
+     */
+    private static function delivered_sizes(array $sent, array $sizes): array
+    {
+        $confirmed = array_merge((array)($sent['files'] ?? []), (array)($sent['existing'] ?? []));
+        $out = [];
+        foreach ($confirmed as $key) {
+            $key = (string)$key;
+            if (!isset($sizes[$key])) {
+                continue;
+            }
+            [$rel, $size] = $sizes[$key];
+            if ($rel !== '') {
+                $out[$rel] = (int)$size;
+            }
+        }
+
+        return $out;
+    }
+
+    // ------------------------------------------------- отметки о доставке в сетевую папку
+
+    /** Имя записи с отметками: `rel` => размер и подпись цели доставки. */
+    public static function delivered_option(int $quiz_id): string
+    {
+        return 'wpo_attachment_delivered_' . $quiz_id;
+    }
+
+    /**
+     * Подпись цели доставки: транспорт + путь + подпапка олимпиады. Меняются настройки
+     * сетевой папки — старые отметки перестают учитываться, файлы отдаются заново.
+     */
+    private static function delivery_sig(array $store): string
+    {
+        return substr(hash('sha256', $store['type'] . '|' . $store['share'] . '|' . $store['slug']), 0, 16);
+    }
+
+    /** @return array<string, array{size: int, sig: string}> */
+    public static function delivered_marks(Quiz $quiz): array
+    {
+        $data = get_option(self::delivered_option((int) $quiz->id), []);
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Файл уже лежит в сетевой папке — второй раз его не несём.
+     *
+     * Размер в отметке — справочный: сверять по нему нельзя, потому что в ответе
+     * участника может быть записан заявленный размер загрузки, а на диске — фактический.
+     * Подлинность файла на сервере проверяет транспорт (размер через «ls» в SMB),
+     * а новое вложение всегда получает новый rel, поэтому промахнуться здесь нельзя.
+     */
+    public static function is_delivered(Quiz $quiz, string $rel): bool
+    {
+        if ($rel === '') {
+            return false;
+        }
+        $store = self::store($quiz);
+        $marks = self::delivered_marks($quiz);
+
+        return isset($marks[$rel]) && (string) ($marks[$rel]['sig'] ?? '') === self::delivery_sig($store);
+    }
+
+    /** @param array<string,int> $items rel => размер */
+    public static function mark_delivered(Quiz $quiz, array $items): void
+    {
+        if (!$items) {
+            return;
+        }
+        $store = self::store($quiz);
+        $sig = self::delivery_sig($store);
+        $marks = self::delivered_marks($quiz);
+        foreach ($items as $rel => $size) {
+            $marks[(string) $rel] = ['size' => (int) $size, 'sig' => $sig];
+        }
+        if (count($marks) > 5000) {
+            $marks = array_slice($marks, -5000, null, true);
+        }
+        update_option(self::delivered_option((int) $quiz->id), $marks, false);
+    }
+
+    /** @param array<int,string> $rels пустой список — сбросить все отметки олимпиады */
+    public static function forget_delivered(Quiz $quiz, array $rels = []): void
+    {
+        $option = self::delivered_option((int) $quiz->id);
+        if (!$rels) {
+            delete_option($option);
+
+            return;
+        }
+        $marks = self::delivered_marks($quiz);
+        foreach ($rels as $rel) {
+            unset($marks[(string) $rel]);
+        }
+        if ($marks) {
+            update_option($option, $marks, false);
+        } else {
+            delete_option($option);
+        }
+    }
+
+    /**
+     * Принудительная доставка: снять отметки о доставленном снимаются и все
+     * прикреплённые файлы попытки (или все файлы олимпиады) уходят в сетевую папку заново.
+     *
+     * @return array{sent: int, skipped: int, missing: int, message: string}
+     */
+    public static function redeliver(Quiz $quiz): array
+    {
+        self::forget_delivered($quiz);
+        self::reset_store_cache((int) $quiz->id);
+        $rows = self::rows_for_quiz($quiz);
+        $result = ['sent' => 0, 'skipped' => 0, 'missing' => 0, 'message' => ''];
+        foreach ($rows as $row) {
+            $bucket = (string) ($row['attempt_ref'] ?? '');
+            if ($bucket === '' || empty($row['files'])) {
+                continue;
+            }
+            $ids = array_values(array_filter(array_map(static fn(array $f) => (string) ($f['id'] ?? ''), $row['files'])));
+            $sent = self::flush_to_share($quiz, $bucket, $ids);
+            $result['sent'] += (int) ($sent['copied'] ?? 0);
+            $result['missing'] += (int) ($sent['missing'] ?? 0);
+            if ((string) ($sent['message'] ?? '') !== '') {
+                $result['message'] = (string) $sent['message'];
+            }
+        }
+
+        return $result;
     }
 
     /** Что не удалось доставить в сетевую папку (список виден организатору). */
