@@ -1881,6 +1881,97 @@ class Attachments
         return DIRECTORY_SEPARATOR === '\\' ? !@is_writeable($path) : ((fileperms($path) & 0o200) === 0);
     }
 
+    /**
+     * Отдельная выгрузка вложений участников в сетевую папку — по кнопке,
+     * не дожидаясь выгрузки протоколов.
+     *
+     * Режим спула (UNC/WebDAV/FTP) везёт файлы транспортом, доступный путь
+     * копируется напрямую. Доставленное ранее не переписывается, а force
+     * сбрасывает отметки — это ответ на «работы разобрали с шара, а плагин
+     * молчит». Недоставленное из списка догружается в любом случае.
+     *
+     * @return array{copied:int,missing:int,already:int,pending:int,transport:string,dir:string,message:string,codes:array<int,string>,raw:string,names:array<int,string>}
+     */
+    public static function export_now(Quiz $quiz, bool $force = false): array
+    {
+        self::reset_store_cache((int) $quiz->id);
+        $store = self::store($quiz);
+
+        // Доступ путём мог включиться между сдачей и выгрузкой.
+        $migrated = self::migrate_spool($quiz);
+
+        $rows = self::rows_for_quiz($quiz);
+        if ($rows === []) {
+            return [
+                'copied' => 0, 'missing' => 0, 'already' => 0, 'pending' => 0,
+                'transport' => 'none',
+                'dir' => (string) ($store['share'] !== '' ? $store['share'] : $store['spool']),
+                'message' => __('Сданных работ с файлами нет: выгружать нечего.', 'wp-olympiad'),
+                'codes' => [], 'raw' => '', 'names' => [],
+            ];
+        }
+
+        if ($force) {
+            self::forget_delivered($quiz);
+        }
+
+        // Путь из настройки: если PHP видит его как папку — копируем напрямую,
+        // иначе export_to() сам отдаст файлы тому же транспорту, что и протоколы.
+        $dest = trim((string) ($store['config']['path'] ?? ''));
+        if ($dest === '') {
+            $dest = (string) ($store['share'] !== '' ? $store['share'] : NetworkExport::resolve_local_path($dest));
+        }
+
+        // Недоставленное догружаем сами: export_to() вызывается после и не должен
+        // молча «съесть» эти файлы — их число обязано попасть в отчёт кнопки.
+        $retry = [];
+        if (self::pending($quiz) !== []) {
+            $retry = self::retry_pending($quiz);
+        }
+
+        $result = self::export_to($quiz, $rows, $dest);
+        if ($retry) {
+            $sent_now = (int) ($retry['sent'] ?? 0);
+            $result['copied'] = (int) ($result['copied'] ?? 0) + $sent_now;
+            $result['missing'] = (int) ($result['missing'] ?? 0) + (int) ($retry['missing'] ?? 0);
+            $result['already'] = (int) ($result['already'] ?? 0) + (int) ($retry['already'] ?? 0);
+            // export_to() вызвал retry_pending() повторно и уже успел отметить
+            // эти файлы доставленными — в «уже лежало» их быть не должно.
+            $result['already'] = max(0, $result['already'] - $sent_now);
+            foreach (['message', 'raw'] as $key) {
+                if ((string) ($result[$key] ?? '') === '' && (string) ($retry[$key] ?? '') !== '') {
+                    $result[$key] = (string) $retry[$key];
+                }
+            }
+            $result['codes'] = array_values(array_unique(array_merge(
+                (array) ($result['codes'] ?? []), array_map('strval', (array) ($retry['codes'] ?? []))
+            )));
+            $result['names'] = array_values(array_unique(array_merge(
+                (array) ($result['names'] ?? []), array_map('strval', (array) ($retry['names'] ?? []))
+            )));
+        }
+        $result['migrated'] = (int) ($migrated['moved'] ?? 0);
+        $result['transport'] = ($store['mode'] === 'share' ? 'filesystem' : (string) $store['type']);
+        // В spool адрес папки знает транспорт: без этого отчёт «выгружено 2»
+        // висел бы без указания, куда именно смотреть.
+        if ((string) ($result['dir'] ?? '') === '' || $store['mode'] === 'spool') {
+            $result['dir'] = (string) $store['share'] !== ''
+                ? (string) $store['share']
+                : (rtrim(str_replace('\\', '/', $dest), '/') !== ''
+                    ? rtrim(str_replace('\\', '/', $dest), '/') . '/' . self::DIR . '/' . $store['slug']
+                    : (string) $store['spool']);
+        }
+        if ((string) ($result['message'] ?? '') === '') {
+            $result['message'] = self::pending($quiz) === []
+                ? ''
+                : __('Часть файлов осталась недоставленной — сеть или права. Плагин повторит сам, а ускорить можно кнопкой «Доставить сейчас».', 'wp-olympiad');
+        }
+        $result['pending'] = count(self::pending($quiz));
+
+        self::remember_delivery($quiz, $result);
+        return $result;
+    }
+
     /** Последний отчёт о доставке: чем именно ответил транспорт. */
     public static function last_delivery_option(int $quiz_id): string
     {
@@ -1911,6 +2002,9 @@ class Attachments
                 'raw'     => mb_substr((string) ($report['raw'] ?? ''), 0, 900),
                 'names'   => array_slice(array_values(array_map('strval', (array) ($report['names'] ?? []))), 0, 8),
                 'pending' => (int) ($report['pending'] ?? 0),
+                // 1.0.42: отдельная выгрузка показывает, куда именно легли файлы.
+                'dir'     => (string) ($report['dir'] ?? ''),
+                'migrated' => (int) ($report['migrated'] ?? 0),
             ],
             false
         );

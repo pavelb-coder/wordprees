@@ -2207,3 +2207,93 @@ $it('1.0.32: форма редактора и просмотр попытки п
         $at_drop($root, $id);
     }
 });
+
+// ---------------------------------------------------------------------------
+// 1.0.42: отдельная кнопка выгрузки вложений участников.
+// ---------------------------------------------------------------------------
+$it('1.0.42: «Вложения участников» выгружаются по своей кнопке, не дожидаясь протоколов', function () use ($at_assert, $at_smb_stub, $at_env, $at_file, $at_unc_host): bool {
+    $view = (string)file_get_contents(WP_OLYMPIAD_PATH . 'admin/views/attempts-list.php');
+    $admin = (string)file_get_contents(WP_OLYMPIAD_PATH . 'admin/class-admin.php');
+    $att = (string)file_get_contents(WP_OLYMPIAD_PATH . 'includes/class-attachments.php');
+
+    // Кнопка живёт рядом с выгрузкой протоколов и защищена своим nonce.
+    foreach (['wpo_action=export_attachments', 'Вложения участников', 'wpo_export_attachments_', 'attachment_export', 'Выгрузить заново всё'] as $needle) {
+        $at_assert(strpos($view, $needle) !== false, 'В форме протоколов нет строки: ' . $needle);
+    }
+    $at_assert(strpos($admin, "check_admin_referer('wpo_export_attachments_' . \$quiz_id)") !== false, 'Обработчик кнопки не проверяет nonce');
+    $at_assert(strpos($admin, "Attachments::export_now(\$quiz, !empty(\$_GET['force']))") !== false, 'Кнопка не вызывает отдельную выгрузку');
+    $at_assert(strpos($att, 'public static function export_now(Quiz $quiz, bool $force = false)') !== false, 'Метод отдельной выгрузки не назван');
+
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    try {
+        $id = (int)Quiz::create([
+            'title'    => 'Кнопка выгрузки ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp42',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        $qid = (int)Question::create(['quiz_id' => $id, 'question_type' => Attachments::TYPE, 'title' => 'Скан', 'points' => 5, 'penalty' => 0, 'options' => []]);
+        $quiz = Quiz::get($id);
+
+        // Сдача при недоступной шаре: работа принята, но осталась в рабочей папке.
+        $at_env(['WPO_STUB_ALL_FAIL' => '1', 'WPO_STUB_STATUS' => 'ACCESS_DENIED']);
+        $attempt = Attempt::start($id, ['name' => 'Иванов Пётр', 'email' => 'btn@example.invalid', 'participant_class' => '10']);
+        $bucket = Attachments::bucket($attempt->token);
+        $file = Attachments::accept($quiz, $bucket, $qid, ['name' => 'скан работы.pdf', 'tmp_name' => $at_file('pdf'), 'error' => UPLOAD_ERR_OK, 'size' => 10], Attachments::limits($quiz));
+        $at_assert(is_array($file), 'Файл не принят', is_wp_error($file) ? $file->get_error_message() : '');
+        $submit = new WP_REST_Request('POST', RestApi::NAMESPACE . '/submit');
+        $submit->set_body_params(['token' => $attempt->token, 'answers' => [$qid => [(string)$file['id']]]]);
+        $sent = RestApi::handle_submit($submit);
+        $at_assert(!is_wp_error($sent), 'Сдача отклонена', is_wp_error($sent) ? $sent->get_error_message() : '');
+        $at_assert(count(Attachments::pending($quiz)) === 1, 'Недоставленное не попало в список', json_encode(Attachments::pending($quiz), JSON_UNESCAPED_UNICODE));
+        $at_assert(Attachments::delivered_marks($quiz) === [], 'Отметка о доставке появилась на пустом месте');
+
+        // Доступ починили — нажатие кнопки должно донести работы без выгрузки протоколов.
+        $at_env(['WPO_STUB_ALL_FAIL' => '', 'WPO_STUB_STATUS' => '']);
+        $res = Attachments::export_now($quiz);
+        $at_assert((int)$res['copied'] === 1, 'Кнопка не выгрузила недоставленное', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(Attachments::pending($quiz) === [], 'После выгрузки что-то осталось недоставленным');
+        $at_assert(count(Attachments::delivered_marks($quiz)) === 1, 'Выгрузка не оставила отметку о доставленном');
+        $at_assert((int)$res['already'] === 0, 'Свежая выгрузка посчитала файл уже доставленным');
+        $at_assert(strpos((string)$res['dir'], 'olimp42') !== false, 'В отчёте не видно, куда легли файлы', (string)$res['dir']);
+        $at_assert((string)$res['transport'] === 'smb', 'Режим выгрузки назван неверно', (string)$res['transport']);
+        $last = Attachments::last_delivery($quiz);
+        $at_assert((int)($last['sent'] ?? 0) === 1 && (string)($last['dir'] ?? '') !== '', 'Отчёт о последней выгрузке не сохранён', json_encode($last, JSON_UNESCAPED_UNICODE));
+
+        // Второй нажим: доставленное не переписывается, но предлагается принудительная перезапись.
+        $again = Attachments::export_now($quiz);
+        $at_assert((int)$again['copied'] === 0, 'Повтор переписал доставленное', json_encode($again, JSON_UNESCAPED_UNICODE));
+        $at_assert((int)$again['already'] === 1, 'Повтор не посчитал уже доставленные', (string)$again['already']);
+        $forced = Attachments::export_now($quiz, true);
+        $at_assert((int)$forced['copied'] === 1, 'Принудительная выгрузка ничего не перенесла', json_encode($forced, JSON_UNESCAPED_UNICODE));
+
+        // Олимпиада без сданных работ объясняет это, а не отвечает пустотой.
+        $id2 = (int)Quiz::create([
+            'title'    => 'Кнопка пуста ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => ['network_folder_type' => 'smb', 'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp42', 'max_attempts' => 0, 'require_org' => 0],
+        ]);
+        try {
+            $quiet = Attachments::export_now(Quiz::get($id2));
+            $at_assert((int)$quiet['copied'] === 0 && str_contains((string)$quiet['message'], 'Сданных работ с файлами нет'), 'Пустая олимпиада осталась без объяснения', json_encode($quiet, JSON_UNESCAPED_UNICODE));
+        } finally {
+            Attachments::reset_store_cache($id2);
+            Quiz::delete($id2);
+        }
+        return true;
+    } finally {
+        $cleanup();
+        if ($id) {
+            foreach (['probe_option', 'pending_option', 'retry_option', 'delivered_option', 'last_delivery_option'] as $m) {
+                delete_option(Attachments::$m($id));
+            }
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});

@@ -517,6 +517,32 @@ final class Admin
             exit;
         }
 
+        // 1.0.42: отдельная выгрузка вложений участников — не дожидаясь протоколов.
+        // «Доставить сейчас» чинит недоставленное, а здесь просят: отдай на шару
+        // всё, что приняли участники, прямо сейчас. Отметки о доставленном
+        // сбрасывает только ?force=1 (ссылка «Выгрузить заново»).
+        if ($action === 'export_attachments' && isset($_GET['quiz_id'])) {
+            $quiz_id = (int)$_GET['quiz_id'];
+            check_admin_referer('wpo_export_attachments_' . $quiz_id);
+            $quiz = Quiz::get($quiz_id);
+            if ($quiz === null) {
+                wp_safe_redirect(admin_url('admin.php?page=wp-olympiad'));
+                exit;
+            }
+            $res = Attachments::export_now($quiz, !empty($_GET['force']));
+            $query = '&attachment_export='
+                . ((int)$res['copied'] > 0 ? 'sent' : ((int)$res['missing'] > 0 ? 'error' : 'nothing'))
+                . '&n=' . (int)$res['copied']
+                . '&a=' . (int)$res['already'];
+            if ((int)$res['missing'] > 0) {
+                $query .= '&missing=' . (int)$res['missing'];
+            }
+            if ((int)$res['pending'] > 0) {
+                $query .= '&pending=' . (int)$res['pending'];
+            }
+            wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-attempts&quiz_id=' . $quiz_id . $query));
+            exit;
+        }
         // Снять защиту «только для чтения» с файлов олимпиады в сетевой папке:
         // организатору её нечем снять, когда путь доступен только по SMB.
         if ($action === 'unprotect_attachments' && isset($_GET['quiz_id'])) {

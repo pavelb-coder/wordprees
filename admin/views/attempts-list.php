@@ -18,7 +18,10 @@ if (!defined('ABSPATH')) {
                 <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=export_network&quiz_id=' . $quiz_id), 'wpo_export_network_' . $quiz_id)); ?>" class="button button-secondary" title="<?php esc_attr_e('Подключение к сетевой папке', 'wp-olympiad'); ?>">
                     📁 <?php esc_html_e('В сетевую папку', 'wp-olympiad'); ?>
                 </a>
-                <?php if (!empty($attempts)): ?>
+                <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=export_attachments&quiz_id=' . $quiz_id), 'wpo_export_attachments_' . $quiz_id)); ?>" class="button button-secondary">
+ 📎 <?php esc_html_e('Вложения участников', 'wp-olympiad'); ?>
+ </a>
+ <?php if (!empty($attempts)): ?>
                     <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-attempts&wpo_action=clear_quiz_attempts&quiz_id=' . $quiz_id), 'wpo_clear_quiz_attempts_' . $quiz_id)); ?>" class="button button-secondary wpo-text-danger" onclick="return confirm('<?php echo esc_js(__('ВНИМАНИЕ! Вы действительно хотите удалить ВСЕ ответы и попытки участников по данной олимпиаде? Это действие необратимо.', 'wp-olympiad')); ?>');">
                         🗑 <?php esc_html_e('Очистить все ответы', 'wp-olympiad'); ?>
                     </a>
@@ -27,7 +30,75 @@ if (!defined('ABSPATH')) {
         <?php endif; ?>
     </div>
 
-    <?php if (isset($_GET['network_exported'])): ?>
+    <?php
+ // 1.0.42: итог отдельной выгрузки вложений. Отдельно от протоколов — потому что
+ // жюри часто просит «прислите скан работы», не трогая сводные таблицы.
+ $wpo_exp = sanitize_key($_GET['attachment_export'] ?? '');
+ if ($wpo_exp !== '') :
+     $wpo_exp_last = get_option('wpo_attachment_last_delivery_' . $quiz_id, []);
+     $wpo_exp_last = is_array($wpo_exp_last) ? $wpo_exp_last : [];
+     $n = (int)($_GET['n'] ?? 0);
+     $a = (int)($_GET['a'] ?? 0);
+     $m = (int)($_GET['missing'] ?? 0);
+     $pd = (int)($_GET['pending'] ?? 0);
+     $cls = $wpo_exp === 'sent' ? 'notice-success' : ($wpo_exp === 'error' ? 'notice-error' : 'notice-info');
+ ?>
+ <div class="notice <?php echo esc_attr($cls); ?> is-dismissible" style="margin-bottom:15px; padding:12px 16px;">
+ <p style="margin:0 0 6px;font-size:14px;"><strong>
+ <?php
+ if ($wpo_exp === 'sent') {
+     echo esc_html(sprintf(__('Вложения участников выгружены в сетевую папку: %1$d.', 'wp-olympiad'), $n));
+     if ($a > 0) {
+         echo ' ' . esc_html(sprintf(_n('Уже доставленное не переписывали: %d файл.', 'Уже доставленное не переписывали: %d файла.', 'Уже доставленное не переписывали: %d файлов.', $a, 'wp-olympiad'), $a));
+     }
+     if ((int)($wpo_exp_last['migrated'] ?? 0) > 0) {
+         echo ' ' . esc_html(sprintf(__('Из рабочей папки сайта перенесено: %d.', 'wp-olympiad'), (int)$wpo_exp_last['migrated']));
+     }
+ } elseif ($wpo_exp === 'error') {
+     esc_html_e('Выгрузка вложений не закончена:', 'wp-olympiad');
+     echo ' ' . esc_html(sprintf(__('сервер не принял %d.', 'wp-olympiad'), $m));
+ } elseif ($a > 0) {
+     echo esc_html(sprintf(_n(
+         'Все работы уже в сетевой папке: %1$d файл (%2$s) — повторная запись не выполнялась.',
+         'Все работы уже в сетевой папке: %1$d файла (%2$s) — повторная запись не выполнялась.',
+         'Все работы уже в сетевой папке: %1$d файлов (%2$s) — повторная запись не выполнялась.',
+         $a, 'wp-olympiad'), $a, __('их не переписывали', 'wp-olympiad')));
+ } else {
+     esc_html_e('Выгружать нечего: сданных работ с файлами нет.', 'wp-olympiad');
+ }
+ ?>
+ </strong></p>
+ <?php if ($wpo_exp === 'sent' && !empty($wpo_exp_last['dir'])): ?>
+ <p style="margin:0 0 6px;font-size:13px;"><?php esc_html_e('Папка:', 'wp-olympiad'); ?>
+ <code style="background:#f1f5f9;padding:2px 6px;border-radius:3px;"><?php echo esc_html((string)$wpo_exp_last['dir']); ?></code></p>
+ <?php endif; ?>
+ <?php if ((string)($wpo_exp_last['message'] ?? '') !== ''): ?>
+ <p style="margin:0 0 6px;font-size:13px;"><?php echo esc_html((string)$wpo_exp_last['message']); ?></p>
+ <?php endif; ?>
+ <?php if (!empty($wpo_exp_last['codes'])): ?>
+ <p style="margin:0 0 6px;font-size:13px;color:#50575e;"><?php echo esc_html(sprintf(__('Коды сервера: %s', 'wp-olympiad'), implode(', ', array_map('strval', (array)$wpo_exp_last['codes'])))); ?></p>
+ <?php endif; ?>
+ <?php if (!empty($wpo_exp_last['raw'])): ?>
+ <details style="margin:0 0 6px;"><summary style="cursor:pointer;font-size:13px;"><?php esc_html_e('Что ответил сервер', 'wp-olympiad'); ?></summary>
+ <pre style="white-space:pre-wrap;max-height:180px;overflow:auto;background:#fff;padding:6px;border:1px solid #dcdcde;font-size:12px;"><?php echo esc_html((string)$wpo_exp_last['raw']); ?></pre></details>
+ <?php endif; ?>
+ <?php if ($pd > 0): ?>
+ <p style="margin:0 0 6px;font-size:13px;color:#9a6700;">
+ <?php echo esc_html(sprintf(__('Недоставленных файлов осталось: %d. Плагин повторит сам; ускорить может «Доставить сейчас» в настройках олимпиады.', 'wp-olympiad'), $pd)); ?>
+ </p>
+ <?php endif; ?>
+ <?php if ($a > 0 && $wpo_exp !== 'error'): ?>
+ <p style="margin:6px 0 0;">
+ <a href="<?php echo esc_url(wp_nonce_url(admin_url('admin.php?wpo_action=export_attachments&quiz_id=' . $quiz_id . '&force=1'), 'wpo_export_attachments_' . $quiz_id)); ?>" class="button button-small">
+ <?php esc_html_e('Выгрузить заново всё', 'wp-olympiad'); ?>
+ </a>
+ <span style="color:#50575e;margin-left:6px;font-size:12px;"><?php esc_html_e('перезапишет файлы на сетевой папке', 'wp-olympiad'); ?></span>
+ </p>
+ <?php endif; ?>
+ </div>
+ <?php endif; ?>
+
+ <?php if (isset($_GET['network_exported'])): ?>
         <?php $last_net = get_transient('wpo_last_network_export_' . $quiz_id); ?>
         <div class="notice notice-success is-dismissible" style="margin-bottom:15px; padding:12px 16px; border-left-color:#16a34a;">
             <p style="margin:0 0 6px; font-size:14px;">
