@@ -7,7 +7,8 @@
  *  - WPO_STUB_ALL_FAIL=1   — ни один put не удаётся;
  *  - WPO_STUB_STATUS=…      — какой NT_STATUS печатать при этом;
  *  - WPO_STUB_GLOBAL=…      — строка с ошибкой, не привязанная к файлу;
- *  - WPO_STUB_MODE=collision— put отвечает NT_STATUS_OBJECT_NAME_COLLISION;
+ *  - WPO_STUB_MODE=collision|locked — put отвечает NT_STATUS_OBJECT_NAME_COLLISION
+ *    или NT_STATUS_SHARING_VIOLATION (файл открыт другим процессом);
  *  - WPO_STUB_SIZE=N        — размер файла для ответа на «ls»;
  *  - WPO_STUB_LOG=<файл>    — куда дописывать строку с командами каждого вызова.
  */
@@ -52,8 +53,9 @@ if (getenv('WPO_STUB_GLOBAL') !== false && getenv('WPO_STUB_GLOBAL') !== '') {
 if (preg_match_all('/put "([^"]+)" "([^"]+)"/', $cmds, $m, PREG_SET_ORDER)) {
     foreach ($m as $p) {
         $remote = $p[2];
-        if ($mode === 'collision') {
-            echo 'ntstatus_error: NT_STATUS_OBJECT_NAME_COLLISION opening remote file \\' . $remote . PHP_EOL;
+        if ($mode === 'collision' || $mode === 'locked') {
+            $status = $mode === 'locked' ? 'SHARING_VIOLATION' : 'OBJECT_NAME_COLLISION';
+            echo 'ntstatus_error: NT_STATUS_' . $status . ' opening remote file \\' . $remote . PHP_EOL;
             $fail = true;
             continue;
         }

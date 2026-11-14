@@ -1123,6 +1123,8 @@ class Attachments
         }
 
         $transport_message = '';
+        $transport_codes = [];
+        $transport_raw = '';
         if ($via_transport) {
             $sent = NetworkExport::deliver_files_public($via_transport, $store['config']);
             if (!empty($sent['success'])) {
@@ -1130,13 +1132,15 @@ class Attachments
             }
             if (empty($sent['success'])) {
                 $transport_message = (string)($sent['message'] ?? '');
+                $transport_codes = array_values(array_map('strval', (array)($sent['codes'] ?? [])));
+                $transport_raw = (string)($sent['raw'] ?? '');
                 $missing += count($via_transport);
                 $copied -= count($via_transport);
                 self::remember_pending($quiz, array_values(array_map(static function (string $rel) {
                     $parts = explode('/', $rel);
 
                     return ['bucket' => $parts[2] ?? '', 'name' => end($parts), 'rel' => $rel];
-                }, array_keys($via_transport))), $transport_message);
+                }, array_keys($via_transport))), $transport_message, $transport_codes, $transport_raw);
             } else {
                 self::forget_pending($quiz, array_keys($via_transport));
             }
@@ -1146,6 +1150,8 @@ class Attachments
             'copied'    => $copied,
             'missing'   => $missing,
             'already'   => $already_delivered,
+            'codes'     => $transport_codes,
+            'raw'       => $transport_raw,
             'dir'       => $target_root,
             'transport' => $local_dest ? 'filesystem' : $store['type'],
             'message'   => $transport_message,
@@ -1297,15 +1303,35 @@ class Attachments
         if (!empty($sent['success'])) {
             self::mark_delivered($quiz, self::delivered_sizes($sent, $sizes));
             self::forget_pending($quiz, array_keys($files));
-            return ['copied' => count($files), 'missing' => $missing, 'already' => $already, 'mode' => 'spool', 'message' => ''];
+
+            return [
+                'copied'  => count($files),
+                'missing' => $missing,
+                'already' => $already,
+                'mode'    => 'spool',
+                'message' => (string)($sent['message'] ?? ''),
+                'codes'   => array_values(array_map('strval', (array)($sent['codes'] ?? []))),
+                'names'   => array_values(array_map(static fn($n) => basename(str_replace('\\', '/', (string)$n)), array_keys($files))),
+            ];
         }
 
         $message = (string)($sent['message'] ?? '');
+        $codes = array_values(array_map('strval', (array)($sent['codes'] ?? [])));
+        $raw = (string)($sent['raw'] ?? '');
         self::remember_pending($quiz, array_map(static function (string $rel) use ($bucket) {
             return ['bucket' => $bucket, 'name' => basename($rel), 'rel' => $rel];
-        }, array_keys($files)), $message);
+        }, array_keys($files)), $message, $codes, $raw);
 
-        return ['copied' => 0, 'missing' => $missing + count($files), 'already' => $already, 'mode' => 'spool', 'message' => $message];
+        return [
+            'copied'  => 0,
+            'missing' => $missing + count($files),
+            'already' => $already,
+            'mode'    => 'spool',
+            'message' => $message,
+            'codes'   => $codes,
+            'raw'     => $raw,
+            'names'   => array_values(array_map(static fn($n) => basename(str_replace('\\', '/', (string)$n)), array_keys($files))),
+        ];
     }
 
     /**
@@ -1426,7 +1452,7 @@ class Attachments
         self::forget_delivered($quiz);
         self::reset_store_cache((int) $quiz->id);
         $rows = self::rows_for_quiz($quiz);
-        $result = ['sent' => 0, 'skipped' => 0, 'missing' => 0, 'message' => ''];
+        $result = ['sent' => 0, 'skipped' => 0, 'missing' => 0, 'already' => 0, 'message' => '', 'codes' => [], 'raw' => '', 'names' => []];
         foreach ($rows as $row) {
             $bucket = (string) ($row['attempt_ref'] ?? '');
             if ($bucket === '' || empty($row['files'])) {
@@ -1436,12 +1462,57 @@ class Attachments
             $sent = self::flush_to_share($quiz, $bucket, $ids);
             $result['sent'] += (int) ($sent['copied'] ?? 0);
             $result['missing'] += (int) ($sent['missing'] ?? 0);
-            if ((string) ($sent['message'] ?? '') !== '') {
-                $result['message'] = (string) $sent['message'];
+            $result['already'] += (int) ($sent['already'] ?? 0);
+            foreach (['message', 'raw'] as $key) {
+                if ((string) ($sent[$key] ?? '') !== '') {
+                    $result[$key] = (string) $sent[$key];
+                }
             }
+            $result['codes'] = array_values(array_unique(array_merge($result['codes'], array_map('strval', (array) ($sent['codes'] ?? [])))));
+            $result['names'] = array_values(array_unique(array_merge($result['names'], array_map('strval', (array) ($sent['names'] ?? [])))));
         }
 
+        // «Папка недоступна для записи» без причины — бесполезное предупреждение:
+        // сохраняем ответ транспорта, чтобы он был виден на странице олимпиады.
+        $result['pending'] = count(self::pending($quiz));
+        self::remember_delivery($quiz, $result);
+
         return $result;
+    }
+
+    /** Последний отчёт о доставке: чем именно ответил транспорт. */
+    public static function last_delivery_option(int $quiz_id): string
+    {
+        return 'wpo_attachment_last_delivery_' . $quiz_id;
+    }
+
+    /** @return array<string, mixed> */
+    public static function last_delivery(Quiz $quiz): array
+    {
+        $data = get_option(self::last_delivery_option((int) $quiz->id), []);
+
+        return is_array($data) ? $data : [];
+    }
+
+    /** @param array<string, mixed> $report */
+    private static function remember_delivery(Quiz $quiz, array $report): void
+    {
+        update_option(
+            self::last_delivery_option((int) $quiz->id),
+            [
+                'when'    => current_time('mysql'),
+                'sent'    => (int) ($report['sent'] ?? $report['copied'] ?? 0),
+                'missing' => (int) ($report['missing'] ?? 0),
+                'already' => (int) ($report['already'] ?? 0),
+                'mode'    => (string) ($report['mode'] ?? ''),
+                'message' => mb_substr((string) ($report['message'] ?? ''), 0, 400),
+                'codes'   => array_slice(array_values(array_map('strval', (array) ($report['codes'] ?? []))), 0, 6),
+                'raw'     => mb_substr((string) ($report['raw'] ?? ''), 0, 900),
+                'names'   => array_slice(array_values(array_map('strval', (array) ($report['names'] ?? []))), 0, 8),
+                'pending' => (int) ($report['pending'] ?? 0),
+            ],
+            false
+        );
     }
 
     /** Что не удалось доставить в сетевую папку (список виден организатору). */
@@ -1458,12 +1529,14 @@ class Attachments
         return is_array($data) ? array_values($data) : [];
     }
 
-    private static function remember_pending(Quiz $quiz, array $items, string $message): void
+    private static function remember_pending(Quiz $quiz, array $items, string $message, array $codes = [], string $raw = ''): void
     {
         $known = self::pending($quiz);
         foreach ($items as $item) {
             $item['when'] = current_time('mysql');
-            $item['error'] = mb_substr($message, 0, 200);
+            $item['error'] = mb_substr($message, 0, 300);
+            $item['codes'] = array_slice($codes, 0, 4);
+            $item['raw'] = mb_substr($raw, 0, 500);
             $known[] = $item;
         }
         update_option(self::pending_option((int)$quiz->id), array_slice($known, -50), false);

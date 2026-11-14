@@ -476,9 +476,16 @@ final class Admin
                 exit;
             }
             $res = Attachments::redeliver($quiz);
-            $query = $res['sent'] > 0
-                ? '&attachment_delivery=sent&n=' . (int)$res['sent']
-                : ($res['message'] !== '' ? '&attachment_delivery=error' : '&attachment_delivery=empty');
+            if ($res['sent'] > 0) {
+                $query = '&attachment_delivery=sent&n=' . (int)$res['sent'];
+            } elseif ($res['missing'] === 0 && $res['already'] > 0) {
+                // Нечего было нести: всё уже лежит в сетевой папке.
+                $query = '&attachment_delivery=already';
+            } elseif ($res['message'] !== '' || $res['missing'] > 0) {
+                $query = '&attachment_delivery=error';
+            } else {
+                $query = '&attachment_delivery=empty';
+            }
             if ($res['missing'] > 0) {
                 $query .= '&missing=' . (int)$res['missing'];
             }

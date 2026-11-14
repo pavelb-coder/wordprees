@@ -798,7 +798,8 @@ $it('1.0.34: коллизия имени при записи на SMB означ
         $at_env(['WPO_STUB_SIZE' => (string)(strlen($content) + 77)]);
         $res2 = NetworkExport::deliver_files_public(['сводный_протокол.csv' => $content], $config);
         $at_assert(empty($res2['success']), 'Расхождение размера не замечено', json_encode($res2, JSON_UNESCAPED_UNICODE));
-        $at_assert(stripos((string)($res2['message'] ?? ''), 'уже есть в сетевой папке') !== false, 'Причина не объяснена', (string)($res2['message'] ?? ''));
+        $at_assert(stripos((string)($res2['message'] ?? ''), 'в сетевой папке') !== false, 'Причина не объяснена', (string)($res2['message'] ?? ''));
+        $at_assert(stripos((string)($res2['message'] ?? ''), 'размер') !== false, 'Расхождение размера не названо', (string)($res2['message'] ?? ''));
         return true;
     } finally {
         $cleanup();
@@ -887,6 +888,129 @@ $it('1.0.34: доставленный файл не переписывается
             if ($spool_dir !== '' && is_dir($spool_dir)) {
                 exec('rm -rf ' . escapeshellarg($spool_dir));
             }
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.35: занятый другим процессом файл с тем же размером считается доставленным', function () use ($at_assert, $at_smb_stub, $at_env): bool {
+    [, , $cleanup] = $at_smb_stub();
+    try {
+        $config = ['type' => 'smb', 'path' => '//10.200.10.10/kvant/olimp', 'user' => '', 'password' => ''];
+        $content = "участник;балл\nФёдоров;7\n";
+        $docx = '6ca192eb137477ebb3b98c99.docx';
+
+        // Файл на share открыт (Word, антивирус), но лежит он наш: размер совпадает.
+        $at_env(['WPO_STUB_MODE' => 'locked', 'WPO_STUB_SIZE' => (string) strlen($content)]);
+        $res = NetworkExport::deliver_files_public(['вложения/olimp/abcd1234abcd1234abcd1234/' . $docx => $content], $config);
+        $at_assert(!empty($res['success']), 'Занятый файл с верным размером не засчитан', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(($res['existing'] ?? []) === ['вложения/olimp/abcd1234abcd1234abcd1234/' . $docx], 'Файл не помечен как уже лежащий на месте', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(($res['verified'] ?? []) !== [], 'Размер не был сверен', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(!isset($res['skipped']), 'Доставленный файл попал в пропущенные', json_encode($res, JSON_UNESCAPED_UNICODE));
+
+        // Размер другой — файл не наш (или обрезан): это настоящая ошибка, и она объяснена.
+        $at_env(['WPO_STUB_SIZE' => (string) (strlen($content) + 4096)]);
+        $res2 = NetworkExport::deliver_files_public(['вложения/olimp/abcd1234abcd1234abcd1234/' . $docx => $content], $config);
+        $at_assert(empty($res2['success']), 'Расхождение размера не замечено', json_encode($res2, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res2['message'] ?? ''), 'другой размер') !== false, 'Причина не объяснена', (string)($res2['message'] ?? ''));
+        $at_assert(in_array('NT_STATUS_SHARING_VIOLATION', (array)($res2['codes'] ?? []), true), 'Код сервера не сохранён', json_encode($res2, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res2['raw'] ?? ''), 'SHARING_VIOLATION') !== false, 'Сырой вывод транспорта не передан', (string)($res2['raw'] ?? ''));
+        return true;
+    } finally {
+        $cleanup();
+    }
+});
+
+$it('1.0.35: страница олимпиады показывает причину недоставки, а не только «папка недоступна»', function () use ($at_assert, $at_smb_stub, $at_env, $at_file, $at_unc_host): bool {
+    [, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    $spool_dir = '';
+    try {
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения причина ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id'       => $id,
+            'question_type' => 'file',
+            'title'         => 'Прикрепите отчёт.',
+            'points'        => 10,
+            'penalty'       => 0,
+            'options'       => [],
+        ]);
+        $quiz = Quiz::get($id);
+        $spool_dir = (string)Attachments::store($quiz)['spool'];
+        $attempts = [];
+        $files = [];
+        for ($k = 0; $k < 2; $k++) {
+            $attempt = Attempt::start($id, ['name' => 'Участник ' . $k, 'email' => 'why' . $k . '@example.invalid', 'participant_class' => '11']);
+            $attempts[] = $attempt;
+            $bucket = Attachments::bucket($attempt->token);
+            $files[$k] = Attachments::accept($quiz, $bucket, $qid, [
+                'name'     => 'отчёт-' . $k . '.pdf',
+                'tmp_name' => $at_file('pdf'),
+                'error'    => UPLOAD_ERR_OK,
+                'size'     => 10,
+            ], Attachments::limits($quiz));
+            $at_assert(is_array($files[$k]), 'Файл не принят', is_wp_error($files[$k]) ? $files[$k]->get_error_message() : '');
+            $submit = new WP_REST_Request('POST', RestApi::NAMESPACE . '/submit');
+            $submit->set_body_params(['token' => $attempt->token, 'answers' => [$qid => [(string)$files[$k]['id']]]]);
+            $sent = RestApi::handle_submit($submit);
+            $at_assert(!is_wp_error($sent), 'Сдача отклонена', is_wp_error($sent) ? $sent->get_error_message() : '');
+        }
+        $at_assert(Attachments::pending($quiz) === [], 'Доставленное осталось в списке недоставленного', json_encode(Attachments::pending($quiz), JSON_UNESCAPED_UNICODE));
+
+        // Теперь транспорт начинает отвечать «файл открыт, размер не тот» — недоставка
+        // обязана быть видна с причиной: код и вывод сервера, а не только «папка недоступна».
+        $at_env(['WPO_STUB_MODE' => 'locked', 'WPO_STUB_SIZE' => '999999']);
+        $res = Attachments::redeliver(Quiz::get($id));
+        $at_assert(($res['sent'] ?? 0) === 0, 'Недоставленное засчитано доставленным', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(($res['missing'] ?? 0) === 2, 'Число недоставленных файлов неверно', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)($res['message'] ?? ''), 'другой размер') !== false, 'Причина в отчёте не сформулирована', (string)($res['message'] ?? ''));
+        $at_assert(in_array('NT_STATUS_SHARING_VIOLATION', (array)($res['codes'] ?? []), true), 'Код сервера в отчёте потерян', json_encode($res, JSON_UNESCAPED_UNICODE));
+
+        $last = Attachments::last_delivery(Quiz::get($id));
+        $at_assert(($last['message'] ?? '') !== '' && str_contains((string)($last['message'] ?? ''), 'другой размер'), 'Отчёт о последней попытке не сохранён', json_encode($last, JSON_UNESCAPED_UNICODE));
+        $at_assert(($last['pending'] ?? 0) === 2, 'Список недоставленного в отчёте неверен', json_encode($last, JSON_UNESCAPED_UNICODE));
+        $at_assert(in_array('NT_STATUS_SHARING_VIOLATION', (array)($last['codes'] ?? []), true), 'Коды сервера в отчёте не видны');
+        $at_assert(stripos((string)($last['raw'] ?? ''), 'SHARING_VIOLATION') !== false, 'Сырой вывод транспорта в отчёт не попал');
+        $at_assert(count((array)($last['names'] ?? [])) === 2, 'Имена файлов в отчёте потеряны', json_encode($last['names'] ?? []));
+
+        $pending = Attachments::pending(Quiz::get($id));
+        $at_assert(count($pending) === 2, 'В предупреждении должно быть два файла', json_encode($pending));
+        $at_assert(in_array('NT_STATUS_SHARING_VIOLATION', (array)($pending[0]['codes'] ?? []), true), 'Код сервера не сохранён у записи');
+
+        // Когда транспорт отвечает «занято, но размер наш» — предупреждение исчезает,
+        // а повторная выгрузка уже не пишет файл заново.
+        $at_env(['WPO_STUB_SIZE' => (string) (int)filesize((string)Attachments::resolve(Quiz::get($id), (string)$files[0]['rel']))]);
+        $res2 = Attachments::redeliver(Quiz::get($id));
+        $at_assert(($res2['sent'] ?? 0) === 2, 'Файлы с верным размером не засчитаны доставленными', json_encode($res2, JSON_UNESCAPED_UNICODE));
+        $at_assert(Attachments::pending(Quiz::get($id)) === [], 'Предупреждение не исчезло после успешной сверки');
+        $before = (int)substr_count((string)file_get_contents($log), 'put "');
+        $report = Attachments::export_to(Quiz::get($id), Attachments::rows_for_quiz(Quiz::get($id)), '');
+        $at_assert(($report['already'] ?? 0) === 2, 'Выгрузка снова понесла доставленное', json_encode($report, JSON_UNESCAPED_UNICODE));
+        $at_assert((int)substr_count((string)file_get_contents($log), 'put "') === $before, 'Лишняя запись на сервер после успешной доставки');
+
+        $view = (string)file_get_contents(WP_OLYMPIAD_PATH . '/admin/views/quiz-edit.php');
+        foreach (['wpo_att_last', 'Коды сервера', 'Что ответил сервер', 'attachment_delivery'] as $needle) {
+            $at_assert(str_contains($view, (string)$needle), 'В настройках нет вывода причины недоставки: ' . $needle);
+        }
+        return true;
+    } finally {
+        $cleanup();
+        if ($spool_dir !== '' && is_dir($spool_dir)) {
+            exec('rm -rf ' . escapeshellarg($spool_dir));
+        }
+        if ($id) {
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::last_delivery_option($id));
             Quiz::delete($id);
         }
     }
