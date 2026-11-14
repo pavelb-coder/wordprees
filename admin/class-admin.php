@@ -352,6 +352,11 @@ final class Admin
                     if (!empty($data['settings']['network_auto_import'])) {
                         NetworkImport::auto_import_for_quiz($quiz, false);
                     }
+                    // Путь к сетевой папке мог измениться только что: папка
+                    // вложений создаётся сразу, чтобы результат был виден на
+                    // странице олимпиады, а не после первой сдачи работы.
+                    \WPOlympiad\Attachments::reset_store_cache($quiz_id);
+                    \WPOlympiad\Attachments::provision_after_save($quiz);
                     $settings_errors = array_filter([
                         'link_alias_error' => $link_alias_error,
                         'schedule_error'   => $schedule_error,
@@ -492,6 +497,26 @@ final class Admin
             wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . $query));
             exit;
         }
+        // 1.0.39: папка вложений на сетевой папке — создать и показать причину отказа.
+        if ($action === 'probe_attachments' && isset($_GET['quiz_id'])) {
+            $quiz_id = (int)$_GET['quiz_id'];
+            check_admin_referer('wpo_probe_attachments_' . $quiz_id);
+            $quiz = Quiz::get($quiz_id);
+            if ($quiz === null) {
+                wp_safe_redirect(admin_url('admin.php?page=wp-olympiad'));
+                exit;
+            }
+            $res = Attachments::provision_share_root($quiz, true);
+            $query = !empty($res['ok'])
+                ? '&attachment_probe=ok'
+                : (!empty($res['skipped']) ? '&attachment_probe=skip' : '&attachment_probe=error');
+            if (!empty($res['codes'])) {
+                $query .= '&codes=' . rawurlencode(implode(',', array_slice((array)$res['codes'], 0, 3)));
+            }
+            wp_safe_redirect(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . $quiz_id . $query));
+            exit;
+        }
+
         // Снять защиту «только для чтения» с файлов олимпиады в сетевой папке:
         // организатору её нечем снять, когда путь доступен только по SMB.
         if ($action === 'unprotect_attachments' && isset($_GET['quiz_id'])) {

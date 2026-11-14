@@ -155,9 +155,14 @@ if ($found) {
         }
 
         if ($verb === 'cd') {
-            if ($key !== '' && $has_dir($key)) {
+            if ($key === '' || $has_dir($key)) {
                 $cur = $key;
+                continue;
             }
+            // Реальный smbclient отвечает «cd \\путь\\: NT_STATUS_OBJECT_NAME_NOT_FOUND»
+            // и выходит с кодом 0: по строке и судят, что каталога нет.
+            echo 'cd \\' . $key . '\\: NT_STATUS_OBJECT_NAME_NOT_FOUND' . PHP_EOL;
+            $fail = true;
             continue;
         }
 

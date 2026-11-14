@@ -536,6 +536,49 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         <?php endif; ?>
                                     </p>
                                 <?php endif; ?>
+                                <?php if ($quiz instanceof \WPOlympiad\Quiz) :
+                                    // Папка вложений на сетевой папке: с 1.0.39 её создаёт
+                                    // проверка, а не первая сдача работы — и состояние папки
+                                    // видно всегда, а не только когда есть недоставленное.
+                                    $wpo_probe = \WPOlympiad\Attachments::probe_state($quiz);
+                                    $wpo_probe_age = $wpo_probe['when'] > 0 ? max(1, (int)round((time() - $wpo_probe['when']) / 60)) : 0;
+                                    $wpo_probe_btn = '<a class="button button-small" style="margin-left:8px;" href="'
+                                        . esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . (int)$quiz->id . '&wpo_action=probe_attachments'), 'wpo_probe_attachments_' . (int)$quiz->id))
+                                        . '">' . esc_html__('Проверить папку вложений', 'wp-olympiad') . '</a>';
+                                    ?>
+                                    <?php if ($wpo_probe['ok']): ?>
+                                        <p class="description" style="margin:0 0 8px;">
+                                            <?php echo esc_html(sprintf(__('Папка вложений на сетевой папке: %s', 'wp-olympiad'), $wpo_probe['target'] !== '' ? $wpo_probe['target'] : __('создана', 'wp-olympiad'))); ?>
+                                            <?php if ($wpo_probe_age > 0): ?>
+                                                <span style="color:#50575e;"><?php echo esc_html(sprintf(__('· проверено %d мин. назад', 'wp-olympiad'), $wpo_probe_age)); ?></span>
+                                            <?php endif; ?>
+                                            <?php echo $wpo_probe_btn; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- ссылка собрана выше ?>
+                                        </p>
+                                    <?php elseif ($wpo_probe['when'] > 0): ?>
+                                        <div class="notice notice-error inline" style="margin:0 0 8px;">
+                                            <p>
+                                                <strong><?php esc_html_e('Папку вложений создать не удалось:', 'wp-olympiad'); ?></strong>
+                                                <?php echo esc_html($wpo_probe['message'] !== '' ? $wpo_probe['message'] : __('сервер отказал без пояснения', 'wp-olympiad')); ?>
+                                                <?php echo $wpo_probe_btn; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                            </p>
+                                            <?php if (!empty($wpo_probe['codes'])): ?>
+                                                <p style="margin:0;color:#50575e;"><?php echo esc_html(sprintf(__('Коды сервера: %s', 'wp-olympiad'), implode(', ', array_slice((array)$wpo_probe['codes'], 0, 3)))); ?></p>
+                                            <?php endif; ?>
+                                            <?php if (!empty($wpo_probe['raw'])): ?>
+                                                <details style="margin:4px 0 0;">
+                                                    <summary style="cursor:pointer;"><?php esc_html_e('Что ответил сервер', 'wp-olympiad'); ?></summary>
+                                                    <pre style="white-space:pre-wrap;max-height:180px;overflow:auto;background:#fff;padding:6px;border:1px solid #dcdcde;"><?php echo esc_html((string)$wpo_probe['raw']); ?></pre>
+                                                </details>
+                                            <?php endif; ?>
+                                            <p style="margin:4px 0 0;color:#50575e;"><?php echo esc_html(sprintf(__('Последняя проба: %d мин. назад; плагин повторит сам.', 'wp-olympiad'), $wpo_probe_age)); ?></p>
+                                        </div>
+                                    <?php else: ?>
+                                        <p class="description" style="margin:0 0 8px;color:#50575e;">
+                                            <?php esc_html_e('Папка вложений на сетевой папке ещё не создавалась: транспорт строит каталоги, только когда везёт файл.', 'wp-olympiad'); ?>
+                                            <?php echo $wpo_probe_btn; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                        </p>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                                 <p style="margin-top:0;">
                                     <label for="attachment_max_size_mb"><?php esc_html_e('Максимальный размер файла, МБ:', 'wp-olympiad'); ?></label>
                                     <input type="number" name="attachment_max_size_mb" id="attachment_max_size_mb" value="<?php echo (int)$attachment_max_size_mb; ?>" min="1" max="<?php echo (int)\WPOlympiad\Attachments::MAX_SIZE_MB_LIMIT; ?>" class="small-text">

@@ -1478,6 +1478,355 @@ final class NetworkExport
     }
 
     /**
+     * Создать на сетевой папке цепочку каталогов — без единого файла.
+     *
+     * Транспорт строит каталоги, только когда есть что класть: пока участник не
+     * сдал работу, папки «вложения» на шаре нет. Организатору результат нужен в
+     * момент настройки, поэтому проверка вынесена отдельно — она и создаёт
+     * папки, и отвечает настоящей причиной отказа.
+     *
+     * @return array{success:bool,created:int,mode:string,target:string,message:string,codes:array<int,string>,raw:string}
+     */
+    public static function ensure_remote_dir(string $rel, array $config): array
+    {
+        $rel = trim(str_replace('\\\\', '/', $rel), '/');
+        if ($rel === '' || preg_match('#(^|/)(|\.|\.\.)(/|$)#', $rel) === 1) {
+            return [
+                'success' => false, 'created' => 0, 'mode' => '', 'target' => '',
+                'message' => __('Нельзя создавать каталог с таким относительным путём.', 'wp-olympiad'),
+                'codes' => [], 'raw' => '',
+            ];
+        }
+
+        switch (self::detect_type($config)) {
+            case 'smb':
+                return self::smb_ensure_dir($rel, $config);
+            case 'webdav':
+                return self::webdav_ensure_dir($rel, $config);
+            case 'ftp':
+                return self::ftp_ensure_dir($rel, $config);
+        }
+
+        return self::local_ensure_dir($rel, $config);
+    }
+
+    /** Каталог там, где путь доступен PHP напрямую: локальный диск или монтирование. */
+    private static function local_ensure_dir(string $rel, array $config): array
+    {
+        $result = ['success' => false, 'created' => 0, 'mode' => 'filesystem', 'target' => '', 'message' => '', 'codes' => [], 'raw' => ''];
+        $base = rtrim(str_replace('\\\\', '/', self::resolve_local_path((string)($config['path'] ?? ''))), '/');
+        if ($base === '') {
+            $result['message'] = __('Сетевая папка не задана: создавать папку вложений негде.', 'wp-olympiad');
+
+            return $result;
+        }
+        // На Linux UNC-путь — не путь в файловой системе: каталог с именем
+        // «\\server\share» рядом с плагином создавать нельзя, идём через smbclient.
+        if (DIRECTORY_SEPARATOR === '/' && preg_match('#^[\\\\]{2}#', $base) === 1) {
+            return self::smb_ensure_dir($rel, $config);
+        }
+
+        $segments = array_values(array_filter(explode('/', $rel), 'strlen'));
+        $created = 0;
+        $current = $base;
+        foreach ($segments as $segment) {
+            $current .= '/' . $segment;
+            if (is_dir($current)) {
+                continue;
+            }
+            if (!@wp_mkdir_p($current)) {
+                $result['target'] = $current;
+                $result['message'] = sprintf(
+                    /* translators: 1: каталог */
+                    __('Каталог «%s» создать не удалось: нет прав на запись или путь недоступен.', 'wp-olympiad'),
+                    $current
+                );
+
+                return $result;
+            }
+            @chmod($current, 0777);
+            $created++;
+        }
+
+        $result['target'] = $current;
+        $result['created'] = $created;
+        $result['success'] = is_dir($current) && is_writable($current);
+        if (!$result['success']) {
+            $result['message'] = sprintf(
+                /* translators: 1: каталог */
+                __('Каталог «%s» есть, но записывать в него нельзя: проверьте права на сетевой папке.', 'wp-olympiad'),
+                $current
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Цепочка каталогов через smbclient: mkdir по одному сегменту и проверка cd.
+     *
+     * smbclient выходит с кодом 0, даже когда сервер ответил отказом, а повторный
+     * mkdir существующей папки — это OBJECT_NAME_COLLISION, отказом не являющаяся.
+     * Поэтому судим по строкам вывода, а итоговый «cd» доказывает, что цепочка
+     * на сервере действительно существует.
+     */
+    private static function smb_ensure_dir(string $rel, array $config): array
+    {
+        $result = ['success' => false, 'created' => 0, 'mode' => 'smb', 'target' => '', 'message' => '', 'codes' => [], 'raw' => ''];
+        $parsed = self::parse_smb_path((string)($config['path'] ?? ''));
+        if (!$parsed) {
+            $result['message'] = sprintf(
+                /* translators: 1: путь */
+                __('Некорректный путь к сетевой папке Windows (SMB): %s', 'wp-olympiad'),
+                (string)($config['path'] ?? '')
+            );
+
+            return $result;
+        }
+        // Windows пишет по UNC напрямую — smbclient там не нужен.
+        if (DIRECTORY_SEPARATOR === '\\') {
+            return self::local_ensure_dir($rel, $config);
+        }
+        $smb_bin = self::get_smbclient_binary();
+        if (!$smb_bin) {
+            $result['message'] = sprintf(
+                /* translators: 1: путь */
+                __('Для создания папок на сетевой шаре «%s» с сервера Linux нужна утилита smbclient — на сервере её нет.', 'wp-olympiad'),
+                (string)($parsed['unc'] ?? '')
+            );
+
+            return $result;
+        }
+
+        [$auth_args, $creds_file] = self::smb_auth_args($config, $parsed);
+        $prefix = '';
+        if (!empty($parsed['subdir'])) {
+            foreach (array_filter(explode('/', trim((string)$parsed['subdir'], '/')), 'strlen') as $p) {
+                $prefix .= ($prefix === '' ? '' : '\\') . $p;
+            }
+        }
+
+        $chain = [];
+        $current = $prefix;
+        foreach (array_filter(explode('/', $rel), 'strlen') as $segment) {
+            $current = ($current === '' ? '' : $current . '\\') . $segment;
+            $chain[] = $current;
+        }
+        if (!$chain) {
+            @unlink((string)$creds_file);
+
+            return $result;
+        }
+
+        $commands = [];
+        foreach ($chain as $dir) {
+            foreach (self::smb_mkdir_chain($dir) as $mk) {
+                $commands[] = $mk;
+            }
+        }
+        $final = str_replace('/', '\\', (string)end($chain));
+        $commands[] = 'cd "' . $final . '"';
+        $commands = array_values(array_unique($commands));
+
+        // Тайм-аут короткий: проба вызывается и при открытии страницы олимпиады,
+        // а недоступная шара не должна вешать администратора на двадцать секунд.
+        $full = sprintf(
+            '%s %s %s -c %s -t 10 2>&1',
+            escapeshellcmd($smb_bin),
+            escapeshellarg($parsed['service']),
+            $auth_args,
+            escapeshellarg(implode('; ', $commands))
+        );
+        $lines = [];
+        $code = 1;
+        @exec($full, $lines, $code);
+        @unlink((string)$creds_file);
+
+        $blob = implode("\n", $lines);
+        // «unc» из parse_smb_path() уже включает подкаталог шары: к нему
+        // приписывается только относительный путь, иначе каталог виден дважды.
+        $result['target'] = rtrim((string)($parsed['unc'] ?? '\\'), '\\') . '\\' . str_replace('/', '\\', $rel);
+        $result['codes'] = self::status_codes($blob);
+        $result['raw'] = mb_substr(trim((string)preg_replace('/\s+/', ' ', strip_tags($blob))), 0, 900);
+
+        // Коллизия имени каталога — папка уже есть, это успех. Остальные отказы
+        // относим к цепочке: mkdir и cd сервер всегда называет по имени.
+        $collisions = 0;
+        $refused = [];
+        foreach (explode("\n", $blob) as $line) {
+            if (stripos($line, 'making remote directory') !== false) {
+                if (preg_match('/OBJECT_NAME_COLLISION|OBJECT_NAME_EXISTS|already exists/i', $line) === 1) {
+                    $collisions++;
+                } else {
+                    $refused[] = trim($line);
+                }
+                continue;
+            }
+            if (preg_match('/NT_STATUS_[A-Z_]+/i', $line) === 1
+                && preg_match('/error|failed|cannot|denied|not_found|no_such|invalid|bad|violation/i', $line) === 1) {
+                $refused[] = trim($line);
+            }
+        }
+        $result['created'] = max(0, count($chain) - $collisions);
+        $result['success'] = !$refused;
+        if (!$result['success']) {
+            $result['message'] = self::translate_smb_error(implode("\n", $refused), $parsed);
+        }
+
+        return $result;
+    }
+
+    /** Папки на WebDAV: MKCOL по сегментам и PROPFIND в конце — «создал» ≠ «есть». */
+    private static function webdav_ensure_dir(string $rel, array $config): array
+    {
+        $result = ['success' => false, 'created' => 0, 'mode' => 'webdav', 'target' => '', 'message' => '', 'codes' => [], 'raw' => ''];
+        $base = rtrim((string)($config['path'] ?? ''), '/');
+        if ($base === '') {
+            $result['message'] = __('Сетевая папка (WebDAV) не задана.', 'wp-olympiad');
+
+            return $result;
+        }
+        $headers = [];
+        if (!empty($config['user']) || !empty($config['password'])) {
+            $headers['Authorization'] = 'Basic ' . base64_encode($config['user'] . ':' . $config['password']);
+        }
+
+        $created = 0;
+        $url = '';
+        foreach (array_filter(explode('/', $rel), 'strlen') as $segment) {
+            $url .= '/' . rawurlencode($segment);
+            $res = wp_remote_request($base . $url, ['method' => 'MKCOL', 'headers' => $headers, 'timeout' => 10, 'sslverify' => false]);
+            $code = is_wp_error($res) ? 0 : (int)wp_remote_retrieve_response_code($res);
+            if (is_wp_error($res)) {
+                $result['message'] = sprintf(
+                    /* translators: 1: ошибка */
+                    __('WebDAV не отвечает при создании папки «%s».', 'wp-olympiad'),
+                    $segment
+                );
+                $result['raw'] = mb_substr((string)$res->get_error_message(), 0, 900);
+
+                return $result;
+            }
+            // 405 — каталог уже есть: так отвечают Apache и Nextcloud.
+            if (!in_array($code, [200, 201, 204, 405], true)) {
+                $result['codes'] = ['HTTP ' . $code];
+                $result['message'] = sprintf(
+                    /* translators: 1: каталог, 2: код ответа */
+                    __('WebDAV отказал создать папку «%1$s» (HTTP %2$d).', 'wp-olympiad'),
+                    $segment,
+                    $code
+                );
+
+                return $result;
+            }
+            if ($code === 201) {
+                $created++;
+            }
+        }
+
+        $res = wp_remote_request($base . $url, [
+            'method' => 'PROPFIND',
+            'headers' => array_merge($headers, ['Depth' => '0']),
+            'timeout' => 10,
+            'sslverify' => false,
+            'body' => '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>',
+        ]);
+        $code = is_wp_error($res) ? 0 : (int)wp_remote_retrieve_response_code($res);
+        $result['target'] = $base . $url;
+        $result['created'] = $created;
+        if (!in_array($code, [207, 200], true)) {
+            $result['codes'] = ['HTTP ' . $code];
+            $result['message'] = sprintf(
+                /* translators: 1: код ответа */
+                __('WebDAV не подтвердил, что папка существует (HTTP %d): сервер её принял, но не отдал.', 'wp-olympiad'),
+                $code
+            );
+
+            return $result;
+        }
+        $result['success'] = true;
+
+        return $result;
+    }
+
+    /** Папки на FTP: заход по сегментам с mkdir там, где нет каталога. */
+    private static function ftp_ensure_dir(string $rel, array $config): array
+    {
+        $result = ['success' => false, 'created' => 0, 'mode' => 'ftp', 'target' => '', 'message' => '', 'codes' => [], 'raw' => ''];
+        if (!function_exists('ftp_connect')) {
+            $result['message'] = __('В PHP отсутствует расширение FTP.', 'wp-olympiad');
+
+            return $result;
+        }
+        $p = parse_url((string)($config['path'] ?? ''));
+        if (!$p || empty($p['host'])) {
+            $result['message'] = __('Некорректный FTP URL сетевой папки.', 'wp-olympiad');
+
+            return $result;
+        }
+        $tls = strtolower((string)($p['scheme'] ?? '')) === 'ftps';
+        if ($tls && !function_exists('ftp_ssl_connect')) {
+            $result['message'] = __('FTPS не поддерживается этой сборкой PHP.', 'wp-olympiad');
+
+            return $result;
+        }
+        $c = $tls ? @ftp_ssl_connect($p['host'], (int)($p['port'] ?? 21), 15) : @ftp_connect($p['host'], (int)($p['port'] ?? 21), 15);
+        if (!$c) {
+            $result['message'] = sprintf(
+                /* translators: 1: хост */
+                __('Не удалось подключиться к FTP-серверу «%s».', 'wp-olympiad'),
+                (string)$p['host']
+            );
+
+            return $result;
+        }
+        try {
+            $user = ($config['user'] ?? '') ?: rawurldecode((string)($p['user'] ?? 'anonymous'));
+            $pass = ($config['password'] ?? '') ?: rawurldecode((string)($p['pass'] ?? ''));
+            if (!@ftp_login($c, $user, $pass)) {
+                $result['message'] = __('FTP отклонил авторизацию.', 'wp-olympiad');
+
+                return $result;
+            }
+            @ftp_pasv($c, true);
+            @ftp_set_option($c, FTP_TIMEOUT_SEC, 10);
+            if (!@ftp_chdir($c, '/')) {
+                $result['message'] = __('Корень FTP недоступен.', 'wp-olympiad');
+
+                return $result;
+            }
+            $walk = array_merge(
+                array_filter(explode('/', trim(rawurldecode((string)($p['path'] ?? '')), '/')), 'strlen'),
+                array_filter(explode('/', $rel), 'strlen')
+            );
+            $created = 0;
+            foreach ($walk as $segment) {
+                if (@ftp_chdir($c, $segment)) {
+                    continue;
+                }
+                if (@ftp_mkdir($c, $segment) === false || !@ftp_chdir($c, $segment)) {
+                    $result['message'] = sprintf(
+                        /* translators: 1: каталог */
+                        __('FTP не создал папку «%s»: сервер отказал или нет прав на запись.', 'wp-olympiad'),
+                        $segment
+                    );
+
+                    return $result;
+                }
+                $created++;
+            }
+            $pwd = @ftp_pwd($c);
+            $result['created'] = $created;
+            $result['target'] = (string)$pwd;
+            $result['success'] = is_string($pwd) && $pwd !== '';
+
+            return $result;
+        } finally {
+            @ftp_close($c);
+        }
+    }
+
+    /**
      * Снять признак «только для чтения» с файлов на share (setmode … -r).
      *
      * Атрибут трогается только для переданных имён, содержимое файлов не меняется:

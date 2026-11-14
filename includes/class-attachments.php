@@ -49,6 +49,11 @@ class Attachments
     public const RETRY_FLOOR = 300;
     public const RETRY_CEIL = 21600;
 
+    /** Запись результата проверки папки вложений на сетевой папке. */
+    public const PROBE_OK_TTL = 43200;
+    /** Неудачную пробу повторяем не чаще, чем раз в пять минут. */
+    public const PROBE_FAIL_FLOOR = 300;
+
     /**
      * Виды файлов, которые организатор может разрешить в своей олимпиаде.
      * Принимается только совпадение и расширения, и сигнатуры содержимого.
@@ -1537,7 +1542,34 @@ class Attachments
         }
 
         if (!$files) {
-            return ['copied' => 0, 'missing' => $missing, 'already' => $already, 'mode' => 'spool', 'message' => ''];
+            // Молча «ничего не доставлено» — то, из-за чего организатор не может
+            // понять, почему папка на шаре не появилась: причины бывают разные.
+            $why = '';
+            if ($missing > 0) {
+                $why = sprintf(
+                    /* translators: 1: число файлов */
+                    _n(
+                        '%1$d файл не найден в рабочей папке сайта: доставлять нечего, сетевая папка не тронута.',
+                        '%1$d файлов не найдено в рабочей папке сайта: доставлять нечего, сетевая папка не тронута.',
+                        $missing,
+                        'wp-olympiad'
+                    ),
+                    $missing
+                );
+            } elseif ($already > 0) {
+                $why = sprintf(
+                    /* translators: 1: число файлов */
+                    _n(
+                        '%1$d файл отмечен доставленным ранее — повторная запись не выполнялась. Если на шаре его нет, нажмите «Доставить сейчас».',
+                        '%1$d файлов отмечены доставленными ранее — повторная запись не выполнялась. Если на шаре их нет, нажмите «Доставить сейчас».',
+                        $already,
+                        'wp-olympiad'
+                    ),
+                    $already
+                );
+            }
+
+            return ['copied' => 0, 'missing' => $missing, 'already' => $already, 'mode' => 'spool', 'message' => $why];
         }
 
         $sent = NetworkExport::deliver_files_public($files, $store['config']);
@@ -2036,12 +2068,138 @@ class Attachments
         }
     }
 
+    /** Опция с результатом проверки (и создания) папки вложений. */
+    public static function probe_option(int $quiz_id): string
+    {
+        return 'wpo_attachment_probe_' . $quiz_id;
+    }
+
+    /**
+     * Что известно о папке вложений на сетевой папке.
+     *
+     * @return array{ok:bool,when:int,mode:string,target:string,message:string,codes:array<int,string>,raw:string,fingerprint:string,created:int}
+     */
+    public static function probe_state(Quiz $quiz): array
+    {
+        $data = get_option(self::probe_option((int)$quiz->id), []);
+        if (!is_array($data)) {
+            $data = [];
+        }
+
+        return [
+            'ok'          => !empty($data['ok']),
+            'when'        => (int)($data['when'] ?? 0),
+            'mode'        => (string)($data['mode'] ?? ''),
+            'target'      => (string)($data['target'] ?? ''),
+            'message'     => (string)($data['message'] ?? ''),
+            'codes'       => array_values(array_map('strval', (array)($data['codes'] ?? []))),
+            'raw'         => (string)($data['raw'] ?? ''),
+            'fingerprint' => (string)($data['fingerprint'] ?? ''),
+            'created'     => (int)($data['created'] ?? 0),
+        ];
+    }
+
+    /**
+     * Создать на сетевой папке каталог вложений и сказать, как это вышло.
+     *
+     * Транспорт строит каталоги только когда везёт файлы, поэтому без этой
+     * пробы папка «вложения» появляется на шаре в момент первой удачной сдачи —
+     * а организатору нужно видеть результат сразу после настройки пути.
+     * Успешную пробу повторяем раз в {@see PROBE_OK_TTL}, неудачную — раз в
+     * {@see PROBE_FAIL_FLOOR}; $force обходит паузу (кнопка, сохранение настроек).
+     *
+     * @return array<string,mixed>
+     */
+    public static function provision_share_root(Quiz $quiz, bool $force = false): array
+    {
+        $store = self::store($quiz);
+        $config = (array)($store['config'] ?? []);
+        $path = trim((string)($config['path'] ?? ''));
+        if ($path === '' || self::looks_like_example(NetworkExport::resolve_local_path($path))) {
+            return [
+                'ok' => false, 'when' => 0, 'skipped' => 'no_config', 'created' => 0,
+                'mode' => '', 'target' => '', 'codes' => [], 'raw' => '',
+                'message' => __('Сетевая папка для олимпиады не задана.', 'wp-olympiad'),
+                'fingerprint' => '',
+            ];
+        }
+
+        $fingerprint = md5(NetworkExport::detect_type($config) . '|' . $path . '|' . (string)($config['user'] ?? ''));
+        $stored = self::probe_state($quiz);
+        $ttl = $stored['ok'] ? self::PROBE_OK_TTL : self::PROBE_FAIL_FLOOR;
+        if (!$force && $stored['when'] > 0 && $stored['fingerprint'] === $fingerprint && time() - $stored['when'] < $ttl) {
+            return $stored + ['skipped' => 'fresh'];
+        }
+
+        if ($store['mode'] === 'share') {
+            // Путь доступен PHP как папка: share_path() уже создал «вложения/<олимпиада>».
+            $share = (string)$store['share'];
+            $res = [
+                'success' => $share !== '' && is_dir($share) && is_writable($share),
+                'created' => 0,
+                'mode'    => 'filesystem',
+                'target'  => $share,
+                'message' => '',
+                'codes'   => [],
+                'raw'     => '',
+            ];
+            if (!$res['success']) {
+                $res['message'] = sprintf(
+                    /* translators: 1: путь */
+                    __('Папка вложений «%s» недоступна для записи: проверьте права на сетевой папке.', 'wp-olympiad'),
+                    $share
+                );
+            }
+        } else {
+            $res = NetworkExport::ensure_remote_dir(self::DIR . '/' . (string)$store['slug'], $config);
+        }
+
+        $record = [
+            'ok'          => !empty($res['success']),
+            'when'        => time(),
+            'created'     => (int)($res['created'] ?? 0),
+            'mode'        => (string)($res['mode'] ?? ''),
+            'target'      => (string)($res['target'] ?? ''),
+            'message'     => (string)($res['message'] ?? ''),
+            'codes'       => array_values(array_map('strval', (array)($res['codes'] ?? []))),
+            'raw'         => mb_substr(trim((string)($res['raw'] ?? '')), 0, 900),
+            'fingerprint' => $fingerprint,
+        ];
+        update_option(self::probe_option((int)$quiz->id), $record, false);
+
+        return $record;
+    }
+
+    /**
+     * Проба после сохранения настроек: имеет смысл только если в олимпиаде есть
+     * задания «прикрепить файл» — иначе папку вложений никто не наполнит.
+     *
+     * @return array<string,mixed>
+     */
+    public static function provision_after_save(Quiz $quiz): array
+    {
+        global $wpdb;
+        $table = DB::questions_table();
+        $with_files = (int)$wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE quiz_id = %d AND question_type = %s",
+            (int)$quiz->id,
+            self::TYPE
+        ));
+        if ($with_files === 0) {
+            return ['ok' => false, 'when' => 0, 'skipped' => 'no_file_questions', 'created' => 0,
+                'mode' => '', 'target' => '', 'codes' => [], 'raw' => '', 'message' => '', 'fingerprint' => ''];
+        }
+
+        return self::provision_share_root($quiz, true);
+    }
+
     /** Обработчик события планировщика. */
     public static function handle_retry_event(int $quiz_id): array
     {
         $quiz = $quiz_id > 0 ? Quiz::get($quiz_id) : null;
         if ($quiz === null) {
             delete_option(self::retry_option($quiz_id));
+            delete_option(self::probe_option($quiz_id));
 
             return ['skipped' => 'no_quiz', 'sent' => 0, 'pending' => 0];
         }
@@ -2184,8 +2342,17 @@ class Attachments
         }
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $quiz_id = isset($_GET['quiz_id']) ? (int)$_GET['quiz_id'] : 0;
-        if ($quiz_id > 0) {
-            self::sync_pending_now($quiz_id);
+        if ($quiz_id <= 0) {
+            return;
+        }
+        $result = self::sync_pending_now($quiz_id);
+        // О недоставленном transporte уже сказано выше; здесь папка: если её
+        // ещё не удавалось создать, проба повторится не чаще, чем раз в 5 минут.
+        if (empty($result['skipped'])) {
+            $quiz = Quiz::get($quiz_id);
+            if ($quiz !== null) {
+                self::provision_share_root($quiz);
+            }
         }
     }
 }

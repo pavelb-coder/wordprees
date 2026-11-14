@@ -1743,6 +1743,229 @@ $it('1.0.38: организатору видно, что повтор запла
     return true;
 });
 
+$it('1.0.39: папка вложений на шаре создаётся проверкой, без единого сданного файла', function () use ($at_assert, $at_smb_stub, $at_env, $at_unc_host): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    try {
+        $at_assert($bin !== '', 'Заглушка не готова');
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения папка-проба ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id' => $id, 'question_type' => 'file', 'title' => 'Файл', 'points' => 5, 'penalty' => 0, 'options' => [],
+        ]);
+        $quiz = Quiz::get($id);
+        $at_assert((int)$qid > 0 && $quiz !== null, 'Олимпиада не готова');
+        $slug = Attachments::store($quiz)['slug'];
+        $at_assert(Attachments::mode($quiz) === 'spool', 'Ожидается доставка транспортом', Attachments::mode($quiz));
+
+        $res = Attachments::provision_share_root($quiz, true);
+        $at_assert(!empty($res['ok']), 'Папка не создана', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(($res['mode'] ?? '') === 'smb', 'Проба пошла не тем транспортом', json_encode($res));
+        $at_assert((int)$res['created'] >= 1, 'Счётчик созданных каталогов пуст', json_encode($res));
+        $at_assert(str_ends_with((string)$res['target'], '/' . Attachments::DIR . '/' . $slug)
+            || str_ends_with((string)$res['target'], '\\' . Attachments::DIR . '\\' . $slug),
+            'Цель указана не папкой вложений', (string)$res['target']);
+        // «unc» уже содержит подкаталог шары — в цели он не должен повторяться.
+        $at_assert(substr_count((string)$res['target'], 'olympiad-2') === 1, 'Подкаталог шары задвоен в цели', (string)$res['target']);
+
+        $calls = (string)@file_get_contents($log);
+        foreach ([
+            'mkdir "olimp"',
+            'mkdir "olimp\\olympiad-2"',
+            'mkdir "olimp\\olympiad-2\\' . Attachments::DIR . '"',
+            'mkdir "olimp\\olympiad-2\\' . Attachments::DIR . '\\' . $slug . '"',
+            'cd "olimp\\olympiad-2\\' . Attachments::DIR . '\\' . $slug . '"',
+        ] as $cmd) {
+            $at_assert(strpos($calls, $cmd) !== false, 'Команда не ушла на сервер: ' . $cmd, $calls);
+        }
+        $at_assert(stripos($calls, 'put ') === false, 'Проба папки что-то записала', $calls);
+
+        $state = Attachments::probe_state($quiz);
+        $at_assert($state['ok'] && $state['when'] > 0, 'Состояние пробы не записано', json_encode($state, JSON_UNESCAPED_UNICODE));
+        $at_assert(count(Attachments::pending($quiz)) === 0, 'Проба создаёт очередь недоставленного', json_encode(Attachments::pending($quiz), JSON_UNESCAPED_UNICODE));
+        return true;
+    } finally {
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::probe_option($id));
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::retry_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.39: отказ транспорта виден в пробе папки, а частые повторы не долбят шару', function () use ($at_assert, $at_smb_stub, $at_env, $at_unc_host): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    try {
+        $at_env(['WPO_STUB_GLOBAL' => 'ACCESS_DENIED']);
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения папка-отказ ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp/olympiad-9',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        Question::create(['quiz_id' => $id, 'question_type' => 'file', 'title' => 'Файл', 'points' => 5, 'penalty' => 0, 'options' => []]);
+        $quiz = Quiz::get($id);
+
+        $res = Attachments::provision_share_root($quiz, true);
+        $at_assert(empty($res['ok']), 'Отказ сервера записан как успех', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(trim((string)$res['message']) !== '', 'Причина отказа пропала', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos(implode(',', (array)$res['codes']), 'ACCESS_DENIED') !== false, 'Код сервера не сохранён', json_encode($res));
+
+        // Тот же путь сразу второй раз: новую команду отправлять рано.
+        $calls_before = (string)@file_get_contents($log);
+        $again = Attachments::provision_share_root($quiz);
+        $at_assert(($again['skipped'] ?? '') === 'fresh', 'Неудачная проба повторяется на каждом чихе', json_encode($again, JSON_UNESCAPED_UNICODE));
+        $at_assert((string)@file_get_contents($log) === $calls_before, 'Пауза не спасла шару от лишних команд');
+
+        // Кнопка организатора обходит паузу.
+        $forced = Attachments::provision_share_root($quiz, true);
+        $at_assert(!isset($forced['skipped']), 'Принудительная проба пропущена', json_encode($forced, JSON_UNESCAPED_UNICODE));
+        $at_assert((string)@file_get_contents($log) !== $calls_before, 'Принудительная проба не дошла до транспорта');
+
+        // Смена пути сетевой папки — отметка «проверено» больше не действительна.
+        $at_env(['WPO_STUB_GLOBAL' => '']);
+        $quiz->update(['settings' => [
+            'network_folder_type' => 'smb',
+            'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp/olympiad-8',
+            'max_attempts'        => 0,
+            'require_org'         => 0,
+        ]]);
+        Attachments::reset_store_cache($id);
+        $fresh_path = Attachments::provision_share_root($quiz);
+        $at_assert(!isset($fresh_path['skipped']), 'Проба не повторилась после смены пути', json_encode($fresh_path, JSON_UNESCAPED_UNICODE));
+        $at_assert(!empty($fresh_path['ok']), 'На новом пути папка не создалась', json_encode($fresh_path, JSON_UNESCAPED_UNICODE));
+        $at_assert(strpos((string)@file_get_contents($log), 'mkdir "olimp\\olympiad-8"') !== false, 'Новый путь не попал в команды', (string)@file_get_contents($log));
+        return true;
+    } finally {
+        $at_env(['WPO_STUB_GLOBAL' => '']);
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::probe_option($id));
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::retry_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.39: путь, доступный PHP как папка, строится на файловой системе, а не транспортом', function () use ($at_assert, $at_fixture, $at_drop): bool {
+    [$root, $id, $qid] = $at_fixture();
+    try {
+        $quiz = Quiz::get($id);
+        $at_assert($quiz !== null, 'Олимпиада не создана');
+        $at_assert(Attachments::mode($quiz) === 'share', 'Ожидается прямой доступ к папке', Attachments::mode($quiz));
+        $res = Attachments::provision_share_root($quiz, true);
+        $at_assert(!empty($res['ok']), 'Папка вложений не готова', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(($res['mode'] ?? '') === 'filesystem', 'Локальный путь проверен не как путь', json_encode($res));
+        $slug = Attachments::store($quiz)['slug'];
+        $at_assert(is_dir($root . '/' . Attachments::DIR . '/' . $slug), 'Каталог вложений не создан', $root . '/' . Attachments::DIR . '/' . $slug);
+
+        // И прямое вызов транспортного построителя: цепочка из двух сегментов.
+        $made = NetworkExport::ensure_remote_dir(Attachments::DIR . '/глубже/ещё', ['type' => 'local', 'path' => $root]);
+        $at_assert(!empty($made['success']), 'Цепочка каталогов не собрана', json_encode($made, JSON_UNESCAPED_UNICODE));
+        $at_assert((int)$made['created'] === 2, 'Создано не два каталога', json_encode($made));
+        $at_assert(is_dir($root . '/' . Attachments::DIR . '/глубже/ещё'), 'Каталог не появился на диске');
+        return true;
+    } finally {
+        if ($id) {
+            delete_option(Attachments::probe_option($id));
+            Attachments::reset_store_cache($id);
+        }
+        $at_drop($root, $id);
+    }
+});
+
+$it('1.0.39: «нечего везти» говорит причину, а не молчит', function () use ($at_assert, $at_smb_stub, $at_file, $at_unc_host): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    try {
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения причина ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id' => $id, 'question_type' => 'file', 'title' => 'Файл', 'points' => 5, 'penalty' => 0, 'options' => [],
+        ]);
+        $quiz = Quiz::get($id);
+        $attempt = Attempt::start($id, ['name' => 'Причина_отказа', 'email' => 'pr@example.invalid', 'participant_class' => '9']);
+        $bucket = Attachments::bucket($attempt->token);
+        $file = Attachments::accept($quiz, $bucket, $qid, [
+            'name' => 'скан.pdf', 'tmp_name' => $at_file('pdf'), 'error' => UPLOAD_ERR_OK, 'size' => 10,
+        ], Attachments::limits($quiz));
+        $at_assert(is_array($file), 'Файл не принят', is_wp_error($file) ? $file->get_error_message() : '');
+
+        // Файла в рабочей папке нет: доставка не выполнялась, и это сказано словами.
+        $void = Attachments::flush_to_share($quiz, $bucket, ['000000000000000000000000']);
+        $at_assert((int)$void['missing'] === 1, 'Пропажа файла не замечена', json_encode($void, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)$void['message'], 'рабочей папке') !== false, 'Причина «файл не найден» не сформулирована', json_encode($void, JSON_UNESCAPED_UNICODE));
+
+        // Файл отмечен доставленным: повтор не пишется заново — и это тоже сказано.
+        $first = Attachments::flush_to_share($quiz, $bucket, [(string)$file['id']]);
+        $at_assert((int)$first['copied'] === 1, 'Первая доставка не состоялась', json_encode($first, JSON_UNESCAPED_UNICODE));
+        $second = Attachments::flush_to_share($quiz, $bucket, [(string)$file['id']]);
+        $at_assert((int)$second['copied'] === 0 && (int)$second['already'] === 1, 'Повтор посчитан доставкой', json_encode($second, JSON_UNESCAPED_UNICODE));
+        $at_assert(stripos((string)$second['message'], 'отмечен') !== false, 'Причина «уже доставлено» не сформулирована', json_encode($second, JSON_UNESCAPED_UNICODE));
+        return true;
+    } finally {
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::probe_option($id));
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::last_delivery_option($id));
+            delete_option(Attachments::retry_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.39: интерфейс сообщает состояние папки вложений и даёт кнопку проверки', function () use ($at_assert): bool {
+    $view = (string)file_get_contents(WP_OLYMPIAD_PATH . 'admin/views/quiz-edit.php');
+    $admin = (string)file_get_contents(WP_OLYMPIAD_PATH . 'admin/class-admin.php');
+    $att = (string)file_get_contents(WP_OLYMPIAD_PATH . 'includes/class-attachments.php');
+    foreach ([
+        'Проверить папку вложений',
+        'Папка вложений на сетевой папке',
+        'Папку вложений создать не удалось',
+        'wpo_action=probe_attachments',
+    ] as $needle) {
+        $at_assert(strpos($view, $needle) !== false, 'В форме редактора нет строки: ' . $needle);
+    }
+    $at_assert(strpos($admin, "'probe_attachments'") !== false, 'Обработчик кнопки не подключён');
+    $at_assert(strpos($admin, 'provision_after_save') !== false, 'Проба не запускается после сохранения настроек');
+    $at_assert(strpos($att, "public const PROBE_OK_TTL = 43200;") !== false, 'Нет паузы успешной пробы');
+    $at_assert(strpos($att, "public const PROBE_FAIL_FLOOR = 300;") !== false, 'Нет паузы неудачной пробы');
+    $at_assert(strpos($att, 'wpo_attachment_probe_') !== false, 'Запись состояния пробы не названа');
+    $at_assert(Attachments::PROBE_OK_TTL === 43200 && Attachments::PROBE_FAIL_FLOOR === 300, 'Паузы пробы перепутаны');
+    return true;
+});
+
 $it('1.0.32: форма редактора и просмотр попытки показывают вложения', function () use ($at_assert, $at_fixture, $at_drop, $at_file): bool {
     $repo = WP_OLYMPIAD_PATH;
     $card = (string)file_get_contents($repo . '/admin/views/question-item-card.php');
