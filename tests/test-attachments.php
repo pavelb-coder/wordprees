@@ -493,8 +493,18 @@ $it('1.0.32: сетевая выгрузка копирует файлы, про
         $report = Attachments::export_to($quiz, $rows_with_ghost, $root . '/протоколы');
         $at_assert(($report['copied'] ?? 0) === 2, 'Скопировано не то число файлов', json_encode($report));
         $at_assert(($report['missing'] ?? 0) === 1, 'Пропажа файла не учтена', json_encode($report));
-        $at_assert(is_file($report['dir'] . '/' . $bucket . '/работа.pdf'), 'Файл не лёг в пакет по ожидаемому пути', (string)$report['dir']);
-        $at_assert(hash_file('sha256', $report['dir'] . '/' . $bucket . '/работа.pdf') === (string)$ok['sha256'], 'Скопированный файл не совпадает с оригиналом');
+        // 1.0.37: в пакете файл виден так, как его назвал участник, а не хешем:
+        // «вложения/Выгрузчик — <id попытки>/Выгрузчик — 01 — работа.pdf».
+        $labels   = Attachments::share_labels($quiz);
+        $numbers  = Attachments::question_numbers($quiz);
+        $folder   = Attachments::share_folder($bucket, $labels);
+        $share_nm = (string)(Attachments::share_names($quiz, $bucket, $labels, $numbers)[$ok['id']] ?? '');
+        $at_assert($folder !== $bucket && str_starts_with($folder, 'Выгрузчик'), 'Папка попытки в пакете не читается', $folder);
+        $at_assert($share_nm !== '' && basename((string)$ok['rel']) !== $share_nm, 'В пакете файл назван служебным именем', $share_nm);
+        $at_assert(str_contains($share_nm, 'работа.pdf'), 'Исходное имя участника из пакета пропало', $share_nm);
+        $at_assert(is_file($report['dir'] . '/' . $folder . '/' . $share_nm), 'Файл не лёг в пакет по ожидаемому пути', $report['dir'] . '/' . $folder . '/' . $share_nm);
+        $at_assert(hash_file('sha256', $report['dir'] . '/' . $folder . '/' . $share_nm) === (string)$ok['sha256'], 'Скопированный файл не совпадает с оригиналом');
+        $at_assert(!is_file($report['dir'] . '/' . $bucket . '/работа.pdf'), 'Старая нечитаемая копия в пакете осталась', (string)$report['dir']);
 
         // Полный прогон выгрузки ответов: вложения рядом с протоколами, старые файлы целы.
         file_put_contents($root . '/протоколы/сводный_протокол.csv', "чужой протокол\n");
@@ -580,7 +590,13 @@ $it('1.0.32: SMB-папка без монтирования — загрузка
         // smbclient на стенде нет → доставка не могла состояться: файл в списке недоставленного.
         $at_assert(count($pending) === 1, 'Недоставленный файл не учтён', json_encode($pending));
         $at_assert(($pending[0]['error'] ?? '') !== '', 'Причина недоставки не записана');
-        $at_assert(basename((string)($pending[0]['rel'] ?? '')) === basename((string)$file['rel']), 'Записан не тот файл', json_encode($pending[0]));
+        // 1.0.37: в списке недоставленного — путь и имя ровно такие, каким файл
+        // уйдёт на шару: читаемое имя участника, а не служебный хеш.
+        $pending_rel = str_replace('\\', '/', (string)($pending[0]['rel'] ?? ''));
+        $at_assert(basename($pending_rel) === 'Федор — 01 — ' . basename((string)$file['name']), 'Записан не тот файл', json_encode($pending[0]));
+        $at_assert(($pending[0]['share'] ?? '') === $pending_rel, 'Путь на шаре в строке недоставленного потерян', json_encode($pending[0]));
+        $at_assert(strpos($pending_rel, $bucket) === false, 'В путь на шаре утекла корзина попытки', $pending_rel);
+        $at_assert(strpos($pending_rel, basename((string)$file['rel'])) === false, 'На шару файл назван служебным хешем', $pending_rel);
         $at_assert((int)$report['score'] === 0 || !isset($report['score']), 'За факт загрузки начислен балл', json_encode($report));
 
         // Тот же самый набор, но папка доступна PHP как путь → доставка удаётся,
@@ -1245,6 +1261,276 @@ $it('1.0.36: отказ сервера по одному файлу не зап�
     } finally {
         $cleanup();
         @unlink($state);
+    }
+});
+
+$it('1.0.37: на шаре файл называется так, как его назвал участник, а не служебным хешем', function () use ($at_assert, $at_smb_stub, $at_unc_host, $at_file): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $BS = chr(92);
+    $id = 0;
+    try {
+        $at_assert($bin !== '', 'Заглушка не готова');
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения имена ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type'   => 'smb',
+                'network_folder_path'   => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'          => 0,
+                'require_org'           => 0,
+                'attachment_max_count'  => 4,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id'       => $id,
+            'question_type' => Attachments::TYPE,
+            'title'         => 'Прикрепите скан титульной страницы.',
+            'points'        => 10,
+            'penalty'       => 0,
+            'options'       => [],
+        ]);
+        $quiz  = Quiz::get($id);
+        $at_assert(Attachments::mode($quiz) === 'spool', 'Ожидается доставка транспортом');
+        $slug  = (string)Attachments::store($quiz)['slug'];
+        $attempt = Attempt::start($id, ['name' => 'Иванов Иван', 'email' => 'ivan@example.invalid', 'participant_class' => '11']);
+        $bucket  = Attachments::bucket($attempt->token);
+        $file = Attachments::accept($quiz, $bucket, $qid, [
+            'name'     => 'скан: титул (2)?.pdf',
+            'tmp_name' => $at_file('pdf'),
+            'error'    => UPLOAD_ERR_OK,
+            'size'     => 10,
+        ], Attachments::limits($quiz));
+        $at_assert(is_array($file), 'Файл не принят', is_wp_error($file) ? $file->get_error_message() : '');
+
+        $labels  = Attachments::share_labels($quiz);
+        $numbers = Attachments::question_numbers($quiz);
+        $folder  = Attachments::share_folder($bucket, $labels);
+        $name    = (string)(Attachments::share_names($quiz, $bucket, $labels, $numbers)[(string)$file['id']] ?? '');
+        $at_assert($folder === 'Иванов Иван — ' . (int)$attempt->id, 'Папка попытки на шаре собрана не так', $folder);
+        $at_assert($name === 'Иванов Иван — 01 — скан титул (2).pdf', 'Имя файла на шаре собрано не так', $name);
+        // Служебное имя в хранилище остаётся хешем: по нему нельзя угадать чужую работу.
+        $at_assert(preg_match('#^[a-f0-9]{16}/[a-f0-9]{24}\.pdf$#', (string)$file['rel']) === 1, 'Хранилище переименовано', (string)$file['rel']);
+        $at_assert((string)$file['name'] === 'скан титул (2).pdf', 'Имя для показа испорчено', (string)$file['name']);
+
+        $submit = new WP_REST_Request('POST', RestApi::NAMESPACE . '/submit');
+        $submit->set_body_params(['token' => $attempt->token, 'answers' => [$qid => [(string)$file['id']]]]);
+        $sent = RestApi::handle_submit($submit);
+        $at_assert(!is_wp_error($sent), 'Сдача отклонена', is_wp_error($sent) ? $sent->get_error_message() : '');
+
+        $calls = (string)file_get_contents($log);
+        $target = 'olimp' . $BS . 'olympiad-2' . $BS . 'вложения' . $BS . $slug . $BS . $folder . $BS . $name;
+        $at_assert(stripos($calls, '"' . $target . '"') !== false, 'Файл на шару ушёл под другим именем', mb_substr($calls, 0, 600));
+        $at_assert(stripos($calls, $bucket) === false, 'Корзина попытки утекла в путь на шаре', mb_substr($calls, 0, 600));
+        $at_assert(stripos($calls, basename((string)$file['rel'])) === false, 'На шаре файл назван служебным хешем', mb_substr($calls, 0, 600));
+        // olvimp, olvimp\olympiad-2, \вложения, <slug> и читаемая папка попытки.
+        $at_assert(substr_count($calls, 'mkdir "') === 5, 'Цепочка каталогов не посегментная', $calls);
+        $at_assert(stripos($calls, 'mkdir "olimp' . $BS . 'olympiad-2' . $BS . 'вложения' . $BS . $slug . $BS . $folder . '"') !== false, 'Читаемая папка попытки на шаре не создана', $calls);
+        $at_assert(Attachments::pending($quiz) === [], 'Доставленный файл остался в списке недоставленного', json_encode(Attachments::pending($quiz), JSON_UNESCAPED_UNICODE));
+
+        // Отметка о доставке помнит путь именно на шаре — по нему снимается защита.
+        $marks = Attachments::delivered_marks(Quiz::get($id));
+        $mark = $marks[(string)$file['rel']] ?? null;
+        $at_assert(is_array($mark) && (string)($mark['share'] ?? '') === 'вложения/' . $slug . '/' . $folder . '/' . $name, 'Отметка о доставке без пути на шаре', json_encode($mark, JSON_UNESCAPED_UNICODE));
+        return true;
+    } finally {
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::last_delivery_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.37: одинаковые имена участников не слипаются: « (2)», разные папки, повтор — те же имена', function () use ($at_assert, $at_smb_stub, $at_unc_host, $at_file): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $BS = chr(92);
+    $id = 0;
+    try {
+        $at_assert($bin !== '', 'Заглушка не готова');
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения дубли ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type'  => 'smb',
+                'network_folder_path'  => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'         => 0,
+                'require_org'          => 0,
+                'attachment_max_count' => 4,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id'       => $id,
+            'question_type' => Attachments::TYPE,
+            'title'         => 'Прикрепите файл.',
+            'points'        => 10,
+            'penalty'       => 0,
+            'options'       => [],
+        ]);
+        $quiz = Quiz::get($id);
+        $slug = (string)Attachments::store($quiz)['slug'];
+        $limits = Attachments::limits($quiz);
+
+        $a1 = Attempt::start($id, ['name' => 'Два', 'email' => 'a@example.invalid', 'participant_class' => '11']);
+        $b1 = Attachments::bucket($a1->token);
+        $f1 = Attachments::accept($quiz, $b1, $qid, ['name' => 'файл.pdf', 'tmp_name' => $at_file('pdf'), 'error' => UPLOAD_ERR_OK, 'size' => 10], $limits);
+        $f2 = Attachments::accept($quiz, $b1, $qid, ['name' => 'файл.pdf', 'tmp_name' => $at_file('pdf'), 'error' => UPLOAD_ERR_OK, 'size' => 11], $limits);
+        $a2 = Attempt::start($id, ['name' => 'Два', 'email' => 'b@example.invalid', 'participant_class' => '9']);
+        $b2 = Attachments::bucket($a2->token);
+        $f3 = Attachments::accept($quiz, $b2, $qid, ['name' => 'файл.pdf', 'tmp_name' => $at_file('pdf'), 'error' => UPLOAD_ERR_OK, 'size' => 12], $limits);
+        foreach ([$f1, $f2, $f3] as $one) {
+            $at_assert(is_array($one), 'Файл не принят', is_wp_error($one) ? $one->get_error_message() : '');
+        }
+
+        $labels  = Attachments::share_labels($quiz);
+        $numbers = Attachments::question_numbers($quiz);
+        $names1  = Attachments::share_names($quiz, $b1, $labels, $numbers);
+        $names2  = Attachments::share_names($quiz, $b2, $labels, $numbers);
+        // Кто из двух получит « (2)», предсказуемо (по id записи), а не по составу батча.
+        $two = array_values($names1);
+        sort($two);
+        $at_assert($two === ['Два — 01 — файл (2).pdf', 'Два — 01 — файл.pdf'], 'Одинаковые имена не разошлись', json_encode($names1, JSON_UNESCAPED_UNICODE));
+        $at_assert($names1[(string)$f1['id']] !== $names1[(string)$f2['id']], 'Два файла попытки получили одно имя', json_encode($names1, JSON_UNESCAPED_UNICODE));
+        $at_assert(($names2[(string)$f3['id']] ?? '') === 'Два — 01 — файл.pdf', 'Сосед по фамилии не получил своё имя в своей папке', json_encode($names2, JSON_UNESCAPED_UNICODE));
+        $at_assert(Attachments::share_folder($b1, $labels) !== Attachments::share_folder($b2, $labels), 'Папки двух попыток совпали', Attachments::share_folder($b1, $labels));
+
+        // Имена стабильны: повторный вызов даёт ровно тот же набор.
+        $again = Attachments::share_names($quiz, $b1, $labels, $numbers);
+        $at_assert($again === $names1, 'Имена поплыли при повторном подсчёте', json_encode([$names1, $again], JSON_UNESCAPED_UNICODE));
+
+        $s1 = new WP_REST_Request('POST', RestApi::NAMESPACE . '/submit');
+        $s1->set_body_params(['token' => $a1->token, 'answers' => [$qid => [(string)$f1['id'], (string)$f2['id']]]]);
+        $r1 = RestApi::handle_submit($s1);
+        $at_assert(!is_wp_error($r1), 'Сдача первой попытки отклонена', is_wp_error($r1) ? $r1->get_error_message() : '');
+        $s2 = new WP_REST_Request('POST', RestApi::NAMESPACE . '/submit');
+        $s2->set_body_params(['token' => $a2->token, 'answers' => [$qid => [(string)$f3['id']]]]);
+        $r2 = RestApi::handle_submit($s2);
+        $at_assert(!is_wp_error($r2), 'Сдача второй попытки отклонена', is_wp_error($r2) ? $r2->get_error_message() : '');
+
+        $targets = [];
+        preg_match_all('#put "[^"]*" "([^"]+)"#u', (string)file_get_contents($log), $m);
+        foreach ($m[1] as $t) {
+            $targets[strtolower($t)] = true;
+        }
+        $root = 'olimp' . $BS . 'olympiad-2' . $BS . 'вложения' . $BS . $slug;
+        $want = [
+            $root . $BS . Attachments::share_folder($b1, $labels) . $BS . 'Два — 01 — файл.pdf',
+            $root . $BS . Attachments::share_folder($b1, $labels) . $BS . 'Два — 01 — файл (2).pdf',
+            $root . $BS . Attachments::share_folder($b2, $labels) . $BS . 'Два — 01 — файл.pdf',
+        ];
+        foreach ($want as $w) {
+            $at_assert(isset($targets[strtolower($w)]), 'Файл не ушёл по читаемому пути: ' . $w, implode(' | ', array_keys($targets)));
+        }
+
+        // Принудительная повторная доставка — те же имена, без « (3)» и без дублей.
+        $before = (int)substr_count((string)file_get_contents($log), 'put "');
+        $res = Attachments::redeliver(Quiz::get($id));
+        $at_assert(($res['sent'] ?? 0) === 3, 'Принудительная доставка унесла не всё', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $after_log = (string)file_get_contents($log);
+        $at_assert(substr_count($after_log, 'put "') === $before + 3, 'Запись не равна числу файлов', (string)$before);
+        $targets2 = [];
+        preg_match_all('#put "[^"]*" "([^"]+)"#u', $after_log, $m2);
+        foreach ($m2[1] as $t) {
+            $targets2[strtolower($t)] = true;
+        }
+        $at_assert(array_keys($targets2) === array_keys($targets), 'Повторная доставка переименовала файлы', json_encode([array_keys($targets), array_keys($targets2)], JSON_UNESCAPED_UNICODE));
+        return true;
+    } finally {
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::last_delivery_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.37: снятие защиты и повтор идут по читаемым путям; старые хеш-файлы на шаре не трогаются', function () use ($at_assert, $at_smb_stub, $at_env, $at_unc_host, $at_file): bool {
+    $state = sys_get_temp_dir() . '/wpo_smb_names_' . wp_generate_password(6, false, false) . '.json';
+    [, $log, $cleanup] = $at_smb_stub($state);
+    $BS = chr(92);
+    $id = 0;
+    try {
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения защита имена ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type'  => 'smb',
+                'network_folder_path'  => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'         => 0,
+                'require_org'          => 0,
+                'attachment_max_count' => 4,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id'       => $id,
+            'question_type' => Attachments::TYPE,
+            'title'         => 'Прикрепите решение.',
+            'points'        => 10,
+            'penalty'       => 0,
+            'options'       => [],
+        ]);
+        $quiz = Quiz::get($id);
+        $slug = (string)Attachments::store($quiz)['slug'];
+        $attempt = Attempt::start($id, ['name' => 'Защита Имя', 'email' => 'z@example.invalid', 'participant_class' => '11']);
+        $bucket = Attachments::bucket($attempt->token);
+        $file = Attachments::accept($quiz, $bucket, $qid, [
+            'name'     => 'решение.pdf',
+            'tmp_name' => $at_file('pdf'),
+            'error'    => UPLOAD_ERR_OK,
+            'size'     => 10,
+        ], Attachments::limits($quiz));
+        $at_assert(is_array($file), 'Файл не принят', is_wp_error($file) ? $file->get_error_message() : '');
+        $labels = Attachments::share_labels($quiz);
+        $folder = Attachments::share_folder($bucket, $labels);
+        $name = (string)(Attachments::share_names($quiz, $bucket, $labels, Attachments::question_numbers($quiz))[(string)$file['id']] ?? '');
+        $at_assert($name === 'Защита Имя — 01 — решение.pdf', 'Имя на шаре собрано не так', $name);
+
+        // Модель сервера: файл лежит под читаемым именем и защищён; рядом —
+        // старый файл прошлой версии плагина, который плагин переименовывать не вправе.
+        $root = 'olimp' . $BS . 'olympiad-2' . $BS . 'вложения' . $BS . $slug;
+        $share_key = $root . $BS . $folder . $BS . $name;
+        $legacy = $root . $BS . $bucket . $BS . '6ca192eb137477ebb3b98c99.pdf';
+        file_put_contents($state, json_encode([
+            'dirs'  => ['olimp', 'olimp' . $BS . 'вложения', 'olimp' . $BS . 'вложения' . $BS . $slug],
+            'files' => [strtolower($share_key) => ['size' => 10], strtolower($legacy) => ['size' => 40]],
+            'readonly' => [strtolower($share_key), strtolower($legacy)],
+        ]));
+        update_option(Attachments::pending_option($id), [[
+            'bucket' => $bucket,
+            'name'   => $name,
+            'rel'    => 'вложения/' . $slug . '/' . $folder . '/' . $name,
+            'share'  => 'вложения/' . $slug . '/' . $folder . '/' . $name,
+            'error'  => 'файл защищён',
+            'codes'  => ['NT_STATUS_OBJECT_NAME_COLLISION'],
+        ]], false);
+        Attachments::reset_store_cache($id);
+
+        $res = Attachments::unprotect_share($quiz);
+        $at_assert(!empty($res['success']), 'Защита не снята', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert((int)($res['unprotected'] ?? 0) === 1, 'Засчитано не то число снятий', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $calls = (string)file_get_contents($log);
+        $at_assert(stripos($calls, 'setmode "' . $share_key . '" -r') !== false, 'Защита снимается не с читаемого пути', mb_substr($calls, 0, 600));
+        $at_assert(stripos($calls, 'setmode "' . $legacy . '"') === false, 'Плагин трогает файл прошлого релиза', mb_substr($calls, 0, 600));
+        $st = json_decode((string)file_get_contents($state), true);
+        $readonly = array_map('strval', (array)($st['readonly'] ?? []));
+        $at_assert(!in_array(strtolower($share_key), $readonly, true), 'Защита читаемого файла осталась', json_encode($st, JSON_UNESCAPED_UNICODE));
+        $at_assert(in_array(strtolower($legacy), $readonly, true), 'Чужой файл потерял защиту', json_encode($st, JSON_UNESCAPED_UNICODE));
+        $at_assert(preg_match('#(^|;)\s*(rm|del|rename|mv)\b#i', $calls) === 0, 'Плагин переименовывает или удаляет файлы на шаре', mb_substr($calls, 0, 600));
+        return true;
+    } finally {
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::last_delivery_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
     }
 });
 

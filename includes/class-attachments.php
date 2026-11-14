@@ -236,14 +236,18 @@ class Attachments
 
     /** @var array<int, array<string, mixed>> решение о месте хранения на время запроса */
     private static array $store_cache = [];
+    /** @var array<int, array<string, array{id:int,name:string}>> */
+    private static array $share_labels_cache = [];
 
     /** Сброс кеша — нужен тестам и после изменения настроек сетевой папки. */
     public static function reset_store_cache(?int $quiz_id = null): void
     {
         if ($quiz_id === null) {
             self::$store_cache = [];
+            self::$share_labels_cache = [];
         } else {
             unset(self::$store_cache[$quiz_id]);
+            unset(self::$share_labels_cache[$quiz_id]);
         }
     }
 
@@ -972,6 +976,198 @@ class Attachments
         return $name;
     }
 
+    /**
+     * Имя для сетевой шары: без символов, которые Windows запрещает в файлах,
+     * без управляющих последовательностей и без завершающих точек и пробелов
+     * (их Windows отрезает молча, и файл «теряется»).
+     */
+    public static function share_sanitize(string $name, int $cap = 120): string
+    {
+        $name = str_replace(['\\', '/', ':', '*', '?', '"', '<', '>', '|', "\0"], ' ', $name);
+        $name = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $name) ?? '';
+        $name = preg_replace('/\s+/u', ' ', $name) ?? '';
+        $name = trim($name, " .\t");
+        if ($name === '' || preg_match('/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i', $name)) {
+            $name = ($name === '' ? 'файл' : $name) . '_';
+        }
+        $cap = max(16, $cap);
+        if (function_exists('mb_strlen') ? mb_strlen($name) > $cap : strlen($name) > $cap) {
+            $ext = (string)pathinfo($name, PATHINFO_EXTENSION);
+            $ext = $ext !== '' && strlen($ext) <= 8 ? '.' . $ext : '';
+            $keep = max(4, $cap - ($ext !== '' ? mb_strlen($ext) : 0));
+            $name = trim(mb_substr($name, 0, $keep), " .\t") . $ext;
+        }
+
+        return $name;
+    }
+
+    /**
+     * Подписи попыток олимпиады: корзина (хеш токена) => id попытки и имя
+     * участника. Нужны только для читаемых имён на шаре; по хешу попытки
+     * восстановить что-либо нельзя, поэтому берёмся за таблицу попыток, а не
+     * за путь.
+     *
+     * @return array<string, array{id:int,name:string}>
+     */
+    public static function share_labels(Quiz $quiz): array
+    {
+        $quiz_id = (int)$quiz->id;
+        if (isset(self::$share_labels_cache[$quiz_id])) {
+            return self::$share_labels_cache[$quiz_id];
+        }
+        global $wpdb;
+        $table = DB::attempts_table();
+        $rows = (array)$wpdb->get_results($wpdb->prepare(
+            "SELECT id, token, participant_name FROM {$table} WHERE quiz_id = %d",
+            $quiz_id
+        ), ARRAY_A);
+        $out = [];
+        foreach ($rows as $row) {
+            $token = (string)($row['token'] ?? '');
+            if ($token === '') {
+                continue;
+            }
+            $bucket = self::bucket($token);
+            $id = (int)($row['id'] ?? 0);
+            $known = $out[$bucket] ?? null;
+            // Теоретически одна корзина может достаться двум попыткам: берём
+            // первую по id, чтобы имя на шаре не менялось от выгрузки к выгрузке.
+            if ($known === null || $id < (int)$known['id']) {
+                $out[$bucket] = ['id' => $id, 'name' => (string)($row['participant_name'] ?? '')];
+            }
+        }
+
+        return self::$share_labels_cache[$quiz_id] = $out;
+    }
+
+    /** Папка попытки на шаре: «Иванов Иван — 12»; попытку не нашли — прежняя корзина. */
+    public static function share_folder(string $bucket, array $labels): string
+    {
+        $bucket = trim($bucket);
+        $label = $labels[$bucket] ?? null;
+        if (!is_array($label)) {
+            return $bucket;
+        }
+        $who = self::share_sanitize((string)($label['name'] ?? ''), 60);
+        if ($who === '' || $who === 'файл_') {
+            $who = 'без имени';
+        }
+        $id = (int)($label['id'] ?? 0);
+        $folder = $id > 0 ? $who . ' — ' . $id : $who;
+        $folder = trim($folder, " .\t");
+
+        return $folder !== '' ? $folder : $bucket;
+    }
+
+    /** Порядковые номера заданий олимпиады: id задания => 1, 2, 3… */
+    public static function question_numbers(Quiz $quiz): array
+    {
+        $out = [];
+        $n = 0;
+        foreach ($quiz->get_questions(false) as $question) {
+            $out[(int)$question->id] = ++$n;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Имя файла на шаре: «Иванов Иван — 03 — скан работы.pdf».
+     *
+     * Основа — то, как файл назвал участник (`index.json` хранит его в `name`);
+     * спереди — участник и номер задания, потому что на шаре работы лежат рядом
+     * и «скан.pdf» без контекста не отличить от «скан.pdf» соседа.
+     */
+    public static function share_name(array $entry, array $labels, array $numbers, string $bucket = ''): string
+    {
+        $rel = str_replace('\\', '/', (string)($entry['rel'] ?? ''));
+        if ($bucket === '' && strpos($rel, '/') !== false) {
+            $bucket = substr($rel, 0, strpos($rel, '/'));
+        }
+        $label = $labels[$bucket] ?? null;
+        $parts = [];
+        if (is_array($label)) {
+            $who = self::share_sanitize((string)($label['name'] ?? ''), 60);
+            if ($who !== '' && $who !== 'файл_') {
+                $parts[] = $who;
+            }
+        }
+        $no = (int)($numbers[(int)($entry['question_id'] ?? 0)] ?? 0);
+        if ($no > 0) {
+            $parts[] = sprintf('%02d', $no);
+        }
+        $orig = self::display_name((string)($entry['name'] ?? 'файл'));
+        $name = ($parts ? implode(' — ', $parts) . ' — ' : '') . $orig;
+
+        // 120 символов — с запасом под «\\server\share\olimp\вложения\…":
+        // Windows считает длиной весь путь, а не одно имя.
+        return self::share_sanitize($name, 120);
+    }
+
+    /**
+     * Имена всех вложений попытки — стабильные: считываются из индекса папки и
+     * нумеруются по id записи, а не по составу очередного батча доставки. Иначе
+     * один и тот же файл при повторной выгрузке уехал бы под «скан (2).pdf».
+     *
+     * @return array<string,string> id вложения => имя файла на шаре
+     */
+    public static function share_names(Quiz $quiz, string $bucket, array $labels, array $numbers): array
+    {
+        $dir = self::bucket_dir($quiz, $bucket);
+        if (is_wp_error($dir)) {
+            return [];
+        }
+        $index = self::read_index($dir);
+        $ids = array_keys($index);
+        sort($ids);
+        $used = [];
+        $out  = [];
+        foreach ($ids as $id) {
+            $base = self::share_name($index[$id], $labels, $numbers, $bucket);
+            if ($base === '') {
+                $base = 'файл';
+            }
+            $cand = $base;
+            $n = 2;
+            while (isset($used[strtolower($cand)])) {
+                $cand = self::name_with_suffix($base, $n++);
+            }
+            $used[strtolower($cand)] = true;
+            $out[(string)$id] = $cand;
+        }
+
+        return $out;
+    }
+
+    /** Вставить « (N)» перед расширением. */
+    private static function name_with_suffix(string $name, int $n): string
+    {
+        if (preg_match('#^(.*)\.([A-Za-z0-9]{1,8})$#u', $name, $m)) {
+            return trim($m[1]) . ' (' . $n . ').' . $m[2];
+        }
+
+        return $name . ' (' . $n . ')';
+    }
+
+    /** Не допустить коллизии имён внутри одного батча: «скан (2).pdf». */
+    private static function unique_share_key(array $taken, string $key): string
+    {
+        if (!isset($taken[$key])) {
+            return $key;
+        }
+        $dir  = (string)dirname($key);
+        $base = basename($key);
+        $cand = $key;
+        for ($n = 2; $n < 100; $n++) {
+            $cand = ($dir === '.' ? '' : $dir . '/') . self::name_with_suffix($base, $n);
+            if (!isset($taken[$cand])) {
+                return $cand;
+            }
+        }
+
+        return ($dir === '.' ? '' : $dir . '/') . $base . '.' . substr(hash('crc32b', $key), 0, 6);
+    }
+
     /** Проверка сигнатуры содержимого против заявленного расширения. */
     public static function sniff(string $path, string $ext): bool
     {
@@ -1083,12 +1279,16 @@ class Attachments
         }
         $store = self::store($quiz);
         $via_transport = [];
+        $via_bucket    = [];
+        $labels        = self::share_labels($quiz);
+        $numbers       = self::question_numbers($quiz);
         foreach ($rows as $row) {
             $ref = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($row['attempt_ref'] ?? ''));
             if ($ref === '' || empty($row['files'])) {
                 continue;
             }
-            $target_dir = $target_root . '/' . $ref;
+            $names      = self::share_names($quiz, $ref, $labels, $numbers);
+            $target_dir = $target_root . '/' . self::share_folder($ref, $labels);
             if ($local_dest && !is_dir($target_dir)) {
                 @wp_mkdir_p($target_dir);
             }
@@ -1098,7 +1298,10 @@ class Attachments
                     $missing++;
                     continue;
                 }
-                $safe = self::display_name((string)($file['name'] ?? 'file'));
+                $safe = (string)($names[(string)($file['id'] ?? '')] ?? '');
+                if ($safe === '') {
+                    $safe = self::share_name($file, $labels, $numbers, $ref) ?: self::display_name((string)($file['name'] ?? 'file'));
+                }
                 if ($local_dest) {
                     $to = $target_dir . '/' . $safe;
                     if (@copy($abs, $to)) {
@@ -1111,7 +1314,9 @@ class Attachments
                 }
                 $rel = (string)($file['rel'] ?? '');
                 $size = (int)($file['size'] ?? @filesize((string)$abs));
-                $key = self::DIR . '/' . $store['slug'] . '/' . $ref . '/' . $safe;
+                $key = self::unique_share_key($via_transport, self::DIR . '/' . $store['slug'] . '/'
+                    . self::share_folder($ref, $labels) . '/' . $safe);
+                $via_bucket[$key] = $ref;
                 if (!$force && self::is_delivered($quiz, $rel)) {
                     $already_delivered++;
                     continue;
@@ -1136,10 +1341,13 @@ class Attachments
                 $transport_raw = (string)($sent['raw'] ?? '');
                 $missing += count($via_transport);
                 $copied -= count($via_transport);
-                self::remember_pending($quiz, array_values(array_map(static function (string $rel) {
-                    $parts = explode('/', $rel);
-
-                    return ['bucket' => $parts[2] ?? '', 'name' => end($parts), 'rel' => $rel];
+                self::remember_pending($quiz, array_values(array_map(static function (string $rel) use ($via_bucket) {
+                    return [
+                        'bucket' => (string)($via_bucket[$rel] ?? ''),
+                        'name'   => basename($rel),
+                        'rel'    => $rel,
+                        'share'  => $rel,
+                    ];
                 }, array_keys($via_transport))), $transport_message, $transport_codes, $transport_raw);
             } else {
                 self::forget_pending($quiz, array_keys($via_transport));
@@ -1270,6 +1478,10 @@ class Attachments
         $sizes = [];
         $missing = 0;
         $already = 0;
+        $labels  = self::share_labels($quiz);
+        $numbers = self::question_numbers($quiz);
+        $names   = self::share_names($quiz, $bucket, $labels, $numbers);
+        $folder  = self::DIR . '/' . $store['slug'] . '/' . self::share_folder($bucket, $labels);
         foreach (array_unique(array_map('strval', $ids)) as $id) {
             $dir = self::bucket_dir($quiz, $bucket);
             if (is_wp_error($dir)) {
@@ -1290,7 +1502,14 @@ class Attachments
                 $already++;
                 continue;
             }
-            $key = self::DIR . '/' . $store['slug'] . '/' . $bucket . '/' . basename((string)$abs);
+            // На шаре файл называется так, как его назвал участник (с подписью
+            // «участник — номер задания»): «0613669172928f87/скан.pdf» жюри
+            // не читается, а «Иванов Иван — 03 — скан.pdf» читается.
+            $share_name = (string)($names[(string)$id] ?? '');
+            if ($share_name === '') {
+                $share_name = self::share_sanitize(basename((string)$abs), 120);
+            }
+            $key = self::unique_share_key($files, $folder . '/' . $share_name);
             $files[$key] = (string)file_get_contents((string)$abs);
             $sizes[$key] = [$rel, $size];
         }
@@ -1318,8 +1537,10 @@ class Attachments
         $message = (string)($sent['message'] ?? '');
         $codes = array_values(array_map('strval', (array)($sent['codes'] ?? [])));
         $raw = (string)($sent['raw'] ?? '');
+        // «share» — путь ровно такой, каким он лёг на шару: по нему снимается
+        // защита и по нему же идёт повторная доставка, без повторной сборки имён.
         self::remember_pending($quiz, array_map(static function (string $rel) use ($bucket) {
-            return ['bucket' => $bucket, 'name' => basename($rel), 'rel' => $rel];
+            return ['bucket' => $bucket, 'name' => basename($rel), 'rel' => $rel, 'share' => $rel];
         }, array_keys($files)), $message, $codes, $raw);
 
         return [
@@ -1352,7 +1573,7 @@ class Attachments
             }
             [$rel, $size] = $sizes[$key];
             if ($rel !== '') {
-                $out[$rel] = (int)$size;
+                $out[$rel] = ['size' => (int)$size, 'share' => (string)$key];
             }
         }
 
@@ -1413,6 +1634,14 @@ class Attachments
         $sig = self::delivery_sig($store);
         $marks = self::delivered_marks($quiz);
         foreach ($items as $rel => $size) {
+            if (is_array($size)) {
+                $mark = ['size' => (int)($size['size'] ?? 0), 'sig' => $sig];
+                if (isset($size['share']) && (string)$size['share'] !== '') {
+                    $mark['share'] = (string)$size['share'];
+                }
+                $marks[(string)$rel] = $mark;
+                continue;
+            }
             $marks[(string) $rel] = ['size' => (int) $size, 'sig' => $sig];
         }
         if (count($marks) > 5000) {
@@ -1493,20 +1722,35 @@ class Attachments
         $store = self::store($quiz);
         $result = ['success' => false, 'unprotected' => 0, 'failed' => 0, 'total' => 0, 'mode' => '', 'message' => '', 'raw' => '', 'names' => []];
         $names = [];
+        $labels = self::share_labels($quiz);
         foreach (self::pending($quiz) as $item) {
-            if (is_array($item)) {
-                $bucket = (string) ($item['bucket'] ?? '');
-                $name = (string) ($item['name'] ?? '');
-                if ($name === '') {
-                    continue;
-                }
-                $names[] = self::DIR . '/' . $store['slug'] . '/' . ($bucket !== '' ? $bucket . '/' : '') . $name;
+            if (!is_array($item)) {
+                continue;
             }
-        }
-        foreach (array_keys(self::delivered_marks($quiz)) as $rel) {
-            $rel = str_replace('\\', '/', (string) $rel);
+            $share = trim(str_replace('\\', '/', (string)($item['share'] ?? '')), '/');
+            if ($share !== '') {
+                $names[] = $share;
+                continue;
+            }
+            $bucket = (string) ($item['bucket'] ?? '');
+            $name = (string) ($item['name'] ?? '');
+            if ($name === '') {
+                continue;
+            }
             $names[] = self::DIR . '/' . $store['slug'] . '/'
-                . (preg_match('#^[a-f0-9]{16}/#', $rel) ? $rel : basename($rel));
+                . ($bucket !== '' ? self::share_folder($bucket, $labels) . '/' : '') . $name;
+        }
+        foreach (self::delivered_marks($quiz) as $rel => $mark) {
+            $rel = str_replace('\\', '/', (string) $rel);
+            $share = trim(str_replace('\\', '/', (string)(is_array($mark) ? ($mark['share'] ?? '') : '')), '/');
+            if ($share !== '') {
+                $names[] = $share;
+                continue;
+            }
+            // Отметки старых версий: путь на шаре собирается из корзины попытки.
+            $bucket = strpos($rel, '/') !== false ? substr($rel, 0, strpos($rel, '/')) : '';
+            $names[] = self::DIR . '/' . $store['slug'] . '/'
+                . (preg_match('#^[a-f0-9]{16}/#', $rel) ? self::share_folder($bucket, $labels) . '/' . substr($rel, strlen($bucket) + 1) : basename($rel));
         }
         $names = array_values(array_unique(array_filter($names)));
         $result['total'] = count($names);
