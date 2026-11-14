@@ -2048,6 +2048,120 @@ $it('1.0.40: режим spool описан как штатный, а не как
     }
 });
 
+$it('1.0.41: при спокойном состоянии блок вложений умещается в одну строку', function () use ($at_assert, $at_unc_host): bool {
+    $repo = dirname(__DIR__);
+    if (!get_current_user_id()) {
+        $admins = get_users(['role' => 'administrator', 'number' => 1]);
+        if ($admins) {
+            wp_set_current_user((int)$admins[0]->ID);
+        }
+    }
+    $short = 'Работы участников лежат в рабочей папке сайта';
+    $long  = 'для UNC, WebDAV и FTP это штатный режим';
+
+    $id = (int)Quiz::create([
+        'title'    => 'Одна строка ' . wp_generate_password(6, false, false),
+        'status'   => 'publish',
+        'settings' => [
+            'network_folder_type' => 'smb',
+            'network_folder_path' => '//10.200.10.10/kvant/olimp/olympiad-2',
+            'max_attempts'        => 0,
+            'require_org'         => 0,
+        ],
+    ]);
+    $qid = (int)Question::create(['quiz_id' => $id, 'question_type' => Attachments::TYPE, 'title' => 'Файл', 'points' => 5, 'penalty' => 0, 'options' => []]);
+    try {
+        $quiz = Quiz::get($id);
+        $render = static function () use ($repo, $quiz): string {
+            ob_start();
+            include $repo . '/admin/views/quiz-edit.php';
+            return (string)ob_get_clean();
+        };
+
+        // 1. Пробы ещё не было: одна спокойная строка, длинного объяснения нет.
+        $html = $render();
+        $at_assert(str_contains($html, $short), 'Короткая строка не показана', mb_substr(strip_tags($html), 0, 240));
+        $at_assert(!str_contains($html, $long), 'Длинное объяснение показано там, где чинить нечего');
+        $at_assert(str_contains($html, 'на шару их кладёт smbclient'), 'Транспорт не назван по-человечески');
+        $at_assert(substr_count($html, '>Проверить папку вложений<') === 1, 'Кнопка проверки показана не один раз', (string)substr_count($html, '>Проверить папку вложений<'));
+        $at_assert(!str_contains($html, '#9a6700'), 'Спокойное состояние выделено янтарём');
+        $at_assert(str_contains($html, 'Папку вложений плагин создаёт сам'), 'Без пробы не сказано, откуда возьмётся папка');
+
+        // 2. Проба успешна: к короткой строке добавляется путь и возраст проверки.
+        update_option(Attachments::probe_option($id), [
+            'ok' => true, 'when' => time() - 120, 'created' => 2, 'mode' => 'smb',
+            'target' => '\\\\10.200.10.10\kvant\olimp\olympiad-2\вложения\ABCdef',
+            'message' => '', 'codes' => [], 'raw' => '', 'fingerprint' => 'qa',
+        ], false);
+        $calm = $render();
+        $at_assert(str_contains($calm, $short) && !str_contains($calm, $long), 'Успешная проба не свернула объяснение');
+        $at_assert(str_contains($calm, 'Папка вложений: '), 'Путь папки вложений не показан в короткой строке');
+        $at_assert((bool)preg_match('~проверено \d+ мин\. назад~u', $calm), 'Возраст проверки не показан');
+        $at_assert(substr_count($calm, '>Проверить папку вложений<') === 1, 'Кнопка дублируется при спокойном состоянии', (string)substr_count($calm, '>Проверить папку вложений<'));
+        $at_assert(!str_contains($calm, 'Папка вложений на сетевой папке:'), 'Старая строка о пути осталась рядом с новой');
+        $at_assert(!str_contains($calm, 'ещё не создавалась'), 'При успешной пробе мелькнуло «ещё не создавалась»');
+
+        // 3. Есть недоставленные файлы — длинное объяснение возвращается и желтеет.
+        update_option(Attachments::pending_option($id), [[
+            'bucket' => 'tok', 'name' => 'скан.pdf', 'rel' => 'q1/скан.pdf',
+            'share' => 'вложения/olympiad-2/Иванов — 1/скан.pdf',
+            'error' => 'Доступ запрещён (NT_STATUS_ACCESS_DENIED)', 'codes' => ['NT_STATUS_ACCESS_DENIED'], 'when' => current_time('mysql'),
+        ]], false);
+        $bad = $render();
+        $at_assert(str_contains($bad, $long), 'При недоставленных файлах объяснение не вернулось');
+        $at_assert(!str_contains($bad, $short), 'Короткая строка осталась там, где есть недоставленное');
+        $at_assert(str_contains($bad, '#9a6700'), 'Тревожное состояние не выделено цветом');
+        delete_option(Attachments::pending_option($id));
+
+        // 4. Отказ пробы без недоставленных файлов: видна и причина, и объяснение режима.
+        update_option(Attachments::probe_option($id), [
+            'ok' => false, 'when' => time() - 60, 'created' => 0, 'mode' => 'smb',
+            'target' => '\\\\10.200.10.10\kvant\olimp\olympiad-2\вложения\ABCdef',
+            'message' => 'Доступ запрещён (NT_STATUS_ACCESS_DENIED): у пользователя нет прав на запись в сетевую папку.',
+            'codes' => ['NT_STATUS_ACCESS_DENIED'], 'raw' => 'ntstatus_error: NT_STATUS_ACCESS_DENIED', 'fingerprint' => 'qa',
+        ], false);
+        $failed = $render();
+        $at_assert(str_contains($failed, 'Папку вложений создать не удалось'), 'Отказ пробы не показан как ошибка');
+        $at_assert(str_contains($failed, $long), 'При отказе пробы объяснение режима исчезло');
+        $at_assert(!str_contains($failed, $short), 'Короткая строка показана при упавшей пробе');
+        $at_assert(substr_count($failed, '>Проверить папку вложений<') === 1, 'Кнопка в карточке отказа продублировалась', (string)substr_count($failed, '>Проверить папку вложений<'));
+        $at_assert(!str_contains($failed, 'ещё не создавалась'), 'При отказе пробы показан текст «ещё не создавалась»');
+
+        // 5. Путь, доступный PHP как папка, — никакого объяснения про spool вообще.
+        $share = sys_get_temp_dir() . '/wpo_share_' . wp_generate_password(6, false, false);
+        try {
+            wp_mkdir_p($share . '/' . Attachments::DIR . '/QAslug');
+            Quiz::get($id)->update(['settings' => [
+                'network_folder_type' => 'filesystem',
+                'network_folder_path' => $share,
+            ]]);
+            Attachments::reset_store_cache($id);
+            $fresh = Quiz::get($id);
+            $store = Attachments::store($fresh);
+            $at_assert($store['mode'] === 'share', 'Доступная папка не распознана как share', (string)$store['mode']);
+            update_option(Attachments::probe_option($id), [
+                'ok' => true, 'when' => time() - 60, 'created' => 0, 'mode' => 'filesystem',
+                'target' => (string)$store['share'], 'message' => '', 'codes' => [], 'raw' => '', 'fingerprint' => 'qa',
+            ], false);
+            $direct = $render();
+            $at_assert(!str_contains($direct, 'Сетевая папка недоступна PHP как путь'), 'Объяснение spool полезло в режим share');
+            $at_assert(!str_contains($direct, $short), 'Короткая строка spool попала в режим share');
+            $at_assert(str_contains($direct, 'Папка вложений на сетевой папке: ' . (string)$store['share']), 'В режиме share не видно путь на шаре');
+            $at_assert(substr_count($direct, '>Проверить папку вложений<') === 1, 'В режиме share кнопка не на своём месте', (string)substr_count($direct, '>Проверить папку вложений<'));
+        } finally {
+            Attachments::reset_store_cache($id);
+            exec('rm -rf ' . escapeshellarg($share));
+        }
+        return true;
+    } finally {
+        delete_option(Attachments::probe_option($id));
+        delete_option(Attachments::pending_option($id));
+        delete_option(Attachments::retry_option($id));
+        Attachments::reset_store_cache($id);
+        Quiz::delete($id);
+    }
+});
+
 $it('1.0.32: форма редактора и просмотр попытки показывают вложения', function () use ($at_assert, $at_fixture, $at_drop, $at_file): bool {
     $repo = WP_OLYMPIAD_PATH;
     $card = (string)file_get_contents($repo . '/admin/views/question-item-card.php');

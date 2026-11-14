@@ -451,17 +451,45 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                         $wpo_probe = \WPOlympiad\Attachments::probe_state($quiz);
                                     }
                                 }
-                                // Янтарём выделяем только настоящие неполадки: недоставленные
-                                // файлы или отказ пробы папки. Сам режим spool для UNC, WebDAV
-                                // и FTP — штатный способ работать с сетевой папкой, а не беда.
-                                $wpo_att_tone = (!empty($wpo_att_pending)
-                                    || (isset($wpo_probe['when']) && (int)$wpo_probe['when'] > 0 && empty($wpo_probe['ok'])))
-                                    ? '#9a6700' : '#50575e';
+                                // Спокойно — когда чинить нечего: нет недоставленных файлов
+                                // и проба папки не отказывала. Длинное объяснение режима тут
+                                // только мешает, поэтому остаётся одна короткая строка.
+                                $wpo_att_probe_failed = isset($wpo_probe['when'])
+                                    && (int)$wpo_probe['when'] > 0 && empty($wpo_probe['ok']);
+                                $wpo_att_calm = empty($wpo_att_pending) && !$wpo_att_probe_failed;
+                                $wpo_att_tone = $wpo_att_calm ? '#50575e' : '#9a6700';
+                                $wpo_att_labels = [
+                                    'smb'        => 'smbclient',
+                                    'webdav'     => 'WebDAV',
+                                    'ftp'        => 'FTP',
+                                    'filesystem' => 'прямая запись в папку',
+                                ];
+                                $wpo_att_transport = isset($wpo_att_labels[$wpo_att_store['type']])
+                                    ? $wpo_att_labels[$wpo_att_store['type']] : (string)$wpo_att_store['type'];
+                                $wpo_probe_btn = '';
+                                if ($quiz instanceof \WPOlympiad\Quiz) {
+                                    $wpo_probe_btn = '<a class="button button-small" style="margin-left:8px;" href="'
+                                        . esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . (int)$quiz->id . '&wpo_action=probe_attachments'), 'wpo_probe_attachments_' . (int)$quiz->id))
+                                        . '">' . esc_html__('Проверить папку вложений', 'wp-olympiad') . '</a>';
+                                }
                                 ?>
                                 <?php if ($wpo_att_store['mode'] === 'spool'): ?>
-                                    <p class="description" style="margin:0 0 8px;color:<?php echo esc_attr($wpo_att_tone); ?>;">
-                                        <?php echo esc_html(sprintf(__('Сетевая папка недоступна PHP как путь (транспорт %s) — для UNC, WebDAV и FTP это штатный режим: работы участников лежат в закрытой папке сайта, а на шару их кладёт транспорт. Доставка пробуется при сдаче, затем автоматически (5 минут … 6 часов), кнопкой «Доставить сейчас» и при выгрузке протоколов; папку вложений плагин создаёт сам — см. «Проверить папку вложений».', 'wp-olympiad'), $wpo_att_store['type'])); ?>
-                                    </p>
+                                    <?php if ($wpo_att_calm): ?>
+                                        <p class="description" style="margin:0 0 8px;color:#50575e;">
+                                            <?php echo esc_html(sprintf(__('Работы участников лежат в рабочей папке сайта, а на шару их кладёт %s.', 'wp-olympiad'), $wpo_att_transport)); ?>
+                                            <?php if (!empty($wpo_probe['ok']) && (string)($wpo_probe['target'] ?? '') !== ''): ?>
+                                                <?php echo esc_html(sprintf(__('Папка вложений: %s', 'wp-olympiad'), (string)$wpo_probe['target'])); ?>
+                                                <span style="color:#6c7781;"><?php echo esc_html(sprintf(__('· проверено %d мин. назад', 'wp-olympiad'), max(1, (int)round((time() - (int)$wpo_probe['when']) / 60)))); ?></span>
+                                            <?php else: ?>
+                                                <?php esc_html_e('Папку вложений плагин создаёт сам — при доставке.', 'wp-olympiad'); ?>
+                                            <?php endif; ?>
+                                            <?php echo $wpo_probe_btn; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- ссылка собрана выше ?>
+                                        </p>
+                                    <?php else: ?>
+                                        <p class="description" style="margin:0 0 8px;color:<?php echo esc_attr($wpo_att_tone); ?>;">
+                                            <?php echo esc_html(sprintf(__('Сетевая папка недоступна PHP как путь (транспорт %s) — для UNC, WebDAV и FTP это штатный режим: работы участников лежат в закрытой папке сайта, а на шару их кладёт транспорт. Доставка пробуется при сдаче, затем автоматически (5 минут … 6 часов), кнопкой «Доставить сейчас» и при выгрузке протоколов; папку вложений плагин создаёт сам — см. «Проверить папку вложений».', 'wp-olympiad'), $wpo_att_transport)); ?>
+                                        </p>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 <?php
                                 $wpo_att_notice = sanitize_key($_GET['attachment_delivery'] ?? '');
@@ -547,17 +575,16 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                     </p>
                                 <?php endif; ?>
                                 <?php if ($quiz instanceof \WPOlympiad\Quiz) :
-                                    // Папка вложений на сетевой папке: с 1.0.39 её создаёт
-                                    // проверка, а не первая сдача работы — и состояние папки
-                                    // видно всегда, а не только когда есть недоставленное.
-                                    // $wpo_probe уже вычислен выше — вместе с тоном сообщений.
-                                    $wpo_probe = $wpo_probe ?: \WPOlympiad\Attachments::probe_state($quiz);
-                                    $wpo_probe_age = $wpo_probe['when'] > 0 ? max(1, (int)round((time() - $wpo_probe['when']) / 60)) : 0;
-                                    $wpo_probe_btn = '<a class="button button-small" style="margin-left:8px;" href="'
-                                        . esc_url(wp_nonce_url(admin_url('admin.php?page=wp-olympiad-edit&quiz_id=' . (int)$quiz->id . '&wpo_action=probe_attachments'), 'wpo_probe_attachments_' . (int)$quiz->id))
-                                        . '">' . esc_html__('Проверить папку вложений', 'wp-olympiad') . '</a>';
+                                    // Состояние пробы и кнопка посчитаны выше; здесь
+                                    // только подробности: путь, возраст, причина отказа.
+                                    $wpo_probe_age = (int)$wpo_probe['when'] > 0 ? max(1, (int)round((time() - (int)$wpo_probe['when']) / 60)) : 0;
+                                    // Строка состояния нужна только в share: там путь на шаре
+                                    // и есть главный ответ. В spool путь и кнопка уже стоят в
+                                    // короткой строке, а провал пробы показан ниже карточкой
+                                    // с причиной — повторять нечего.
+                                    $wpo_probe_shown = $wpo_att_store['mode'] !== 'spool';
                                     ?>
-                                    <?php if ($wpo_probe['ok']): ?>
+                                    <?php if ($wpo_probe_shown && $wpo_probe['ok']): ?>
                                         <p class="description" style="margin:0 0 8px;">
                                             <?php echo esc_html(sprintf(__('Папка вложений на сетевой папке: %s', 'wp-olympiad'), $wpo_probe['target'] !== '' ? $wpo_probe['target'] : __('создана', 'wp-olympiad'))); ?>
                                             <?php if ($wpo_probe_age > 0): ?>
@@ -565,7 +592,7 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                             <?php endif; ?>
                                             <?php echo $wpo_probe_btn; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- ссылка собрана выше ?>
                                         </p>
-                                    <?php elseif ($wpo_probe['when'] > 0): ?>
+                                    <?php elseif (!$wpo_probe['ok'] && (int)$wpo_probe['when'] > 0): ?>
                                         <div class="notice notice-error inline" style="margin:0 0 8px;">
                                             <p>
                                                 <strong><?php esc_html_e('Папку вложений создать не удалось:', 'wp-olympiad'); ?></strong>
@@ -583,8 +610,8 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                             <?php endif; ?>
                                             <p style="margin:4px 0 0;color:#50575e;"><?php echo esc_html(sprintf(__('Последняя проба: %d мин. назад; плагин повторит сам.', 'wp-olympiad'), $wpo_probe_age)); ?></p>
                                         </div>
-                                    <?php else: ?>
-                                        <p class="description" style="margin:0 0 8px;color:#50575e;">
+                                    <?php elseif (!$wpo_att_calm && !$wpo_probe_shown): ?>
+                                        <p class="description" style="margin:0 0 8px;color:<?php echo esc_attr($wpo_att_tone); ?>;">
                                             <?php esc_html_e('Папка вложений на сетевой папке ещё не создавалась: транспорт строит каталоги, только когда везёт файл.', 'wp-olympiad'); ?>
                                             <?php echo $wpo_probe_btn; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
                                         </p>
