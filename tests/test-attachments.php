@@ -2297,3 +2297,35 @@ $it('1.0.42: «Вложения участников» выгружаются п
         }
     }
 });
+
+// ---------------------------------------------------------------------------
+// 1.0.43: падежи счётчика в уведомлениях и отсутствие «протухшего» отчёта.
+// ---------------------------------------------------------------------------
+$it('1.0.43: wpo_n_ru разводит русские формы, а пустая выгрузка затирает прежнюю ошибку', function () use ($at_assert): bool {
+    $at_assert(function_exists('wpo_n_ru'), 'Глобальный хелпер падежей не подключён');
+    $one = '%d файл'; $few = '%d файла'; $many = '%d файлов';
+    $pick = static fn(int $n) => wpo_n_ru($n, sprintf($one, $n), sprintf($few, $n), sprintf($many, $n));
+    foreach ([1 => 'файл', 21 => 'файл', 101 => 'файл', 2 => 'файла', 3 => 'файла', 4 => 'файла', 22 => 'файла', 104 => 'файла',
+              0 => 'файлов', 5 => 'файлов', 11 => 'файлов', 14 => 'файлов', 15 => 'файлов', 111 => 'файлов'] as $n => $want) {
+        $at_assert(str_contains($pick($n), $want), "Форма для {$n}: «{$pick($n)}», ожидалось «{$want}»");
+    }
+    // Новый отчёт на пустой олимпиаде не должен сохранять чужие codes/raw/message.
+    $id = (int)Quiz::create(['title' => 'Падёжи ' . wp_generate_password(6, false, false), 'status' => 'publish',
+        'settings' => ['network_folder_type' => 'smb', 'network_folder_path' => '//127.0.0.1/qa42-no-such/x', 'max_attempts' => 0, 'require_org' => 0]]);
+    try {
+        update_option(Attachments::last_delivery_option($id), ['when' => current_time('mysql'), 'sent' => 0, 'missing' => 2,
+            'already' => 0, 'mode' => 'spool', 'message' => 'Сетевая папка не найдена (NT_STATUS_BAD_NETWORK_NAME)',
+            'codes' => ['NT_STATUS_BAD_NETWORK_NAME'], 'raw' => 'tree connect failed', 'names' => [], 'pending' => 1, 'dir' => '', 'migrated' => 0], false);
+        $res = Attachments::export_now(Quiz::get($id));   // попыток нет → ранний возврат
+        $at_assert(str_contains((string)$res['message'], 'Сданных работ с файлами нет'), 'Пустая олимпиада осталась без объяснения', (string)$res['message']);
+        $opt = get_option(Attachments::last_delivery_option($id), []);
+        $at_assert((string)($opt['message'] ?? 'x') === '', 'Отчёт не обновлён: висит прежняя ошибка', json_encode($opt['message'] ?? '', JSON_UNESCAPED_UNICODE));
+        $at_assert(($opt['codes'] ?? ['x']) === [] && ($opt['raw'] ?? 'x') === '', 'Старые codes/raw остались в отчёте', json_encode($opt, JSON_UNESCAPED_UNICODE));
+        $at_assert((int)($opt['missing'] ?? -1) === 0 && (int)($opt['pending'] ?? -1) === 0, 'Счётчики не обнулены', json_encode([$opt['missing'] ?? null, $opt['pending'] ?? null]));
+    } finally {
+        delete_option(Attachments::last_delivery_option($id));
+        Attachments::reset_store_cache($id);
+        Quiz::delete($id);
+    }
+    return true;
+});
