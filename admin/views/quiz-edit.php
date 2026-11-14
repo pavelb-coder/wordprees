@@ -505,7 +505,14 @@ $anti_cheat_notice_text = $is_new ? '🛡️ Внимание! Во время �
                                 <?php endif; ?>
                                 <?php if ($wpo_att_pending): ?>
                                     <p class="description" style="margin:0 0 8px;color:#b32d2e;">
-                                        <?php echo esc_html(sprintf(__('Не доставлено в сетевую папку: %d. Повтор — при ближайшей выгрузке протоколов.', 'wp-olympiad'), count($wpo_att_pending))); ?>
+                                        <?php echo esc_html(sprintf(__('Не доставлено в сетевую папку: %d. Плагин донесёт сам: повторная попытка запланирована, она же делается при открытии этой страницы и при выгрузке протоколов.', 'wp-olympiad'), count($wpo_att_pending))); ?>
+                                        <?php
+                                        $wpo_att_retry = \WPOlympiad\Attachments::retry_state($quiz);
+                                        if ($wpo_att_retry['tries'] > 0) :
+                                            $wpo_att_wait = max(1, (int)round(($wpo_att_retry['next'] - time()) / 60));
+                                            ?>
+                                            <br><span style="color:#50575e;"><?php echo esc_html(sprintf(__('попыток: %1$d, следующая не раньше чем через %2$d мин.', 'wp-olympiad'), $wpo_att_retry['tries'], $wpo_att_wait)); ?></span>
+                                        <?php endif; ?>
                                         <?php
                                         $wpo_att_errors = array_values(array_unique(array_filter(array_map(static function ($item) {
                                             if (!is_array($item)) {

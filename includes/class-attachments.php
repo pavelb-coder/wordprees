@@ -42,6 +42,13 @@ class Attachments
     /** Жёсткий потолок суммарного веса одной попытки — поверх настроек олимпиады. */
     public const ATTEMPT_TOTAL_LIMIT = 104857600;
 
+    /** Хук планировщика: донести вложения, которые не ушли в сетевую папку. */
+    public const RETRY_HOOK = 'wpo_attachments_retry';
+
+    /** Первая пауза между автоматическими попытками и её предел. */
+    public const RETRY_FLOOR = 300;
+    public const RETRY_CEIL = 21600;
+
     /**
      * Виды файлов, которые организатор может разрешить в своей олимпиаде.
      * Принимается только совпадение и расширения, и сигнатуры содержимого.
@@ -262,6 +269,21 @@ class Attachments
      *
      * @return array{mode: string, type: string, root: string, share: string, spool: string, slug: string, config: array, note: string}
      */
+    /**
+     * Хуки автоматической синхронизации вложений.
+     *
+     * Планировщика WordPress может и не быть (блокировка wp-cron, крон «по
+     * требованию» только на хитах), поэтому попытка донести недоставленное
+     * делается и когда организатор открывает страницу олимпиады.
+     */
+    public static function init(): void
+    {
+        add_action(self::RETRY_HOOK, static function (int $quiz_id): void {
+            self::handle_retry_event($quiz_id);
+        }, 10, 1);
+        add_action('admin_init', [self::class, 'maybe_sync_on_admin'], 20);
+    }
+
     public static function store(Quiz $quiz): array
     {
         $quiz_id = (int)$quiz->id;
@@ -1870,14 +1892,34 @@ class Attachments
     private static function remember_pending(Quiz $quiz, array $items, string $message, array $codes = [], string $raw = ''): void
     {
         $known = self::pending($quiz);
+        // Одна строка на файл, а не по строке на каждую неудачную попытку:
+        // автоматический повтор вызвал бы рост списка до бесконечности.
+        $by_key = [];
+        foreach ($known as $n => $item_old) {
+            $key = (string)(is_array($item_old) ? ($item_old['rel'] ?? $item_old['name'] ?? '') : '');
+            if ($key !== '') {
+                $by_key[$key] = $n;
+            }
+        }
         foreach ($items as $item) {
             $item['when'] = current_time('mysql');
             $item['error'] = mb_substr($message, 0, 300);
             $item['codes'] = array_slice($codes, 0, 4);
             $item['raw'] = mb_substr($raw, 0, 500);
+            $key = (string)($item['rel'] ?? $item['name'] ?? '');
+            if ($key !== '' && isset($by_key[$key])) {
+                $known[$by_key[$key]] = $item;
+                continue;
+            }
+            if ($key !== '') {
+                $by_key[$key] = count($known);
+            }
             $known[] = $item;
         }
         update_option(self::pending_option((int)$quiz->id), array_slice($known, -50), false);
+        // Недоставленное не должно ждать, пока организатор нажмёт кнопку или
+        // выгрузит протоколы: планируем повтор с растущей паузой.
+        self::schedule_retry($quiz);
     }
 
     /** Всё доставлено — список недоставленного больше не нужен. */
@@ -1885,6 +1927,9 @@ class Attachments
     {
         if (self::pending($quiz)) {
             delete_option(self::pending_option((int)$quiz->id));
+        }
+        if (self::pending($quiz) === []) {
+            self::clear_retry($quiz);
         }
     }
 
@@ -1902,6 +1947,245 @@ class Attachments
             update_option(self::pending_option((int)$quiz->id), $rest, false);
         } else {
             delete_option(self::pending_option((int)$quiz->id));
+            self::clear_retry($quiz);
+        }
+    }
+
+    // ------------------------------------------------- автоматическая повторная доставка
+
+    /** Запись планировщика повторных доставок для олимпиады. */
+    public static function retry_option(int $quiz_id): string
+    {
+        return 'wpo_attachment_retry_' . $quiz_id;
+    }
+
+    /**
+     * Состояние автоповтора: сколько попыток сделано, когда следующая и с какой паузой.
+     *
+     * @return array{tries:int,next:int,last:int,lazy:int,delay:int}
+     */
+    public static function retry_state(Quiz $quiz): array
+    {
+        $data = get_option(self::retry_option((int)$quiz->id), []);
+        if (!is_array($data)) {
+            $data = [];
+        }
+
+        return [
+            'tries' => max(0, (int)($data['tries'] ?? 0)),
+            'next'  => (int)($data['next'] ?? 0),
+            'last'  => (int)($data['last'] ?? 0),
+            'lazy'  => (int)($data['lazy'] ?? 0),
+            'delay' => (int)($data['delay'] ?? self::RETRY_FLOOR),
+        ];
+    }
+
+    /** Пауза перед следующей попыткой: 5, 10, 20, 40 … минут, но не больше шести часов. */
+    public static function retry_delay(Quiz $quiz): int
+    {
+        $tries = self::retry_state($quiz)['tries'];
+        // 0 отказов подряд → 5 минут, 1 → 10, 2 → 20 … и не дольше шести часов.
+        $delay = (int)min(self::RETRY_CEIL, self::RETRY_FLOOR * (2 ** min(10, max(0, $tries))));
+
+        return max(60, (int)apply_filters('wpo_attachments_retry_delay', $delay, $quiz, $tries));
+    }
+
+    /** Запланировать автоматическую попытку донести недоставленные вложения. */
+    public static function schedule_retry(Quiz $quiz): void
+    {
+        $quiz_id = (int)$quiz->id;
+        if ($quiz_id <= 0) {
+            return;
+        }
+        $state = self::retry_state($quiz);
+        $tries = (int)$state['tries'] + 1;
+        $delay = self::retry_delay($quiz);
+        $next = time() + $delay;
+        update_option(self::retry_option($quiz_id), [
+            'tries' => $tries,
+            'next'  => $next,
+            'last'  => time(),
+            // «lazy» — часы админской страницы: отказ транспорта не должен
+            // лишать организатора шанса донести работу, когда крон не работает.
+            'lazy'  => (int)($state['lazy'] ?? 0),
+            'delay' => $delay,
+        ], false);
+
+        if (self::cron_available() && !wp_next_scheduled(self::RETRY_HOOK, [$quiz_id])) {
+            wp_schedule_single_event($next, self::RETRY_HOOK, [$quiz_id]);
+        }
+    }
+
+    /** Есть ли у сайта планировщик: без него автоповтор сводится к ленивой пробе. */
+    private static function cron_available(): bool
+    {
+        return function_exists('wp_next_scheduled') && function_exists('wp_schedule_single_event')
+            && (!defined('DISABLE_WP_CRON') || !DISABLE_WP_CRON);
+    }
+
+    /** Доставлено — планировщик и счётчик пауз больше не нужны. */
+    public static function clear_retry(Quiz $quiz): void
+    {
+        $quiz_id = (int)$quiz->id;
+        delete_option(self::retry_option($quiz_id));
+        if (self::cron_available()) {
+            $when = wp_next_scheduled(self::RETRY_HOOK, [$quiz_id]);
+            if ($when !== false) {
+                wp_unschedule_event($when, self::RETRY_HOOK, [$quiz_id]);
+            }
+        }
+    }
+
+    /** Обработчик события планировщика. */
+    public static function handle_retry_event(int $quiz_id): array
+    {
+        $quiz = $quiz_id > 0 ? Quiz::get($quiz_id) : null;
+        if ($quiz === null) {
+            delete_option(self::retry_option($quiz_id));
+
+            return ['skipped' => 'no_quiz', 'sent' => 0, 'pending' => 0];
+        }
+        if (self::pending($quiz) === []) {
+            self::clear_retry($quiz);
+
+            return ['skipped' => 'clean', 'sent' => 0, 'pending' => 0];
+        }
+        if (!self::cron_available()) {
+            return ['skipped' => 'no_cron', 'sent' => 0, 'pending' => count(self::pending($quiz))];
+        }
+        $result = self::retry_pending($quiz);
+        if (self::pending($quiz) !== []) {
+            // Отказ уже поставил в очередь новую попытку (это делает remember_pending);
+            // здесь добавляем её только если причин для ожидания больше нет.
+            self::schedule_retry($quiz);
+        } else {
+            self::clear_retry($quiz);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Донести всё, что числится недоставленным, не сбрасывая отметок о доставленном.
+     *
+     * В отличие от «Доставить сейчас» (redeliver) этот проход не переписывает то,
+     * что на шаре уже лежит: автоматическая синхронизация не должна плодить записи.
+     */
+    public static function retry_pending(Quiz $quiz): array
+    {
+        $result = ['sent' => 0, 'missing' => 0, 'already' => 0, 'skipped' => 0, 'message' => '', 'codes' => [], 'raw' => '', 'names' => [], 'pending' => 0];
+        $buckets = [];
+        foreach (self::pending($quiz) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $bucket = (string)($item['bucket'] ?? '');
+            if (preg_match('/^[a-f0-9]{16}$/', $bucket)) {
+                $buckets[] = $bucket;
+            }
+        }
+        if (!$buckets) {
+            // Строки прежних версий без корзины: берём все папки попыток хранилища.
+            $root = (string)(self::store($quiz)['root'] ?? '');
+            if ($root !== '') {
+                foreach (glob(rtrim($root, '/\\') . '/*') ?: [] as $dir) {
+                    if (is_dir($dir) && preg_match('/^[a-f0-9]{16}$/', basename($dir))) {
+                        $buckets[] = basename($dir);
+                    }
+                }
+            }
+        }
+
+        foreach (array_values(array_unique($buckets)) as $bucket) {
+            $dir = self::bucket_dir($quiz, $bucket);
+            if (is_wp_error($dir)) {
+                $result['missing']++;
+                continue;
+            }
+            $ids = [];
+            foreach (self::read_index($dir) as $id => $entry) {
+                $rel = (string)($entry['rel'] ?? '');
+                if ($rel !== '' && !self::is_delivered($quiz, $rel)) {
+                    $ids[] = (string)$id;
+                }
+            }
+            if (!$ids) {
+                continue;
+            }
+            $sent = self::flush_to_share($quiz, $bucket, $ids);
+            $result['sent'] += (int)($sent['copied'] ?? 0);
+            $result['missing'] += (int)($sent['missing'] ?? 0);
+            $result['already'] += (int)($sent['already'] ?? 0);
+            foreach (['message', 'raw'] as $key) {
+                if ((string)($sent[$key] ?? '') !== '') {
+                    $result[$key] = (string)$sent[$key];
+                }
+            }
+            $result['codes'] = array_values(array_unique(array_merge($result['codes'], array_map('strval', (array)($sent['codes'] ?? [])))));
+            $result['names'] = array_values(array_unique(array_merge($result['names'], array_map('strval', (array)($sent['names'] ?? [])))));
+        }
+
+        // Списку недоставленного можно доверять только вместе с отметками: файл мог
+        // уйти на шару, а строка остаться (обрезанный вывод транспорта) — чистим её.
+        $rest = self::pending($quiz);
+        $result['pending'] = count($rest);
+        if ($result['sent'] > 0 && !$rest) {
+            self::clear_retry($quiz);
+        }
+        self::remember_delivery($quiz, $result + ['mode' => 'auto']);
+
+        return $result;
+    }
+
+    /**
+     * Ленивая синхронизация: организатор открыл страницу олимпиады — плагин
+     * пробует донести недоставленное, если с прошлой пробы прошло достаточно.
+     *
+     * @return array<string,mixed> пустой массив — проходить нечем или рано
+     */
+    public static function sync_pending_now(int $quiz_id, bool $force = false): array
+    {
+        $quiz = $quiz_id > 0 ? Quiz::get($quiz_id) : null;
+        if ($quiz === null) {
+            return [];
+        }
+        if (self::pending($quiz) === []) {
+            self::clear_retry($quiz);
+
+            return [];
+        }
+        $state = self::retry_state($quiz);
+        if (!$force && $state['lazy'] > 0 && time() - $state['lazy'] < self::RETRY_FLOOR) {
+            return ['skipped' => 'cooldown', 'sent' => 0, 'pending' => count(self::pending($quiz))];
+        }
+        update_option(self::retry_option($quiz_id), array_merge($state, [
+            'tries' => (int)($state['tries'] ?? 0),
+            'lazy'  => time(),
+        ]), false);
+
+        return self::retry_pending($quiz);
+    }
+
+    /** Точка входа для админской страницы (без тяжёлых проверок на каждом хите). */
+    public static function maybe_sync_on_admin(): void
+    {
+        if (!is_admin() || wp_doing_ajax() || wp_doing_cron()) {
+            return;
+        }
+        if (defined('WP_CLI') && WP_CLI) {
+            return;
+        }
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- только чтение query-аргументов страницы
+        if (!isset($_GET['page']) || sanitize_key(wp_unslash((string)$_GET['page'])) !== 'wp-olympiad-edit') {
+            return;
+        }
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+        $quiz_id = isset($_GET['quiz_id']) ? (int)$_GET['quiz_id'] : 0;
+        if ($quiz_id > 0) {
+            self::sync_pending_now($quiz_id);
         }
     }
 }

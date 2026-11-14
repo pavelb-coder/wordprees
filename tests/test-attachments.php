@@ -1534,6 +1534,215 @@ $it('1.0.37: снятие защиты и повтор идут по читае�
     }
 });
 
+$it('1.0.38: недоставленное донесётся само: планировщик, растущая пауза, тишина после успеха', function () use ($at_assert, $at_smb_stub, $at_env, $at_unc_host, $at_file): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    try {
+        $at_assert($bin !== '', 'Заглушка не готова');
+        // Транспорт отвечает отказом на любую запись — ровно картина «шара жива,
+        // а файлы не уходят», из-за которой организатор и жаловался на ручную кнопку.
+        $at_env(['WPO_STUB_ALL_FAIL' => '1', 'WPO_STUB_STATUS' => 'BAD_NETWORK_NAME']);
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения автосинхрон ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type'  => 'smb',
+                'network_folder_path'  => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'         => 0,
+                'require_org'          => 0,
+                'attachment_max_count' => 4,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id'       => $id,
+            'question_type' => Attachments::TYPE,
+            'title'         => 'Прикрепите решение.',
+            'points'        => 10,
+            'penalty'       => 0,
+            'options'       => [],
+        ]);
+        $quiz = Quiz::get($id);
+        $at_assert(Attachments::mode($quiz) === 'spool', 'Ожидается доставка транспортом');
+        $attempt = Attempt::start($id, ['name' => 'Авто_sync', 'email' => 'auto@example.invalid', 'participant_class' => '11']);
+        $bucket = Attachments::bucket($attempt->token);
+        $file = Attachments::accept($quiz, $bucket, $qid, [
+            'name'     => 'работа.pdf',
+            'tmp_name' => $at_file('pdf'),
+            'error'    => UPLOAD_ERR_OK,
+            'size'     => 10,
+        ], Attachments::limits($quiz));
+        $at_assert(is_array($file), 'Файл не принят', is_wp_error($file) ? $file->get_error_message() : '');
+
+        $submit = new WP_REST_Request('POST', RestApi::NAMESPACE . '/submit');
+        $submit->set_body_params(['token' => $attempt->token, 'answers' => [$qid => [(string)$file['id']]]]);
+        $sent = RestApi::handle_submit($submit);
+        $at_assert(!is_wp_error($sent), 'Сдача из-за отказа транспорта отклонена', is_wp_error($sent) ? $sent->get_error_message() : '');
+
+        $pending = Attachments::pending($quiz);
+        $at_assert(count($pending) === 1, 'Недоставленный файл не в списке', json_encode($pending, JSON_UNESCAPED_UNICODE));
+        $at_assert(Attachments::delivered_marks($quiz) === [], 'Отказ записан как доставка');
+        $when = wp_next_scheduled(Attachments::RETRY_HOOK, [$id]);
+        $at_assert($when !== false, 'Автоматическая повторная доставка не запланирована', (string)json_encode(Attachments::retry_state($quiz)));
+        $at_assert($when >= time() - 5, 'Повтор запланирован в прошлом', (string)$when);
+        $state = Attachments::retry_state($quiz);
+        $at_assert($state['tries'] === 1 && $state['delay'] === Attachments::RETRY_FLOOR, 'Первая пауза не 5 минут', json_encode($state));
+
+        // Вторая неудача: та же строка списка (без роста), пауза вдвое длиннее.
+        $again = Attachments::retry_pending($quiz);
+        $at_assert((int)($again['sent'] ?? 0) === 0, 'Отказ посчитан доставкой', json_encode($again, JSON_UNESCAPED_UNICODE));
+        $at_assert(count(Attachments::pending($quiz)) === 1, 'Список недоставленного раздувается от попыток', json_encode(Attachments::pending($quiz), JSON_UNESCAPED_UNICODE));
+        $state = Attachments::retry_state($quiz);
+        $at_assert($state['tries'] === 2, 'Число попыток не выросло', json_encode($state));
+        $at_assert($state['delay'] === 2 * Attachments::RETRY_FLOOR, 'Пауза не удвоилась', json_encode($state));
+
+        // Транспорт ожил — автоматический проход доносит файл и гасит планировщик.
+        $at_env(['WPO_STUB_ALL_FAIL' => '', 'WPO_STUB_STATUS' => '']);
+        $res = Attachments::retry_pending($quiz);
+        $at_assert((int)($res['sent'] ?? 0) === 1, 'Автоматический проход не донёс файл', json_encode($res, JSON_UNESCAPED_UNICODE));
+        $at_assert(Attachments::pending($quiz) === [], 'Список недоставленного не очищен после успеха', json_encode(Attachments::pending($quiz)));
+        $marks = Attachments::delivered_marks($quiz);
+        $at_assert(count($marks) === 1 && isset($marks[(string)$file['rel']]), 'Отметка о доставке не появилась', json_encode(array_keys($marks)));
+        $at_assert(wp_next_scheduled(Attachments::RETRY_HOOK, [$id]) === false, 'Повтор не снят после успеха', (string)wp_next_scheduled(Attachments::RETRY_HOOK, [$id]));
+        $at_assert(Attachments::retry_state($quiz)['tries'] === 0, 'Счётчик попыток не обнулён', json_encode(Attachments::retry_state($quiz)));
+        $last = Attachments::last_delivery($quiz);
+        $at_assert((int)($last['sent'] ?? 0) >= 1 && ($last['mode'] ?? '') === 'auto', 'Отчёт об автоматической доставке не сохранён', json_encode($last, JSON_UNESCAPED_UNICODE));
+        return true;
+    } finally {
+        $at_env(['WPO_STUB_ALL_FAIL' => '0', 'WPO_STUB_STATUS' => '']);
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::last_delivery_option($id));
+            delete_option(Attachments::retry_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.38: ленивая синхронизация при открытии страницы не долбит шару каждые два клика', function () use ($at_assert, $at_smb_stub, $at_env, $at_unc_host, $at_file): bool {
+    [$bin, $log, $cleanup] = $at_smb_stub();
+    $id = 0;
+    try {
+        $at_assert($bin !== '', 'Заглушка не готова');
+        $at_env(['WPO_STUB_ALL_FAIL' => '1', 'WPO_STUB_STATUS' => 'BAD_NETWORK_NAME']);
+        $id = (int)Quiz::create([
+            'title'    => 'Вложения лень-синхрон ' . wp_generate_password(6, false, false),
+            'status'   => 'publish',
+            'settings' => [
+                'network_folder_type' => 'smb',
+                'network_folder_path' => '//' . $at_unc_host . '/kvant/olimp/olympiad-2',
+                'max_attempts'        => 0,
+                'require_org'         => 0,
+            ],
+        ]);
+        $qid = (int)Question::create([
+            'quiz_id'       => $id,
+            'question_type' => Attachments::TYPE,
+            'title'         => 'Прикрепите решение.',
+            'points'        => 5,
+            'penalty'       => 0,
+            'options'       => [],
+        ]);
+        $quiz = Quiz::get($id);
+        $attempt = Attempt::start($id, ['name' => 'Ленивый', 'email' => 'lazy@example.invalid', 'participant_class' => '11']);
+        $bucket = Attachments::bucket($attempt->token);
+        $file = Attachments::accept($quiz, $bucket, $qid, [
+            'name'     => 'лен.pdf',
+            'tmp_name' => $at_file('pdf'),
+            'error'    => UPLOAD_ERR_OK,
+            'size'     => 10,
+        ], Attachments::limits($quiz));
+        $at_assert(is_array($file), 'Файл не принят');
+        // Недоставленное появляется после попытки доставки: без неё списку не
+        // откуда взяться, и проверять паузу было бы не на чём.
+        $first_try = Attachments::flush_to_share($quiz, $bucket, [(string)$file['id']]);
+        $at_assert((int)($first_try['copied'] ?? 0) === 0, 'Отказ не случился', json_encode($first_try, JSON_UNESCAPED_UNICODE));
+        $at_assert(count(Attachments::pending($quiz)) === 1, 'Список недоставленного пуст', json_encode(Attachments::pending($quiz), JSON_UNESCAPED_UNICODE));
+        $put_before = substr_count((string)file_get_contents($log), 'put "');
+
+        $first = Attachments::sync_pending_now($id, false);
+        $at_assert(isset($first['pending']) && (int)$first['pending'] === 1, 'Первый проход не состоялся', json_encode($first, JSON_UNESCAPED_UNICODE));
+        $at_assert(substr_count((string)file_get_contents($log), 'put "') > $put_before, 'Проход не тронул транспорт');
+        $cooldown = substr_count((string)file_get_contents($log), 'put "');
+
+        // Второй заход сразу же — отказ по паузе, шару не долбим.
+        $second = Attachments::sync_pending_now($id, false);
+        $at_assert(($second['skipped'] ?? '') === 'cooldown', 'Пауза ленивой синхронизации не выдержана', json_encode($second, JSON_UNESCAPED_UNICODE));
+        $at_assert(substr_count((string)file_get_contents($log), 'put "') === $cooldown, 'Команды ушли во время паузы');
+
+        // Принудительно (кнопка, отладка) — можно и сразу.
+        $third = Attachments::sync_pending_now($id, true);
+        $at_assert(($third['skipped'] ?? '') !== 'cooldown', 'Принудительный проход заблокирован паузой', json_encode($third, JSON_UNESCAPED_UNICODE));
+        $at_assert(substr_count((string)file_get_contents($log), 'put "') > $cooldown, 'Принудительный проход не дошёл до транспорта');
+
+        // Пустой список — планировщик чистится сам.
+        update_option(Attachments::pending_option($id), [], false);
+        $at_assert(Attachments::sync_pending_now($id, true) === [], 'Пустой список должен давать пустой результат');
+        $at_assert(wp_next_scheduled(Attachments::RETRY_HOOK, [$id]) === false, 'Событие осталось на пустом списке');
+        return true;
+    } finally {
+        $at_env(['WPO_STUB_ALL_FAIL' => '0', 'WPO_STUB_STATUS' => '']);
+        $cleanup();
+        if ($id) {
+            delete_option(Attachments::pending_option($id));
+            delete_option(Attachments::delivered_option($id));
+            delete_option(Attachments::last_delivery_option($id));
+            delete_option(Attachments::retry_option($id));
+            Attachments::reset_store_cache($id);
+            Quiz::delete($id);
+        }
+    }
+});
+
+$it('1.0.38: хуки автодоставки подключены к загрузке плагина и переживают отказ планировщика', function () use ($at_assert): bool {
+    $repo = (string)(defined('WP_OLYMPIAD_PATH') ? WP_OLYMPIAD_PATH : dirname(__DIR__));
+    $boot = (string)file_get_contents($repo . '/wp-olympiad.php');
+    $at_assert(stripos($boot, 'Attachments::init()') !== false, 'Attachments::init() не вызывается при загрузке плагина');
+    $at_assert(stripos($boot, 'wp_unschedule_hook(\\WPOlympiad\\Attachments::RETRY_HOOK)') !== false, 'События не снимаются при деактивации');
+    $at_assert(has_action(Attachments::RETRY_HOOK) !== false, 'Хук планировщика не зарегистрирован', var_export(has_action(Attachments::RETRY_HOOK), true));
+    $at_assert(is_int(has_action('admin_init', [Attachments::class, 'maybe_sync_on_admin'])), 'Ленивая синхронизация не подключена к admin_init');
+    $at_assert(Attachments::RETRY_FLOOR === 300 && Attachments::RETRY_CEIL === 21600, 'Паузы автоповтора не те');
+
+    // Задержка считается по числу отказов подряд и упирается в потолок.
+    $filter = static fn($delay, $quiz, $tries) => $tries >= 3 ? 20 : $delay;
+    $id = (int)Quiz::create([
+        'title'    => 'Вложения паузы ' . wp_generate_password(6, false, false),
+        'status'   => 'publish',
+        'settings' => ['network_folder_type' => 'local', 'network_folder_path' => sys_get_temp_dir() . '/wpo_at_' . wp_generate_password(6, false, false), 'max_attempts' => 0],
+    ]);
+    try {
+        $quiz = Quiz::get($id);
+        update_option(Attachments::retry_option($id), ['tries' => 0, 'next' => 0, 'last' => 0, 'delay' => 0], false);
+        $at_assert(Attachments::retry_delay($quiz) === Attachments::RETRY_FLOOR, 'Нулевая пауза не 5 минут');
+        update_option(Attachments::retry_option($id), ['tries' => 8, 'next' => 0, 'last' => 0, 'delay' => 0], false);
+        $at_assert(Attachments::retry_delay($quiz) === Attachments::RETRY_CEIL, 'Пауза не упёрлась в потолок', (string)Attachments::retry_delay($quiz));
+        add_filter('wpo_attachments_retry_delay', $filter, 10, 3);
+        update_option(Attachments::retry_option($id), ['tries' => 3, 'next' => 0, 'last' => 0, 'delay' => 0], false);
+        $at_assert(Attachments::retry_delay($quiz) === 60, 'Фильтр паузы не применён', (string)Attachments::retry_delay($quiz));
+        remove_filter('wpo_attachments_retry_delay', $filter, 10);
+
+        // Событие планировщика на несуществующую олимпиаду не роняет крон.
+        $res = Attachments::handle_retry_event(99999999);
+        $at_assert(($res['skipped'] ?? '') === 'no_quiz', 'Событие на удалённую олимпиаду не распознано', json_encode($res));
+        return true;
+    } finally {
+        delete_option(Attachments::retry_option($id));
+        Quiz::delete($id);
+    }
+});
+
+$it('1.0.38: организатору видно, что повтор запланирован, а не «нажмите кнопку»', function () use ($at_assert): bool {
+    $repo = (string)(defined('WP_OLYMPIAD_PATH') ? WP_OLYMPIAD_PATH : dirname(__DIR__));
+    $view = (string)file_get_contents($repo . '/admin/views/quiz-edit.php');
+    $at_assert(stripos($view, 'Плагин донесёт сам') !== false, 'В списке недоставленного не сказано про автоматический повтор');
+    $at_assert(stripos($view, 'Attachments::retry_state($quiz)') !== false, 'План повтора не показан');
+    $at_assert(stripos($view, 'попыток: %1$d, следующая не раньше чем через %2$d мин.') !== false, 'Счётчик попыток и пауза не выведены');
+    $at_assert(stripos($view, 'Повтор — при ближайшей выгрузке протоколов.') === false, 'Старая формулировка «только при выгрузке» осталась');
+    return true;
+});
+
 $it('1.0.32: форма редактора и просмотр попытки показывают вложения', function () use ($at_assert, $at_fixture, $at_drop, $at_file): bool {
     $repo = WP_OLYMPIAD_PATH;
     $card = (string)file_get_contents($repo . '/admin/views/question-item-card.php');
